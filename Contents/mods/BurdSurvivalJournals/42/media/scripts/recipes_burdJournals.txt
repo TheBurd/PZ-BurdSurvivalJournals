@@ -1,0 +1,156 @@
+module Base
+{
+    /* ============================================================ */
+    /*         BURD'S SURVIVAL JOURNALS - CRAFTING RECIPES          */
+    /*                    BUILD 42 CRAFTING FORMAT                   */
+    /*   NOTE: Must be in module Base for MP server compatibility   */
+    /* ============================================================ */
+
+    /* Convert a vanilla Journal into a Blank Survival Journal */
+    /* Requires leather binding materials and Tailoring 1 */
+    craftRecipe BindJournalAsSurvivalJournal
+    {
+        timedAction = SewingCloth,
+        time = 120,
+        Tags = AnySurfaceCraft,
+        category = Tailoring,
+        SkillRequired = Tailoring:1,
+        xpAward = Tailoring:3,
+        OnCreate = BurdJournals_OnCreateBlankClean,
+        inputs
+        {
+            item 1 [Base.Journal],
+            item 3 [Base.LeatherStrips],
+            item 1 tags[base:thread],
+            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
+        }
+        outputs
+        {
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* Convert a Notebook into a Blank Survival Journal */
+    /* Requires leather binding materials and Tailoring 1 */
+    craftRecipe ConvertNotebookToSurvivalJournal
+    {
+        timedAction = SewingCloth,
+        time = 150,
+        Tags = AnySurfaceCraft,
+        category = Tailoring,
+        SkillRequired = Tailoring:1,
+        xpAward = Tailoring:5,
+        OnCreate = BurdJournals_OnCreateBlankClean,
+        inputs
+        {
+            item 1 [Base.Notebook],
+            item 3 [Base.LeatherStrips],
+            item 1 tags[base:thread],
+            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
+        }
+        outputs
+        {
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* Craft a Blank Survival Journal from scratch */
+    /* Requires paper sheets, leather binding, and Tailoring 1 */
+    craftRecipe CraftBlankSurvivalJournal
+    {
+        timedAction = SewingCloth,
+        time = 180,
+        Tags = AnySurfaceCraft,
+        category = Tailoring,
+        SkillRequired = Tailoring:1,
+        xpAward = Tailoring:10,
+        OnCreate = BurdJournals_OnCreateBlankClean,
+        inputs
+        {
+            item 5 [Base.SheetPaper2],
+            item 3 [Base.LeatherStrips],
+            item 1 tags[base:thread],
+            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
+        }
+        outputs
+        {
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* ============================================================ */
+    /*         WORN/BLOODY TO CLEAN CONVERSION RECIPES              */
+    /* ============================================================ */
+
+    /* Restore a Worn or Bloody Filled Journal to Clean Blank condition */
+    /* Accepts either Worn or Bloody journals as input */
+    /* Returns a fresh blank journal for reuse */
+    craftRecipe RestoreFilledJournal
+    {
+        timedAction = SewingCloth,
+        time = 120,
+        Tags = AnySurfaceCraft,
+        category = Tailoring,
+        SkillRequired = Tailoring:1,
+        xpAward = Tailoring:3,
+        OnCreate = BurdJournals_OnCreateBlankClean,
+        inputs
+        {
+            item 1 [BurdJournals.FilledSurvivalJournal_Worn;BurdJournals.FilledSurvivalJournal_Bloody],
+            item 1 [Base.LeatherStrips],
+            item 1 tags[base:thread],
+            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
+        }
+        outputs
+        {
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* ============================================================ */
+    /*                    ERASE/RESET RECIPES                       */
+    /* ============================================================ */
+
+    /* Erase a Filled Survival Journal to Blank */
+    /* Removes all recorded data, returning to blank state */
+    /* Requires an eraser */
+    craftRecipe EraseFilledJournal
+    {
+        timedAction = Making,
+        time = 60,
+        Tags = AnySurfaceCraft,
+        category = Miscellaneous,
+        OnCreate = BurdJournals_OnCreateBlankClean,
+        inputs
+        {
+            item 1 [BurdJournals.FilledSurvivalJournal],
+            item 1 [Base.Eraser] mode:keep flags[MayDegradeLight],
+        }
+        outputs
+        {
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* ============================================================ */
+    /*                    DISASSEMBLY RECIPES                       */
+    /* ============================================================ */
+
+    /* Disassemble an unused Blank Survival Journal for materials */
+    craftRecipe DisassembleBlankJournal
+    {
+        timedAction = Making,
+        time = 30,
+        Tags = AnySurfaceCraft,
+        category = Miscellaneous,
+        inputs
+        {
+            item 1 [BurdJournals.BlankSurvivalJournal],
+        }
+        outputs
+        {
+            item 2 Base.SheetPaper2,
+            item 1 Base.LeatherStrips,
+        }
+    }
+}

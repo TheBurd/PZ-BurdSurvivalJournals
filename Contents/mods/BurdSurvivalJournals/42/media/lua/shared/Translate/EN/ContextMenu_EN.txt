@@ -1,0 +1,29 @@
+ContextMenu_EN = {
+    -- Journal Actions
+    ContextMenu_BurdJournals_OpenJournal = "Open Journal...",
+    ContextMenu_BurdJournals_Read = "Read Journal",
+    ContextMenu_BurdJournals_Rename = "Rename",
+    ContextMenu_BurdJournals_EraseJournal = "Erase Journal",
+    ContextMenu_BurdJournals_RecordProgress = "Record Progress",
+    ContextMenu_BurdJournals_UpdateRecords = "Update Records",
+    ContextMenu_BurdJournals_ClaimAll = "Claim All Skills",
+
+    -- Bloody Journal
+    ContextMenu_BurdJournals_BloodyBlank = "Bloody Blank Journal",
+    ContextMenu_BurdJournals_ConvertViaCrafting = "Convert to Personal Journal (Crafting)",
+
+    -- Worn Journal
+    ContextMenu_BurdJournals_WornBlank = "Worn Blank Journal",
+    ContextMenu_BurdJournals_AbsorbAll = "Absorb All Rewards",
+    ContextMenu_BurdJournals_ConvertToClean = "Rebind as Personal Journal",
+
+    -- Personal Journal (Clean)
+    ContextMenu_BurdJournals_RecordAll = "Record All Progress",
+
+    -- Legacy (keeping for compatibility)
+    ContextMenu_BurdJournals_CleanRepair = "Clean/Repair",
+    ContextMenu_BurdJournals_CleanSoap = "Clean with Soap & Cloth",
+    ContextMenu_BurdJournals_RepairTape = "Patch with Duct Tape",
+    ContextMenu_BurdJournals_RepairLeather = "Rebind with Leather",
+    ContextMenu_BurdJournals_RepairGlue = "Glue Pages Together",
+}

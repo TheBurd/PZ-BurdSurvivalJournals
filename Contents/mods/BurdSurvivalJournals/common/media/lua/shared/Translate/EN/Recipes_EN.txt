@@ -1,0 +1,14 @@
+Recipes_EN = {
+    -- Blank Journal Crafting
+    Recipe_ConvertJournalToSurvivalJournal = "Convert to Survival Journal",
+    Recipe_ConvertNotebookToSurvivalJournal = "Bind Notebook as Journal",
+    Recipe_CraftBlankSurvivalJournal = "Craft Survival Journal",
+
+    -- Journal Restoration/Cleaning
+    Recipe_RestoreWornBlankJournal = "Restore Worn Journal",
+    Recipe_CleanBloodyBlankJournal = "Clean Bloody Blank Journal",
+    Recipe_CleanBloodyFilledToClean = "Clean and Convert Bloody Journal",
+
+    -- Disassembly
+    Recipe_DisassembleBlankJournal = "Disassemble Blank Journal",
+}

@@ -1,0 +1,16 @@
+# Project Zomboid Workshop files
+workshop.txt
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backup files
+*.bak
+*.backup

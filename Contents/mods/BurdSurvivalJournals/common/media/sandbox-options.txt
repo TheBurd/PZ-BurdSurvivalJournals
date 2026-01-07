@@ -1,0 +1,312 @@
+VERSION = 1,
+
+/* ============================================================ */
+/* TAB 1: SURVIVAL JOURNALS - PLAYER                           */
+/* Settings for player-created clean journals                   */
+/* ============================================================ */
+
+option BurdJournals.EnableJournals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_EnableJournals,
+}
+
+/* XP Recovery Mode (Clean Journals - SET mode) */
+option BurdJournals.XPRecoveryMode = {
+    type = enum,
+    numValues = 2,
+    default = 1,
+    page = BurdJournals_Player,
+    translation = BurdJournals_XPRecoveryMode,
+    valueTranslation = BurdJournals_XPRecoveryMode,
+}
+
+option BurdJournals.DiminishingFirstRead = {
+    type = integer,
+    min = 50,
+    max = 100,
+    default = 100,
+    page = BurdJournals_Player,
+    translation = BurdJournals_DiminishingFirstRead,
+}
+
+option BurdJournals.DiminishingDecayRate = {
+    type = integer,
+    min = 5,
+    max = 50,
+    default = 10,
+    page = BurdJournals_Player,
+    translation = BurdJournals_DiminishingDecayRate,
+}
+
+option BurdJournals.DiminishingMinimum = {
+    type = integer,
+    min = 0,
+    max = 50,
+    default = 10,
+    page = BurdJournals_Player,
+    translation = BurdJournals_DiminishingMinimum,
+}
+
+/* XP Multiplier for Worn/Bloody Journals */
+option BurdJournals.JournalXPMultiplier = {
+    type = double,
+    min = 0.1,
+    max = 10.0,
+    default = 1.0,
+    page = BurdJournals_Player,
+    translation = BurdJournals_JournalXPMultiplier,
+}
+
+/* Writing Requirements */
+option BurdJournals.RequirePenToWrite = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_RequirePenToWrite,
+}
+
+option BurdJournals.PenUsesPerLog = {
+    type = integer,
+    min = 1,
+    max = 10,
+    default = 1,
+    page = BurdJournals_Player,
+    translation = BurdJournals_PenUsesPerLog,
+}
+
+option BurdJournals.RequireEraserToErase = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_RequireEraserToErase,
+}
+
+/* Learning Time Settings (for absorbing skills/traits) */
+option BurdJournals.LearningTimePerSkill = {
+    type = double,
+    min = 0.5,
+    max = 30.0,
+    default = 3.0,
+    page = BurdJournals_Player,
+    translation = BurdJournals_LearningTimePerSkill,
+}
+
+option BurdJournals.LearningTimePerTrait = {
+    type = double,
+    min = 1.0,
+    max = 60.0,
+    default = 5.0,
+    page = BurdJournals_Player,
+    translation = BurdJournals_LearningTimePerTrait,
+}
+
+option BurdJournals.LearningTimeMultiplier = {
+    type = double,
+    min = 0.1,
+    max = 5.0,
+    default = 1.0,
+    page = BurdJournals_Player,
+    translation = BurdJournals_LearningTimeMultiplier,
+}
+
+/* ============================================================ */
+/* TAB 2: SURVIVAL JOURNALS - LOOT                              */
+/* Settings for world-found worn & bloody journals              */
+/* ============================================================ */
+
+/* WORN JOURNALS (World Containers - Light Rewards) */
+option BurdJournals.EnableWornJournalSpawns = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_EnableWornJournalSpawns,
+}
+
+option BurdJournals.WornJournalSpawnChance = {
+    type = double,
+    min = 0.1,
+    max = 100.0,
+    default = 2.0,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalSpawnChance,
+}
+
+option BurdJournals.WornJournalMinSkills = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 1,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalMinSkills,
+}
+
+option BurdJournals.WornJournalMaxSkills = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 2,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalMaxSkills,
+}
+
+option BurdJournals.WornJournalMinXP = {
+    type = integer,
+    min = 10,
+    max = 200,
+    default = 25,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalMinXP,
+}
+
+option BurdJournals.WornJournalMaxXP = {
+    type = integer,
+    min = 25,
+    max = 500,
+    default = 75,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalMaxXP,
+}
+
+/* BLOODY JOURNALS (Zombie Corpses - Better Rewards + Traits) */
+option BurdJournals.EnableBloodyJournalSpawns = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_EnableBloodyJournalSpawns,
+}
+
+option BurdJournals.BloodyJournalSpawnChance = {
+    type = double,
+    min = 0.1,
+    max = 100.0,
+    default = 0.5,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalSpawnChance,
+}
+
+option BurdJournals.BloodyJournalMinSkills = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 2,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalMinSkills,
+}
+
+option BurdJournals.BloodyJournalMaxSkills = {
+    type = integer,
+    min = 2,
+    max = 10,
+    default = 4,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalMaxSkills,
+}
+
+option BurdJournals.BloodyJournalMinXP = {
+    type = integer,
+    min = 25,
+    max = 500,
+    default = 50,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalMinXP,
+}
+
+option BurdJournals.BloodyJournalMaxXP = {
+    type = integer,
+    min = 50,
+    max = 1000,
+    default = 150,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalMaxXP,
+}
+
+option BurdJournals.BloodyJournalTraitChance = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 15,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalTraitChance,
+}
+
+option BurdJournals.BloodyJournalMaxTraits = {
+    type = integer,
+    min = 0,
+    max = 5,
+    default = 2,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalMaxTraits,
+}
+
+/* ============================================================ */
+/* TAB 3: SURVIVAL JOURNALS - ADVANCED                          */
+/* Advanced settings and feature toggles                        */
+/* ============================================================ */
+
+/* Feature Toggles */
+option BurdJournals.EnablePlayerJournals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_EnablePlayerJournals,
+}
+
+/* Reading Skill Integration */
+option BurdJournals.ReadingSkillAffectsSpeed = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_ReadingSkillAffectsSpeed,
+}
+
+option BurdJournals.ReadingSpeedBonus = {
+    type = double,
+    min = 0.0,
+    max = 0.5,
+    default = 0.1,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_ReadingSpeedBonus,
+}
+
+/* Erase Settings */
+option BurdJournals.EraseTime = {
+    type = double,
+    min = 1.0,
+    max = 60.0,
+    default = 10.0,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_EraseTime,
+}
+
+/* Convert to Clean Settings */
+option BurdJournals.ConvertTime = {
+    type = double,
+    min = 5.0,
+    max = 120.0,
+    default = 15.0,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_ConvertTime,
+}
+
+/* ============================================================ */
+/* MULTIPLAYER SHARING SETTINGS                                  */
+/* Controls whether other players can open/claim from journals   */
+/* ============================================================ */
+
+/* Allow other players to open personal journals */
+option BurdJournals.AllowOthersToOpenJournals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_AllowOthersToOpenJournals,
+}
+
+/* Allow other players to claim from personal journals */
+option BurdJournals.AllowOthersToClaimFromJournals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_AllowOthersToClaimFromJournals,
+}
