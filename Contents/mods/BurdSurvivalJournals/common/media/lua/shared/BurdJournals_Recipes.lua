@@ -1,45 +1,58 @@
 --[[
     Burd's Survival Journals - Recipe & OnCreate Callbacks
-    Build 41
-    
+    Build 42
+
     Handles OnCreate callbacks for journal creation.
-    
+
     IMPORTANT: OnCreate is called in TWO different contexts:
     1. Recipe crafting: (items, result, player, selectedItem) - result is the created item
     2. Loot spawning:   (item) - item is the created item directly
-    
+
     Each callback must handle BOTH signatures to work with world loot spawns!
 ]]
 
+-- Load the shared module
 require "BurdJournals_Shared"
-
-BurdJournals = BurdJournals or {}
-BurdJournals.Recipes = BurdJournals.Recipes or {}
 
 -- ============================================================
 --                    HELPER FUNCTION
 -- ============================================================
 
 -- Determine the actual item from either call signature:
--- Recipe:     (items, result, player, selectedItem) -> result is the item
--- Loot spawn: (item) -> first param is the item directly
+-- B42 Recipe:     (craftRecipeData, character) -> use craftRecipeData:getAllCreatedItems():get(0)
+-- B41 Recipe:     (items, result, player, selectedItem) -> result is the item
+-- Loot spawn:     (item) -> first param is the item directly
 --
--- IMPORTANT: For loot spawns, PZ passes ONLY the item as the first argument!
-local function getItemFromArgs(arg1, arg2)
-    -- If arg2 (result) exists AND it's an InventoryItem, this is a recipe call
+-- Returns: resultItem, player/character, inputItems (if available)
+local function getItemFromArgs(arg1, arg2, arg3, arg4)
+    -- Check for B42 craftRecipeData signature
+    -- craftRecipeData has methods like getAllCreatedItems, getAllConsumedItems
+    if arg1 and type(arg1) == "userdata" then
+        local hasGetAllCreated = pcall(function() return arg1.getAllCreatedItems end)
+        if hasGetAllCreated and arg1.getAllCreatedItems then
+            -- B42 signature: (craftRecipeData, character)
+            local createdItems = arg1:getAllCreatedItems()
+            local resultItem = createdItems and createdItems:size() > 0 and createdItems:get(0) or nil
+            local consumedItems = arg1:getAllConsumedItems()
+            return resultItem, arg2, consumedItems
+        end
+    end
+
+    -- Check for B41 recipe signature: (items, result, player, selectedItem)
     if arg2 and type(arg2) ~= "nil" then
         -- Verify arg2 is actually an item (has getModData)
         if arg2.getModData then
-            return arg2
+            return arg2, arg3, arg1
         end
     end
-    -- Otherwise arg1 IS the item (loot spawn)
-    -- Verify it's an item
+
+    -- Loot spawn signature: (item) - arg1 IS the item directly
     if arg1 and arg1.getModData then
-        return arg1
+        return arg1, nil, nil
     end
+
     -- Fallback: something went wrong
-    return nil
+    return nil, nil, nil
 end
 
 -- Safe wrapper for generating random skills (handles if BurdJournals.generateRandomSkills isn't loaded yet)
@@ -83,72 +96,91 @@ end
 -- ============================================================
 
 -- Clean Blank - Pristine, craftable
-function BurdJournals_OnCreateBlankClean(items, result, player, selectedItem)
-    local item = getItemFromArgs(items, result)
-    if not item then return end
+-- Supports B42 (craftRecipeData, character), B41 (items, result, player), and loot (item)
+function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not item then return end
 
-    local modData = item:getModData()
-    modData.BurdJournals = {
-        uuid = BurdJournals.generateUUID(),
-        condition = 10,
-        isWorn = false,
-        isBloody = false,
-        isWritten = false,
-        createdBy = player and player:getUsername() or "World",
-        createdTimestamp = getGameTime():getWorldAgeHours()
-    }
+        local modData = item:getModData()
+        modData.BurdJournals = {
+            uuid = safeGenerateUUID(),
+            condition = 10,
+            isWorn = false,
+            isBloody = false,
+            isWritten = false,
+            createdBy = player and player:getUsername() or "World",
+            createdTimestamp = getGameTime():getWorldAgeHours()
+        }
 
-    BurdJournals.updateJournalName(item)
-    BurdJournals.updateJournalIcon(item)
+        if BurdJournals and BurdJournals.updateJournalName then
+            BurdJournals.updateJournalName(item)
+        end
+        if BurdJournals and BurdJournals.updateJournalIcon then
+            BurdJournals.updateJournalIcon(item)
+        end
+    end)
 
-    if BurdJournals.isDebug() then
-        -- Debug removed
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateBlankClean: " .. tostring(err))
     end
 end
 
 -- Worn Blank - Found in world containers
-function BurdJournals_OnCreateBlankWorn(items, result, player, selectedItem)
-    local item = getItemFromArgs(items, result)
-    if not item then return end
+function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not item then return end
 
-    local modData = item:getModData()
-    modData.BurdJournals = {
-        uuid = BurdJournals.generateUUID(),
-        condition = ZombRand(3, 7),
-        isWorn = true,
-        isBloody = false,
-        isWritten = false,
-        createdTimestamp = getGameTime():getWorldAgeHours()
-    }
+        local modData = item:getModData()
+        modData.BurdJournals = {
+            uuid = safeGenerateUUID(),
+            condition = ZombRand(3, 7),
+            isWorn = true,
+            isBloody = false,
+            isWritten = false,
+            createdTimestamp = getGameTime():getWorldAgeHours()
+        }
 
-    BurdJournals.updateJournalName(item)
-    BurdJournals.updateJournalIcon(item)
+        if BurdJournals and BurdJournals.updateJournalName then
+            BurdJournals.updateJournalName(item)
+        end
+        if BurdJournals and BurdJournals.updateJournalIcon then
+            BurdJournals.updateJournalIcon(item)
+        end
+    end)
 
-    if BurdJournals.isDebug() then
-        -- Debug removed
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateBlankWorn: " .. tostring(err))
     end
 end
 
 -- Bloody Blank - Found on zombie corpses
-function BurdJournals_OnCreateBlankBloody(items, result, player, selectedItem)
-    local item = getItemFromArgs(items, result)
-    if not item then return end
+function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not item then return end
 
-    local modData = item:getModData()
-    modData.BurdJournals = {
-        uuid = BurdJournals.generateUUID(),
-        condition = ZombRand(1, 5),
-        isWorn = false,
-        isBloody = true,
-        isWritten = false,
-        createdTimestamp = getGameTime():getWorldAgeHours()
-    }
+        local modData = item:getModData()
+        modData.BurdJournals = {
+            uuid = safeGenerateUUID(),
+            condition = ZombRand(1, 5),
+            isWorn = false,
+            isBloody = true,
+            isWritten = false,
+            createdTimestamp = getGameTime():getWorldAgeHours()
+        }
 
-    BurdJournals.updateJournalName(item)
-    BurdJournals.updateJournalIcon(item)
+        if BurdJournals and BurdJournals.updateJournalName then
+            BurdJournals.updateJournalName(item)
+        end
+        if BurdJournals and BurdJournals.updateJournalIcon then
+            BurdJournals.updateJournalIcon(item)
+        end
+    end)
 
-    if BurdJournals.isDebug() then
-        -- Debug removed
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateBlankBloody: " .. tostring(err))
     end
 end
 
@@ -157,87 +189,88 @@ end
 -- ============================================================
 
 -- Clean Filled - Player-created (SET mode) OR dev menu/loot spawned (found journal)
-function BurdJournals_OnCreateFilledClean(items, result, player, selectedItem)
-    local item = getItemFromArgs(items, result)
-    if not item then return end
+function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not item then return end
 
-    local modData = item:getModData()
+        local modData = item:getModData()
 
-    -- If spawned with a player context (crafting), create a player journal
-    -- If spawned without player (dev menu/loot), create a found journal with random survivor
-    if player then
-        -- Player-created journal (crafting)
-        modData.BurdJournals = {
-            uuid = BurdJournals.generateUUID(),
-            condition = 10,
-            isWorn = false,
-            isBloody = false,
-            isWritten = true,
-            wasFromBloody = false,
-            isPlayerCreated = true,
-            author = player:getUsername(),
-            timestamp = getGameTime():getWorldAgeHours(),
-            readCount = 0,
-            skills = BurdJournals.generateRandomSkills(2, 4, 50, 150),
-            claimedSkills = {},
-            claimedTraits = {}
-        }
-        if BurdJournals.isDebug() then
-            -- Debug removed
+        -- If spawned with a player context (crafting), create a player journal
+        -- If spawned without player (dev menu/loot), create a found journal with random survivor
+        if player then
+            -- Player-created journal (crafting)
+            modData.BurdJournals = {
+                uuid = safeGenerateUUID(),
+                condition = 10,
+                isWorn = false,
+                isBloody = false,
+                isWritten = true,
+                wasFromBloody = false,
+                isPlayerCreated = true,
+                author = player:getUsername(),
+                timestamp = getGameTime():getWorldAgeHours(),
+                readCount = 0,
+                skills = safeGenerateRandomSkills(2, 4, 50, 150),
+                claimedSkills = {},
+                claimedTraits = {}
+            }
+        else
+            -- Loot/dev menu spawn - create as found journal with random survivor
+            local survivorName = safeGenerateSurvivorName()
+            modData.BurdJournals = {
+                uuid = safeGenerateUUID(),
+                condition = 10,
+                isWorn = false,
+                isBloody = false,
+                isWritten = true,
+                wasFromBloody = false,
+                wasRestored = true,
+                isPlayerCreated = false,
+                author = survivorName,
+                timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
+                readCount = 0,
+                skills = safeGenerateRandomSkills(2, 4, 50, 150),
+                claimedSkills = {},
+                claimedTraits = {}
+            }
         end
-    else
-        -- Loot/dev menu spawn - create as found journal with random survivor
-        local survivorName = BurdJournals.generateRandomSurvivorName()
-        modData.BurdJournals = {
-            uuid = BurdJournals.generateUUID(),
-            condition = 10,
-            isWorn = false,
-            isBloody = false,
-            isWritten = true,
-            wasFromBloody = false,
-            wasRestored = true,
-            isPlayerCreated = false,
-            author = survivorName,
-            timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
-            readCount = 0,
-            skills = BurdJournals.generateRandomSkills(2, 4, 50, 150),
-            claimedSkills = {},
-            claimedTraits = {}
-        }
-        if BurdJournals.isDebug() then
-            -- Debug removed
+
+        if BurdJournals and BurdJournals.updateJournalName then
+            BurdJournals.updateJournalName(item)
         end
-    end
+        if BurdJournals and BurdJournals.updateJournalIcon then
+            BurdJournals.updateJournalIcon(item)
+        end
 
-    BurdJournals.updateJournalName(item)
-    BurdJournals.updateJournalIcon(item)
+        -- Sync modData to clients in multiplayer
+        if isServer() and item.transmitModData then
+            item:transmitModData()
+        end
+    end)
 
-    -- Sync modData to clients in multiplayer
-    if isServer() and item.transmitModData then
-        item:transmitModData()
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateFilledClean: " .. tostring(err))
     end
 end
 
 -- Worn Filled - Found in world containers, consumable (ADD mode, light rewards)
 -- THIS IS THE PRIMARY CALLBACK FOR WORLD LOOT SPAWNS!
 -- Wrapped in pcall to prevent errors from blocking item creation
-function BurdJournals_OnCreateFilledWorn(items, result, player, selectedItem)
-    -- ALWAYS log that we were called
-    -- Debug removed
-    
+function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
-        local item = getItemFromArgs(items, result)
-        if not item then 
-            return 
+        local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not item then
+            return
         end
-        
+
 
         -- Get sandbox settings for worn journal rewards (with safe fallbacks)
         local minSkills = 1
         local maxSkills = 2
         local minXP = 25
         local maxXP = 75
-        
+
         if BurdJournals and BurdJournals.getSandboxOption then
             minSkills = BurdJournals.getSandboxOption("WornJournalMinSkills") or minSkills
             maxSkills = BurdJournals.getSandboxOption("WornJournalMaxSkills") or maxSkills
@@ -288,93 +321,106 @@ function BurdJournals_OnCreateFilledWorn(items, result, player, selectedItem)
         local skillCount = 0
         for _ in pairs(modData.BurdJournals.skills or {}) do skillCount = skillCount + 1 end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledWorn: " .. tostring(err))
     end
 end
 
 -- Bloody Filled - Found on zombie corpses (rare rewards + traits)
-function BurdJournals_OnCreateFilledBloody(items, result, player, selectedItem)
-    local item = getItemFromArgs(items, result)
-    if not item then return end
+function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not item then return end
 
-    -- Debug removed
+        -- Get sandbox settings for bloody journal rewards (with safe fallbacks)
+        local minSkills = 2
+        local maxSkills = 4
+        local minXP = 50
+        local maxXP = 150
+        local traitChance = 15
 
-    -- Get sandbox settings for bloody journal rewards
-    local minSkills = BurdJournals.getSandboxOption("BloodyJournalMinSkills") or 2
-    local maxSkills = BurdJournals.getSandboxOption("BloodyJournalMaxSkills") or 4
-    local minXP = BurdJournals.getSandboxOption("BloodyJournalMinXP") or 50
-    local maxXP = BurdJournals.getSandboxOption("BloodyJournalMaxXP") or 150
-    local traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or 15
+        if BurdJournals and BurdJournals.getSandboxOption then
+            minSkills = BurdJournals.getSandboxOption("BloodyJournalMinSkills") or minSkills
+            maxSkills = BurdJournals.getSandboxOption("BloodyJournalMaxSkills") or maxSkills
+            minXP = BurdJournals.getSandboxOption("BloodyJournalMinXP") or minXP
+            maxXP = BurdJournals.getSandboxOption("BloodyJournalMaxXP") or maxXP
+            traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or traitChance
+        end
 
-    -- Get random profession for the previous owner (with fallback)
-    local professionId, professionName = "unemployed", "Survivor"
-    if BurdJournals.WorldSpawn and BurdJournals.WorldSpawn.getRandomProfession then
-        professionId, professionName = BurdJournals.WorldSpawn.getRandomProfession()
-    end
+        -- Get random profession for the previous owner (with fallback)
+        local professionId, professionName = "unemployed", "Survivor"
+        if BurdJournals and BurdJournals.WorldSpawn and BurdJournals.WorldSpawn.getRandomProfession then
+            professionId, professionName = BurdJournals.WorldSpawn.getRandomProfession()
+        end
 
-    -- Generate traits if lucky (1-4 random traits)
-    local traits = {}
-    if ZombRand(100) < traitChance then
-        local grantableTraits = BurdJournals.GRANTABLE_TRAITS or {
-            "brave", "organized", "fastlearner", "needslesssleep",
-            "lighteater", "dextrous", "graceful", "inconspicuous", "lowthirst"
-        }
-        if #grantableTraits > 0 then
-            -- Generate 1-4 random unique traits
-            local numTraits = ZombRand(1, 5)  -- 1 to 4 traits
-            local availableTraits = {}
-            for _, t in ipairs(grantableTraits) do
-                table.insert(availableTraits, t)
-            end
+        -- Generate traits if lucky (1-4 random traits)
+        local traits = {}
+        if ZombRand(100) < traitChance then
+            local grantableTraits = (BurdJournals and BurdJournals.GRANTABLE_TRAITS) or {
+                "brave", "organized", "fastlearner", "needslesssleep",
+                "lighteater", "dextrous", "graceful", "inconspicuous", "lowthirst"
+            }
+            if #grantableTraits > 0 then
+                -- Generate 1-4 random unique traits
+                local numTraits = ZombRand(1, 5)  -- 1 to 4 traits
+                local availableTraits = {}
+                for _, t in ipairs(grantableTraits) do
+                    table.insert(availableTraits, t)
+                end
 
-            for i = 1, numTraits do
-                if #availableTraits == 0 then break end
-                local idx = ZombRand(#availableTraits) + 1
-                local randomTrait = availableTraits[idx]
-                if randomTrait then
-                    traits[randomTrait] = {
-                        name = randomTrait,
-                        isPositive = true
-                    }
-                    -- Remove from available to avoid duplicates
-                    table.remove(availableTraits, idx)
+                for i = 1, numTraits do
+                    if #availableTraits == 0 then break end
+                    local idx = ZombRand(#availableTraits) + 1
+                    local randomTrait = availableTraits[idx]
+                    if randomTrait then
+                        traits[randomTrait] = {
+                            name = randomTrait,
+                            isPositive = true
+                        }
+                        -- Remove from available to avoid duplicates
+                        table.remove(availableTraits, idx)
+                    end
                 end
             end
         end
+
+        local modData = item:getModData()
+        modData.BurdJournals = {
+            uuid = safeGenerateUUID(),
+            condition = ZombRand(1, 4),
+            isWorn = false,
+            isBloody = true,
+            isWritten = true,
+            wasFromBloody = true,
+            isPlayerCreated = false,
+            author = safeGenerateSurvivorName(),
+            profession = professionId,
+            professionName = professionName,
+            timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
+            readCount = 0,
+            skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
+            traits = traits,
+            claimedSkills = {},
+            claimedTraits = {}
+        }
+
+        if BurdJournals and BurdJournals.updateJournalName then
+            BurdJournals.updateJournalName(item)
+        end
+        if BurdJournals and BurdJournals.updateJournalIcon then
+            BurdJournals.updateJournalIcon(item)
+        end
+
+        -- Sync modData to clients in multiplayer
+        if isServer() and item.transmitModData then
+            item:transmitModData()
+        end
+    end)
+
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateFilledBloody: " .. tostring(err))
     end
-
-    local modData = item:getModData()
-    modData.BurdJournals = {
-        uuid = BurdJournals.generateUUID(),
-        condition = ZombRand(1, 4),
-        isWorn = false,
-        isBloody = true,
-        isWritten = true,
-        wasFromBloody = true,
-        isPlayerCreated = false,
-        author = BurdJournals.generateRandomSurvivorName(),
-        profession = professionId,
-        professionName = professionName,
-        timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
-        readCount = 0,
-        skills = BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP),
-        traits = traits,
-        claimedSkills = {},
-        claimedTraits = {}
-    }
-
-    BurdJournals.updateJournalName(item)
-    BurdJournals.updateJournalIcon(item)
-
-    -- Sync modData to clients in multiplayer
-    if isServer() and item.transmitModData then
-        item:transmitModData()
-    end
-
-    local traitCount = 0
-    for _ in pairs(traits) do traitCount = traitCount + 1 end
 end
 
 -- ============================================================
@@ -382,327 +428,348 @@ end
 -- ============================================================
 
 -- Legacy callback for crafting recipes (alias to clean blank)
-function BurdJournals_OnCreateBlankJournal(items, result, player, selectedItem)
-    BurdJournals_OnCreateBlankClean(items, result, player, selectedItem)
+function BurdJournals_OnCreateBlankJournal(arg1, arg2, arg3, arg4)
+    BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
 end
 
 -- Called when a worn journal is cleaned/repaired (RECIPE ONLY - not loot spawn)
--- This callback uses the recipe signature since it requires input items
-function BurdJournals_OnCleanWornJournal(items, result, player, selectedItem)
-    -- This is always a recipe context, so result is the created item
-    if not result then return end
-    
-    local wornJournal = nil
-    if items and items.size then
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if item and BurdJournals.isWorn(item) then
-                wornJournal = item
-                break
+-- Supports B42 (craftRecipeData, character) and B41 (items, result, player)
+function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not result then return end
+
+        -- Find the worn journal in the input items
+        local wornJournal = nil
+        if inputItems and inputItems.size then
+            for i = 0, inputItems:size() - 1 do
+                local item = inputItems:get(i)
+                if item and BurdJournals and BurdJournals.isWorn and BurdJournals.isWorn(item) then
+                    wornJournal = item
+                    break
+                end
             end
         end
-    end
-    
-    if not wornJournal and selectedItem and BurdJournals.isWorn(selectedItem) then
-        wornJournal = selectedItem
-    end
-    
-    if not wornJournal then
-        return
-    end
-    
-    local wornModData = wornJournal:getModData()
-    local journalData = wornModData.BurdJournals
-    
-    if journalData then
-        local resultModData = result:getModData()
-        resultModData.BurdJournals = {
-            uuid = BurdJournals.generateUUID(),
-            author = journalData.author,
-            flavorText = journalData.flavorText,
-            timestamp = journalData.timestamp,
-            readCount = journalData.readCount or 0,
-            skills = journalData.skills,
-            traits = journalData.traits,
-            isWritten = true,
-            isWorn = false,
-            isBloody = false,
-            condition = 10,
-            wasRestored = true,
-            wasFromBloody = journalData.wasFromBloody or journalData.isBloody,
-            restoredBy = player and player:getUsername() or "Unknown",
-            restoredTimestamp = getGameTime():getWorldAgeHours(),
-            claimedSkills = journalData.claimedSkills or {},
-            claimedTraits = journalData.claimedTraits or {}
-        }
-        
-        BurdJournals.updateJournalName(result)
-        BurdJournals.updateJournalIcon(result)
-        
-        if BurdJournals.isDebug() then
-            local authorName = journalData.author or "Unknown Survivor"
-            -- Debug removed .. " cleaned journal from " .. authorName)
+
+        if not wornJournal then
+            return
         end
+
+        local wornModData = wornJournal:getModData()
+        local journalData = wornModData.BurdJournals
+
+        if journalData then
+            local resultModData = result:getModData()
+            resultModData.BurdJournals = {
+                uuid = safeGenerateUUID(),
+                author = journalData.author,
+                flavorText = journalData.flavorText,
+                timestamp = journalData.timestamp,
+                readCount = journalData.readCount or 0,
+                skills = journalData.skills,
+                traits = journalData.traits,
+                isWritten = true,
+                isWorn = false,
+                isBloody = false,
+                condition = 10,
+                wasRestored = true,
+                wasFromBloody = journalData.wasFromBloody or journalData.isBloody,
+                restoredBy = player and player:getUsername() or "Unknown",
+                restoredTimestamp = getGameTime():getWorldAgeHours(),
+                claimedSkills = journalData.claimedSkills or {},
+                claimedTraits = journalData.claimedTraits or {}
+            }
+
+            if BurdJournals and BurdJournals.updateJournalName then
+                BurdJournals.updateJournalName(result)
+            end
+            if BurdJournals and BurdJournals.updateJournalIcon then
+                BurdJournals.updateJournalIcon(result)
+            end
+        end
+    end)
+
+    if not ok then
+        print("[BurdJournals] ERROR in OnCleanWornJournal: " .. tostring(err))
     end
 end
-
--- ============================================================
---                   CLEANING CALLBACKS
--- ============================================================
 
 -- ============================================================
 --           FILLED JOURNAL CONVERSION CALLBACKS
 -- ============================================================
 
--- Convert Worn Filled Ã¢â€ â€™ Clean Filled (preserves data)
-function BurdJournals_OnCreateFilledCleanFromWorn(items, result, player, selectedItem)
-    if not result then return end
-    
-    -- Find the worn journal in the input items
-    local wornJournal = nil
-    if items and items.size then
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if item and string.find(item:getFullType(), "FilledSurvivalJournal_Worn") then
-                wornJournal = item
-                break
+-- Convert Worn Filled -> Clean Filled (preserves data)
+function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not result then return end
+
+        -- Find the worn journal in the input items
+        local wornJournal = nil
+        if inputItems and inputItems.size then
+            for i = 0, inputItems:size() - 1 do
+                local item = inputItems:get(i)
+                if item and string.find(item:getFullType(), "FilledSurvivalJournal_Worn") then
+                    wornJournal = item
+                    break
+                end
             end
         end
-    end
-    
-    if not wornJournal and selectedItem then
-        wornJournal = selectedItem
-    end
-    
-    if wornJournal then
-        local wornModData = wornJournal:getModData()
-        local journalData = wornModData.BurdJournals
-        
-        if journalData then
-            local resultModData = result:getModData()
-            resultModData.BurdJournals = {
-                uuid = journalData.uuid or BurdJournals.generateUUID(),
-                author = journalData.author,
-                flavorText = journalData.flavorText,
-                timestamp = journalData.timestamp,
-                readCount = journalData.readCount or 0,
-                skills = journalData.skills or {},
-                traits = journalData.traits or {},
-                isWritten = true,
+
+        if wornJournal then
+            local wornModData = wornJournal:getModData()
+            local journalData = wornModData.BurdJournals
+
+            if journalData then
+                local resultModData = result:getModData()
+                resultModData.BurdJournals = {
+                    uuid = journalData.uuid or safeGenerateUUID(),
+                    author = journalData.author,
+                    flavorText = journalData.flavorText,
+                    timestamp = journalData.timestamp,
+                    readCount = journalData.readCount or 0,
+                    skills = journalData.skills or {},
+                    traits = journalData.traits or {},
+                    isWritten = true,
+                    isWorn = false,
+                    isBloody = false,
+                    bloodyOrigin = journalData.bloodyOrigin,
+                    isPlayerCreated = journalData.isPlayerCreated,
+                    claimedSkills = journalData.claimedSkills or {},
+                    claimedTraits = journalData.claimedTraits or {},
+                    wasRestored = true,
+                    restoredBy = player and player:getUsername() or "Unknown",
+                    restoredTimestamp = getGameTime():getWorldAgeHours(),
+                }
+
+                if BurdJournals and BurdJournals.updateJournalName then
+                    BurdJournals.updateJournalName(result)
+                end
+                if BurdJournals and BurdJournals.updateJournalIcon then
+                    BurdJournals.updateJournalIcon(result)
+                end
+            end
+        else
+            -- Fallback: Initialize as new clean filled journal
+            local modData = result:getModData()
+            modData.BurdJournals = {
+                uuid = safeGenerateUUID(),
+                isWritten = false,
                 isWorn = false,
                 isBloody = false,
-                bloodyOrigin = journalData.bloodyOrigin,
-                isPlayerCreated = journalData.isPlayerCreated,
-                claimedSkills = journalData.claimedSkills or {},
-                claimedTraits = journalData.claimedTraits or {},
-                wasRestored = true,
-                restoredBy = player and player:getUsername() or "Unknown",
-                restoredTimestamp = getGameTime():getWorldAgeHours(),
+                isPlayerCreated = true,
             }
-            
-            BurdJournals.updateJournalName(result)
-            BurdJournals.updateJournalIcon(result)
-            -- Debug removed
         end
-    else
-        -- Fallback: Initialize as new clean filled journal
-        local modData = result:getModData()
-        modData.BurdJournals = {
-            uuid = BurdJournals.generateUUID(),
-            isWritten = false,
-            isWorn = false,
-            isBloody = false,
-            isPlayerCreated = true,
-        }
+    end)
+
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateFilledCleanFromWorn: " .. tostring(err))
     end
 end
 
--- Convert Bloody Filled Ã¢â€ â€™ Worn Filled (preserves data)
-function BurdJournals_OnCreateFilledWornFromBloody(items, result, player, selectedItem)
-    if not result then return end
-    
-    -- Find the bloody journal in the input items
-    local bloodyJournal = nil
-    if items and items.size then
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if item and string.find(item:getFullType(), "FilledSurvivalJournal_Bloody") then
-                bloodyJournal = item
-                break
+-- Convert Bloody Filled -> Worn Filled (preserves data)
+function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not result then return end
+
+        -- Find the bloody journal in the input items
+        local bloodyJournal = nil
+        if inputItems and inputItems.size then
+            for i = 0, inputItems:size() - 1 do
+                local item = inputItems:get(i)
+                if item and string.find(item:getFullType(), "FilledSurvivalJournal_Bloody") then
+                    bloodyJournal = item
+                    break
+                end
             end
         end
-    end
-    
-    if not bloodyJournal and selectedItem then
-        bloodyJournal = selectedItem
-    end
-    
-    if bloodyJournal then
-        local bloodyModData = bloodyJournal:getModData()
-        local journalData = bloodyModData.BurdJournals
-        
-        if journalData then
-            local resultModData = result:getModData()
-            resultModData.BurdJournals = {
-                uuid = journalData.uuid or BurdJournals.generateUUID(),
-                author = journalData.author,
-                flavorText = journalData.flavorText,
-                timestamp = journalData.timestamp,
-                readCount = journalData.readCount or 0,
-                skills = journalData.skills or {},
-                traits = journalData.traits or {},
-                isWritten = true,
-                isWorn = true,
-                isBloody = false,
-                bloodyOrigin = true,
-                isPlayerCreated = false,
-                claimedSkills = journalData.claimedSkills or {},
-                claimedTraits = journalData.claimedTraits or {},
-                wasCleaned = true,
-                cleanedBy = player and player:getUsername() or "Unknown",
-                cleanedTimestamp = getGameTime():getWorldAgeHours(),
-            }
-            
-            BurdJournals.updateJournalName(result)
-            BurdJournals.updateJournalIcon(result)
-            -- Debug removed
+
+        if bloodyJournal then
+            local bloodyModData = bloodyJournal:getModData()
+            local journalData = bloodyModData.BurdJournals
+
+            if journalData then
+                local resultModData = result:getModData()
+                resultModData.BurdJournals = {
+                    uuid = journalData.uuid or safeGenerateUUID(),
+                    author = journalData.author,
+                    flavorText = journalData.flavorText,
+                    timestamp = journalData.timestamp,
+                    readCount = journalData.readCount or 0,
+                    skills = journalData.skills or {},
+                    traits = journalData.traits or {},
+                    isWritten = true,
+                    isWorn = true,
+                    isBloody = false,
+                    bloodyOrigin = true,
+                    isPlayerCreated = false,
+                    claimedSkills = journalData.claimedSkills or {},
+                    claimedTraits = journalData.claimedTraits or {},
+                    wasCleaned = true,
+                    cleanedBy = player and player:getUsername() or "Unknown",
+                    cleanedTimestamp = getGameTime():getWorldAgeHours(),
+                }
+
+                if BurdJournals and BurdJournals.updateJournalName then
+                    BurdJournals.updateJournalName(result)
+                end
+                if BurdJournals and BurdJournals.updateJournalIcon then
+                    BurdJournals.updateJournalIcon(result)
+                end
+            end
+        else
+            -- Fallback: Initialize with random data
+            BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         end
-    else
-        -- Fallback: Initialize with random data
-        BurdJournals_OnCreateFilledWorn(items, result, player, selectedItem)
+    end)
+
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateFilledWornFromBloody: " .. tostring(err))
     end
 end
 
 -- Convert Worn or Bloody Filled -> Clean Filled (preserves data)
 -- Universal restore callback that handles both worn and bloody inputs
-function BurdJournals_OnCreateFilledCleanFromWornOrBloody(items, result, player, selectedItem)
-    if not result then return end
+function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not result then return end
 
-    -- Find the worn or bloody journal in the input items
-    local sourceJournal = nil
-    if items and items.size then
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if item then
-                local itemType = item:getFullType()
-                if string.find(itemType, "FilledSurvivalJournal_Worn") or
-                   string.find(itemType, "FilledSurvivalJournal_Bloody") then
-                    sourceJournal = item
-                    break
+        -- Find the worn or bloody journal in the input items
+        local sourceJournal = nil
+        if inputItems and inputItems.size then
+            for i = 0, inputItems:size() - 1 do
+                local item = inputItems:get(i)
+                if item then
+                    local itemType = item:getFullType()
+                    if string.find(itemType, "FilledSurvivalJournal_Worn") or
+                       string.find(itemType, "FilledSurvivalJournal_Bloody") then
+                        sourceJournal = item
+                        break
+                    end
                 end
             end
         end
-    end
 
-    if not sourceJournal and selectedItem then
-        sourceJournal = selectedItem
-    end
+        if sourceJournal then
+            local sourceModData = sourceJournal:getModData()
+            local journalData = sourceModData.BurdJournals
+            local wasBloodySouce = string.find(sourceJournal:getFullType(), "_Bloody") ~= nil
 
-    if sourceJournal then
-        local sourceModData = sourceJournal:getModData()
-        local journalData = sourceModData.BurdJournals
-        local wasBloodySouce = string.find(sourceJournal:getFullType(), "_Bloody") ~= nil
+            if journalData then
+                local resultModData = result:getModData()
+                resultModData.BurdJournals = {
+                    uuid = journalData.uuid or safeGenerateUUID(),
+                    author = journalData.author,
+                    flavorText = journalData.flavorText,
+                    timestamp = journalData.timestamp,
+                    readCount = journalData.readCount or 0,
+                    skills = journalData.skills or {},
+                    traits = journalData.traits or {},
+                    isWritten = true,
+                    isWorn = false,
+                    isBloody = false,
+                    bloodyOrigin = wasBloodySouce or journalData.bloodyOrigin,
+                    isPlayerCreated = journalData.isPlayerCreated,
+                    claimedSkills = journalData.claimedSkills or {},
+                    claimedTraits = journalData.claimedTraits or {},
+                    wasRestored = true,
+                    restoredBy = player and player:getUsername() or "Unknown",
+                    restoredTimestamp = getGameTime():getWorldAgeHours(),
+                }
 
-        if journalData then
-            local resultModData = result:getModData()
-            resultModData.BurdJournals = {
-                uuid = journalData.uuid or BurdJournals.generateUUID(),
-                author = journalData.author,
-                flavorText = journalData.flavorText,
-                timestamp = journalData.timestamp,
-                readCount = journalData.readCount or 0,
-                skills = journalData.skills or {},
-                traits = journalData.traits or {},
-                isWritten = true,
+                if BurdJournals and BurdJournals.updateJournalName then
+                    BurdJournals.updateJournalName(result)
+                end
+                if BurdJournals and BurdJournals.updateJournalIcon then
+                    BurdJournals.updateJournalIcon(result)
+                end
+            end
+        else
+            -- Fallback: Initialize as new clean filled journal
+            local modData = result:getModData()
+            modData.BurdJournals = {
+                uuid = safeGenerateUUID(),
+                isWritten = false,
                 isWorn = false,
                 isBloody = false,
-                bloodyOrigin = wasBloodySouce or journalData.bloodyOrigin,
-                isPlayerCreated = journalData.isPlayerCreated,
-                claimedSkills = journalData.claimedSkills or {},
-                claimedTraits = journalData.claimedTraits or {},
-                wasRestored = true,
-                restoredBy = player and player:getUsername() or "Unknown",
-                restoredTimestamp = getGameTime():getWorldAgeHours(),
+                isPlayerCreated = true,
             }
-
-            BurdJournals.updateJournalName(result)
-            BurdJournals.updateJournalIcon(result)
         end
-    else
-        -- Fallback: Initialize as new clean filled journal
-        local modData = result:getModData()
-        modData.BurdJournals = {
-            uuid = BurdJournals.generateUUID(),
-            isWritten = false,
-            isWorn = false,
-            isBloody = false,
-            isPlayerCreated = true,
-        }
+    end)
+
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateFilledCleanFromWornOrBloody: " .. tostring(err))
     end
 end
 
 -- Convert Bloody Filled -> Clean Filled directly (preserves data)
-function BurdJournals_OnCreateFilledCleanFromBloody(items, result, player, selectedItem)
-    if not result then return end
+function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
+    local ok, err = pcall(function()
+        local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
+        if not result then return end
 
-    -- Find the bloody journal in the input items
-    local bloodyJournal = nil
-    if items and items.size then
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if item and string.find(item:getFullType(), "FilledSurvivalJournal_Bloody") then
-                bloodyJournal = item
-                break
+        -- Find the bloody journal in the input items
+        local bloodyJournal = nil
+        if inputItems and inputItems.size then
+            for i = 0, inputItems:size() - 1 do
+                local item = inputItems:get(i)
+                if item and string.find(item:getFullType(), "FilledSurvivalJournal_Bloody") then
+                    bloodyJournal = item
+                    break
+                end
             end
         end
-    end
 
-    if not bloodyJournal and selectedItem then
-        bloodyJournal = selectedItem
-    end
+        if bloodyJournal then
+            local bloodyModData = bloodyJournal:getModData()
+            local journalData = bloodyModData.BurdJournals
 
-    if bloodyJournal then
-        local bloodyModData = bloodyJournal:getModData()
-        local journalData = bloodyModData.BurdJournals
+            if journalData then
+                local resultModData = result:getModData()
+                resultModData.BurdJournals = {
+                    uuid = journalData.uuid or safeGenerateUUID(),
+                    author = journalData.author,
+                    flavorText = journalData.flavorText,
+                    timestamp = journalData.timestamp,
+                    readCount = journalData.readCount or 0,
+                    skills = journalData.skills or {},
+                    traits = journalData.traits or {},
+                    isWritten = true,
+                    isWorn = false,
+                    isBloody = false,
+                    bloodyOrigin = true,
+                    isPlayerCreated = false,
+                    claimedSkills = journalData.claimedSkills or {},
+                    claimedTraits = journalData.claimedTraits or {},
+                    wasRestored = true,
+                    wasCleaned = true,
+                    restoredBy = player and player:getUsername() or "Unknown",
+                    restoredTimestamp = getGameTime():getWorldAgeHours(),
+                }
 
-        if journalData then
-            local resultModData = result:getModData()
-            resultModData.BurdJournals = {
-                uuid = journalData.uuid or BurdJournals.generateUUID(),
-                author = journalData.author,
-                flavorText = journalData.flavorText,
-                timestamp = journalData.timestamp,
-                readCount = journalData.readCount or 0,
-                skills = journalData.skills or {},
-                traits = journalData.traits or {},
-                isWritten = true,
+                if BurdJournals and BurdJournals.updateJournalName then
+                    BurdJournals.updateJournalName(result)
+                end
+                if BurdJournals and BurdJournals.updateJournalIcon then
+                    BurdJournals.updateJournalIcon(result)
+                end
+            end
+        else
+            -- Fallback: Initialize as new clean filled journal
+            local modData = result:getModData()
+            modData.BurdJournals = {
+                uuid = safeGenerateUUID(),
+                isWritten = false,
                 isWorn = false,
                 isBloody = false,
-                bloodyOrigin = true,
-                isPlayerCreated = false,
-                claimedSkills = journalData.claimedSkills or {},
-                claimedTraits = journalData.claimedTraits or {},
-                wasRestored = true,
-                wasCleaned = true,
-                restoredBy = player and player:getUsername() or "Unknown",
-                restoredTimestamp = getGameTime():getWorldAgeHours(),
+                isPlayerCreated = true,
             }
-
-            BurdJournals.updateJournalName(result)
-            BurdJournals.updateJournalIcon(result)
         end
-    else
-        -- Fallback: Initialize as new clean filled journal
-        local modData = result:getModData()
-        modData.BurdJournals = {
-            uuid = BurdJournals.generateUUID(),
-            isWritten = false,
-            isWorn = false,
-            isBloody = false,
-            isPlayerCreated = true,
-        }
+    end)
+
+    if not ok then
+        print("[BurdJournals] ERROR in OnCreateFilledCleanFromBloody: " .. tostring(err))
     end
 end
-
-
-

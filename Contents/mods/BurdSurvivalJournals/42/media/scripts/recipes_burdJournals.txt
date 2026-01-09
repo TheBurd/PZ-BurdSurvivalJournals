@@ -6,114 +6,34 @@ module Base
     /*   NOTE: Must be in module Base for MP server compatibility   */
     /* ============================================================ */
 
-    /* Convert a vanilla Journal into a Blank Survival Journal */
-    /* Requires leather binding materials and Tailoring 1 */
-    craftRecipe BindJournalAsSurvivalJournal
-    {
-        timedAction = SewingCloth,
-        time = 120,
-        Tags = AnySurfaceCraft,
-        category = Tailoring,
-        SkillRequired = Tailoring:1,
-        xpAward = Tailoring:3,
-        OnCreate = BurdJournals_OnCreateBlankClean,
-        inputs
-        {
-            item 1 [Base.Journal],
-            item 3 [Base.LeatherStrips],
-            item 1 tags[base:thread],
-            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
-        }
-        outputs
-        {
-            item 1 BurdJournals.BlankSurvivalJournal,
-        }
-    }
-
-    /* Convert a Notebook into a Blank Survival Journal */
-    /* Requires leather binding materials and Tailoring 1 */
-    craftRecipe ConvertNotebookToSurvivalJournal
-    {
-        timedAction = SewingCloth,
-        time = 150,
-        Tags = AnySurfaceCraft,
-        category = Tailoring,
-        SkillRequired = Tailoring:1,
-        xpAward = Tailoring:5,
-        OnCreate = BurdJournals_OnCreateBlankClean,
-        inputs
-        {
-            item 1 [Base.Notebook],
-            item 3 [Base.LeatherStrips],
-            item 1 tags[base:thread],
-            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
-        }
-        outputs
-        {
-            item 1 BurdJournals.BlankSurvivalJournal,
-        }
-    }
-
-    /* Craft a Blank Survival Journal from scratch */
-    /* Requires paper sheets, leather binding, and Tailoring 1 */
-    craftRecipe CraftBlankSurvivalJournal
-    {
-        timedAction = SewingCloth,
-        time = 180,
-        Tags = AnySurfaceCraft,
-        category = Tailoring,
-        SkillRequired = Tailoring:1,
-        xpAward = Tailoring:10,
-        OnCreate = BurdJournals_OnCreateBlankClean,
-        inputs
-        {
-            item 5 [Base.SheetPaper2],
-            item 3 [Base.LeatherStrips],
-            item 1 tags[base:thread],
-            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
-        }
-        outputs
-        {
-            item 1 BurdJournals.BlankSurvivalJournal,
-        }
-    }
-
     /* ============================================================ */
-    /*         WORN/BLOODY TO CLEAN CONVERSION RECIPES              */
+    /*   AVAILABLE RECIPES:                                          */
+    /*                                                               */
+    /*   BIND (Journal/Notebook -> Blank Survival Journal):          */
+    /*   - Thread + Any Cover: 3x binding + thread + needle          */
+    /*     Requires Tailoring 1, awards 3 Tailoring XP               */
+    /*   - Adhesive + Any Cover: 10x binding + tape/glue             */
+    /*     No skill requirement, uses more materials                 */
+    /*                                                               */
+    /*   RESTORE (Worn/Bloody -> Clean Filled):                      */
+    /*   - Thread + Any Cover: 1x binding + thread + needle          */
+    /*     Requires Tailoring 1, awards 3 Tailoring XP               */
+    /*   - Adhesive + Any Cover: 5x binding + tape/glue              */
+    /*     No skill requirement, uses more materials                 */
+    /*                                                               */
+    /*   ERASE (Filled -> Blank):                                    */
+    /*   - Eraser (kept but degrades)                                */
+    /*                                                               */
+    /*   NOTE: The "binding" tag includes leather strips, ripped     */
+    /*   sheets, and other flexible materials. Leather-only recipes  */
+    /*   are commented out below since AnyCover covers all cases.    */
     /* ============================================================ */
-
-    /* Restore a Worn or Bloody Filled Journal to Clean Blank condition */
-    /* Accepts either Worn or Bloody journals as input */
-    /* Returns a fresh blank journal for reuse */
-    craftRecipe RestoreFilledJournal
-    {
-        timedAction = SewingCloth,
-        time = 120,
-        Tags = AnySurfaceCraft,
-        category = Tailoring,
-        SkillRequired = Tailoring:1,
-        xpAward = Tailoring:3,
-        OnCreate = BurdJournals_OnCreateBlankClean,
-        inputs
-        {
-            item 1 [BurdJournals.FilledSurvivalJournal_Worn;BurdJournals.FilledSurvivalJournal_Bloody],
-            item 1 [Base.LeatherStrips],
-            item 1 tags[base:thread],
-            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
-        }
-        outputs
-        {
-            item 1 BurdJournals.BlankSurvivalJournal,
-        }
-    }
 
     /* ============================================================ */
     /*                    ERASE/RESET RECIPES                       */
     /* ============================================================ */
 
     /* Erase a Filled Survival Journal to Blank */
-    /* Removes all recorded data, returning to blank state */
-    /* Requires an eraser */
     craftRecipe EraseFilledJournal
     {
         timedAction = Making,
@@ -133,24 +53,105 @@ module Base
     }
 
     /* ============================================================ */
-    /*                    DISASSEMBLY RECIPES                       */
+    /*            BIND JOURNAL RECIPES - THREAD BINDING             */
     /* ============================================================ */
 
-    /* Disassemble an unused Blank Survival Journal for materials */
-    craftRecipe DisassembleBlankJournal
+    /* Bind Journal/Notebook: Thread + Any Cover */
+    craftRecipe Bind_Thread_AnyCover
     {
         timedAction = Making,
-        time = 30,
+        time = 120,
         Tags = AnySurfaceCraft,
         category = Miscellaneous,
+        skillRequired = Tailoring:1,
+        xpAward = Tailoring:3,
+        OnCreate = BurdJournals_OnCreateBlankClean,
         inputs
         {
-            item 1 [BurdJournals.BlankSurvivalJournal],
+            item 1 [Base.Journal;Base.Notebook],
+            item 3 tags[base:binding],
+            item 1 tags[base:thread],
+            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
         }
         outputs
         {
-            item 2 Base.SheetPaper2,
-            item 1 Base.LeatherStrips,
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* ============================================================ */
+    /*              BIND RECIPES - ADHESIVE BINDING                 */
+    /* ============================================================ */
+
+    /* Bind Journal/Notebook: Adhesive + Any Cover */
+    craftRecipe Bind_Adhesive_AnyCover
+    {
+        timedAction = Making,
+        time = 90,
+        Tags = AnySurfaceCraft,
+        category = Miscellaneous,
+        OnCreate = BurdJournals_OnCreateBlankClean,
+        inputs
+        {
+            item 1 [Base.Journal;Base.Notebook],
+            item 10 tags[base:binding],
+            item 1 tags[base:tape;base:glue],
+        }
+        outputs
+        {
+            item 1 BurdJournals.BlankSurvivalJournal,
+        }
+    }
+
+    /* ============================================================ */
+    /*         RESTORE JOURNAL RECIPES - THREAD BINDING             */
+    /*   Converts Worn or Bloody filled journals to Clean Filled    */
+    /* ============================================================ */
+
+    /* Restore Journal: Thread + Any Cover */
+    craftRecipe RestoreJournal_Thread_AnyCover
+    {
+        timedAction = Making,
+        time = 60,
+        Tags = AnySurfaceCraft,
+        category = Miscellaneous,
+        skillRequired = Tailoring:1,
+        xpAward = Tailoring:3,
+        OnCreate = BurdJournals_OnCreateFilledCleanFromWornOrBloody,
+        inputs
+        {
+            item 1 [BurdJournals.FilledSurvivalJournal_Worn;BurdJournals.FilledSurvivalJournal_Bloody],
+            item 1 tags[base:binding],
+            item 1 tags[base:thread],
+            item 1 tags[base:sewingneedle] mode:keep flags[MayDegradeLight],
+        }
+        outputs
+        {
+            item 1 BurdJournals.FilledSurvivalJournal,
+        }
+    }
+
+    /* ============================================================ */
+    /*        RESTORE JOURNAL RECIPES - ADHESIVE BINDING            */
+    /* ============================================================ */
+
+    /* Restore Journal: Adhesive + Any Cover */
+    craftRecipe RestoreJournal_Adhesive_AnyCover
+    {
+        timedAction = Making,
+        time = 45,
+        Tags = AnySurfaceCraft,
+        category = Miscellaneous,
+        OnCreate = BurdJournals_OnCreateFilledCleanFromWornOrBloody,
+        inputs
+        {
+            item 1 [BurdJournals.FilledSurvivalJournal_Worn;BurdJournals.FilledSurvivalJournal_Bloody],
+            item 5 tags[base:binding],
+            item 1 tags[base:tape;base:glue],
+        }
+        outputs
+        {
+            item 1 BurdJournals.FilledSurvivalJournal,
         }
     }
 }

@@ -32,6 +32,8 @@ Tooltip_EN = {
     Tooltip_BurdJournals_RecordProgressDesc = "Opens journal to record your current skills and traits.\nRecorded values are only updated if your current level is higher.",
     Tooltip_BurdJournals_ClaimAll = "Claim All Skills",
     Tooltip_BurdJournals_ClaimAllDesc = "Opens journal and claims all available skills.\nThis will take time based on your reading speed.",
+    Tooltip_BurdJournals_Disassemble = "Disassemble Journal",
+    Tooltip_BurdJournals_DisassembleDesc = "Tear apart this journal to recover materials.",
     
     -- Conversion
     Tooltip_BurdJournals_ConvertToClean = "Rebind as Personal Survival Journal",

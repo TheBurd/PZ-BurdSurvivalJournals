@@ -8,6 +8,11 @@ ContextMenu_EN = {
     ContextMenu_BurdJournals_UpdateRecords = "Update Records",
     ContextMenu_BurdJournals_ClaimAll = "Claim All Skills",
 
+    -- Bind Journal (Context Menu Crafting)
+    ContextMenu_BurdJournals_BindAsSurvivalJournal = "Bind as Survival Journal",
+    ContextMenu_BurdJournals_BindAsSurvivalJournal_Missing = "Bind as Survival Journal (Missing Materials)",
+    ContextMenu_BurdJournals_BindAsSurvivalJournal_NoTailoring = "Bind as Survival Journal (Requires Tailoring 1)",
+
     -- Bloody Journal
     ContextMenu_BurdJournals_BloodyBlank = "Bloody Blank Journal",
     ContextMenu_BurdJournals_ConvertViaCrafting = "Convert to Personal Journal (Crafting)",
@@ -19,6 +24,7 @@ ContextMenu_EN = {
 
     -- Personal Journal (Clean)
     ContextMenu_BurdJournals_RecordAll = "Record All Progress",
+    ContextMenu_BurdJournals_Disassemble = "Disassemble Journal",
 
     -- Legacy (keeping for compatibility)
     ContextMenu_BurdJournals_CleanRepair = "Clean/Repair",

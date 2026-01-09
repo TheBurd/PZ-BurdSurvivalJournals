@@ -651,7 +651,7 @@ end
 
 function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, journal)
     local hasPen = BurdJournals.hasWritingTool(player)
-    
+
     -- Open Journal... (for blank journals, opens in log/record mode)
     local openOption = context:addOption(
         getText("ContextMenu_BurdJournals_OpenJournal") or "Open Journal...",
@@ -668,7 +668,7 @@ function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, j
     if not hasPen then
         openOption.notAvailable = true
     end
-    
+
     -- Rename
     context:addOption(
         getText("ContextMenu_BurdJournals_Rename") or "Rename",
@@ -676,6 +676,20 @@ function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, j
         BurdJournals.ContextMenu.onRenameJournal,
         journal
     )
+
+    -- Disassemble Journal (get materials back)
+    local disassembleOption = context:addOption(
+        getText("ContextMenu_BurdJournals_Disassemble") or "Disassemble Journal",
+        player,
+        BurdJournals.ContextMenu.onDisassembleJournal,
+        journal
+    )
+    local tooltip2 = ISToolTip:new()
+    tooltip2:initialise()
+    tooltip2:setVisible(false)
+    tooltip2:setName(getText("Tooltip_BurdJournals_Disassemble") or "Disassemble Journal")
+    tooltip2.description = "Tear apart this journal for materials.\n\nYou will receive:\n  2x Paper\n  1x Leather Strips"
+    disassembleOption.toolTip = tooltip2
 end
 
 -- ==================== ACTION CALLBACKS ====================
@@ -1128,11 +1142,73 @@ function BurdJournals.ContextMenu.onConfirmOverwrite(target, button, journal)
     end
 end
 
+-- Disassemble journal (get materials back)
+function BurdJournals.ContextMenu.onDisassembleJournal(player, journal)
+    -- Pick up the journal first if it's not in inventory
+    BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
+        -- Show confirmation dialog
+        local confirmText = getText("UI_BurdJournals_ConfirmDisassemble") or "Disassemble this journal?"
+        confirmText = confirmText .. "\n\nYou will receive:\n2x Paper, 1x Leather Strips"
+
+        local modal = ISModalDialog:new(
+            getCore():getScreenWidth() / 2 - 150,
+            getCore():getScreenHeight() / 2 - 75,
+            300, 150,
+            confirmText,
+            true,
+            p,
+            BurdJournals.ContextMenu.onConfirmDisassemble,
+            nil,
+            j
+        )
+        modal:initialise()
+        modal:addToUIManager()
+    end)
+end
+
+function BurdJournals.ContextMenu.onConfirmDisassemble(target, button, journal)
+    if button.internal == "YES" then
+        if BurdJournals.DisassembleJournalAction then
+            ISTimedActionQueue.add(BurdJournals.DisassembleJournalAction:new(target, journal))
+        end
+    end
+end
+
+-- ==================== RECIPE STRING PARSER (for disassemble output) ====================
+
+function BurdJournals.ContextMenu.parseRecipeString(recipeStr)
+    local materials = {}
+    if not recipeStr or recipeStr == "" then return materials end
+
+    -- Split by pipe |
+    for part in recipeStr:gmatch("[^|]+") do
+        part = part:match("^%s*(.-)%s*$") -- trim whitespace
+        if part and part ~= "" then
+            local mat = {}
+            -- Check for :keep suffix
+            mat.keep = part:match(":keep$") ~= nil
+            if mat.keep then
+                part = part:gsub(":keep$", "")
+            end
+
+            -- Parse type:qty format
+            local itemType, qty = part:match("^(.+):(%d+)$")
+            if itemType and qty then
+                mat.type = itemType
+                mat.count = tonumber(qty)
+                -- Generate display name
+                mat.name = itemType:gsub("Base%.", ""):gsub("tag:", "")
+                mat.name = mat.name:gsub("(%l)(%u)", "%1 %2") -- CamelCase to spaced
+                table.insert(materials, mat)
+            end
+        end
+    end
+    return materials
+end
+
 -- ==================== EVENT REGISTRATION ====================
 
 Events.OnFillInventoryObjectContextMenu.Add(BurdJournals.ContextMenu.onFillInventoryObjectContextMenu)
-
--- Debug removed
 
 
 

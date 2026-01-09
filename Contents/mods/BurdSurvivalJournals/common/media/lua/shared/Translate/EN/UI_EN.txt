@@ -27,6 +27,7 @@ UI_EN = {
     UI_BurdJournals_ConfirmErase = "Are you sure you want to erase this journal? All recorded skills will be lost forever.",
     UI_BurdJournals_ConfirmOverwrite = "This will overwrite the existing journal contents with your current skills. Are you sure?",
     UI_BurdJournals_ConfirmConvert = "This will destroy the remaining rewards. Are you sure?",
+    UI_BurdJournals_ConfirmDisassemble = "Disassemble this journal?",
     UI_BurdJournals_RenamePrompt = "Enter a new name for this journal:",
     
     -- Messages

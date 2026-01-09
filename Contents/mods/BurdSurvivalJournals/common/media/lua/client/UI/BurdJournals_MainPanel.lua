@@ -200,6 +200,46 @@ function BurdJournals.UI.MainPanel:refreshPlayer()
     end
 end
 
+-- Refresh journal data and check for pending journal updates
+function BurdJournals.UI.MainPanel:refreshJournalData()
+    -- Refresh player first
+    self:refreshPlayer()
+
+    -- Check if we have a pending new journal ID (from blank->filled conversion)
+    if self.pendingNewJournalId then
+        print("[BurdJournals] refreshJournalData: Checking for pending journal ID " .. tostring(self.pendingNewJournalId))
+        local newJournal = BurdJournals.findItemById(self.player, self.pendingNewJournalId)
+        if newJournal then
+            print("[BurdJournals] refreshJournalData: Found pending journal! Updating reference.")
+            self.journal = newJournal
+            self.pendingNewJournalId = nil
+        else
+            print("[BurdJournals] refreshJournalData: Pending journal still not found")
+        end
+    end
+
+    -- Ensure journal reference is still valid
+    if not self.journal or not self.journal:getContainer() then
+        print("[BurdJournals] refreshJournalData: Journal invalid, trying to find by ID")
+        -- Try to find the journal again if we have an ID stored
+        if self.pendingNewJournalId then
+            local journal = BurdJournals.findItemById(self.player, self.pendingNewJournalId)
+            if journal then
+                self.journal = journal
+                self.pendingNewJournalId = nil
+            end
+        end
+    end
+
+    -- Refresh the lists
+    if self.skillList then
+        pcall(function() self:populateRecordList() end)
+    end
+    if self.absorbList then
+        pcall(function() self:refreshAbsorptionList() end)
+    end
+end
+
 -- ==================== ABSORPTION UI (Worn/Bloody Journals) ====================
 -- Redesigned with better visual hierarchy, XP bars, and themed styling
 
@@ -925,9 +965,13 @@ end
 -- ==================== REFRESH THE LIST ====================
 
 function BurdJournals.UI.MainPanel:refreshAbsorptionList()
+    print("[BurdJournals] UI: refreshAbsorptionList called")
     -- Re-count totals
     local journalData = BurdJournals.getJournalData(self.journal)
     local hasBloodyOrigin = BurdJournals.hasBloodyOrigin(self.journal)
+    -- Debug: show claimed count
+    local claimedCount = journalData and journalData.claimedSkills and BurdJournals.countTable(journalData.claimedSkills) or 0
+    print("[BurdJournals] UI: refreshAbsorptionList sees claimedSkills count: " .. tostring(claimedCount))
 
     local skillCount = 0
     local traitCount = 0
@@ -1250,7 +1294,40 @@ function BurdJournals.UI.MainPanel:startRecordingTrait(traitId)
     return true
 end
 
--- Start recording all skills and traits
+-- Start recording a single stat
+function BurdJournals.UI.MainPanel:startRecordingStat(statId, value)
+    if self.recordingState and self.recordingState.active then
+        return false
+    end
+
+    if not self.recordingState then
+        self.recordingState = {}
+    end
+
+    self.recordingState = {
+        active = true,
+        skillName = nil,
+        traitId = nil,
+        statId = statId,
+        isRecordAll = false,
+        progress = 0,
+        totalTime = self:getStatRecordingTime(),
+        startTime = getTimestampMs(),
+        pendingRecords = {{type = "stat", name = statId, value = value}},
+        currentIndex = 1,
+        queue = {},
+    }
+
+    Events.OnTick.Add(BurdJournals.UI.MainPanel.onRecordingTickStatic)
+    return true
+end
+
+-- Get recording time for stats (uses skill time as base)
+function BurdJournals.UI.MainPanel:getStatRecordingTime()
+    return self:getSkillRecordingTime()
+end
+
+-- Start recording all skills, traits, and stats
 function BurdJournals.UI.MainPanel:startRecordingAll()
     if self.recordingState and self.recordingState.active then
         return false
@@ -1293,7 +1370,20 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
             totalTime = totalTime + self:getTraitRecordingTime()
         end
     end
-    
+
+    -- Collect all recordable stats (only if enabled)
+    if BurdJournals.getSandboxOption("EnableStatRecording") then
+        for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
+            if BurdJournals.isStatEnabled(stat.id) then
+                local canUpdate, currentVal, _ = BurdJournals.canUpdateStat(self.journal, stat.id, self.player)
+                if canUpdate then
+                    table.insert(pendingRecords, {type = "stat", name = stat.id, value = currentVal})
+                    totalTime = totalTime + self:getStatRecordingTime()
+                end
+            end
+        end
+    end
+
     if #pendingRecords == 0 then
         self:showFeedback("Nothing new to record", {r=0.7, g=0.7, b=0.5})
         return false
@@ -1445,11 +1535,13 @@ function BurdJournals.UI.MainPanel:completeRecording()
         end
     end
 
-    -- Collect skills and traits to send to server
+    -- Collect skills, traits, and stats to send to server
     local skillsToRecord = {}
     local traitsToRecord = {}
+    local statsToRecord = {}
     local skillCount = 0
     local traitCount = 0
+    local statCount = 0
 
     for _, record in ipairs(self.recordingState.pendingRecords) do
         if record.type == "skill" then
@@ -1464,22 +1556,29 @@ function BurdJournals.UI.MainPanel:completeRecording()
                 isPositive = true
             }
             traitCount = traitCount + 1
+        elseif record.type == "stat" then
+            statsToRecord[record.name] = {
+                value = record.value
+            }
+            statCount = statCount + 1
         end
     end
 
     -- Store pending counts for feedback after server response
     self.pendingRecordFeedback = {
         skills = skillCount,
-        traits = traitCount
+        traits = traitCount,
+        stats = statCount
     }
 
     -- Send to server - server handles modData update and journal conversion
     sendClientCommand(self.player, "BurdJournals", "recordProgress", {
         journalId = self.journal:getID(),
         skills = skillsToRecord,
-        traits = traitsToRecord
+        traits = traitsToRecord,
+        stats = statsToRecord
     })
-
+    
     -- Show pending feedback (will be updated when server responds)
     self:showFeedback("Saving progress...", {r=0.7, g=0.7, b=0.7})
     
@@ -1492,13 +1591,14 @@ function BurdJournals.UI.MainPanel:completeRecording()
     -- Check if there are queued items to record next
     if #savedQueue > 0 then
         local nextRecord = table.remove(savedQueue, 1)
-        
+
         -- Start recording the next queued item
         if nextRecord.type == "skill" then
             self.recordingState = {
                 active = true,
                 skillName = nextRecord.name,
                 traitId = nil,
+                statId = nil,
                 isRecordAll = false,
                 progress = 0,
                 totalTime = self:getSkillRecordingTime(),
@@ -1507,16 +1607,31 @@ function BurdJournals.UI.MainPanel:completeRecording()
                 currentIndex = 1,
                 queue = savedQueue,
             }
-        else
+        elseif nextRecord.type == "trait" then
             self.recordingState = {
                 active = true,
                 skillName = nil,
                 traitId = nextRecord.name,
+                statId = nil,
                 isRecordAll = false,
                 progress = 0,
                 totalTime = self:getTraitRecordingTime(),
                 startTime = getTimestampMs(),
                 pendingRecords = {{type = "trait", name = nextRecord.name}},
+                currentIndex = 1,
+                queue = savedQueue,
+            }
+        elseif nextRecord.type == "stat" then
+            self.recordingState = {
+                active = true,
+                skillName = nil,
+                traitId = nil,
+                statId = nextRecord.name,
+                isRecordAll = false,
+                progress = 0,
+                totalTime = self:getStatRecordingTime(),
+                startTime = getTimestampMs(),
+                pendingRecords = {{type = "stat", name = nextRecord.name, value = nextRecord.value or nextRecord.xp}},
                 currentIndex = 1,
                 queue = savedQueue,
             }
@@ -1562,13 +1677,10 @@ function BurdJournals.UI.MainPanel:completeRecording()
     if self.skillList then
         self:populateRecordList()
     end
-    
-    -- Sync modData in multiplayer
-    if isClient() and not isServer() then
-        sendClientCommand(self.player, "BurdJournals", "syncJournalData", {
-            journalId = self.journal:getID()
-        })
-    end
+
+    -- Note: No need to send syncJournalData here - server already calls transmitModData()
+    -- which syncs the journal data to the client. The handleRecordSuccess callback
+    -- will update our journal reference if a blank->filled conversion occurred.
 end
 
 -- Record a skill (starts timed recording)
@@ -1603,6 +1715,25 @@ function BurdJournals.UI.MainPanel:recordTrait(traitId)
     end
     
     if not self:startRecordingTrait(traitId) then
+        self:showFeedback("Cannot record", {r=0.9, g=0.5, b=0.3})
+    end
+end
+
+-- Record a stat (starts timed recording)
+function BurdJournals.UI.MainPanel:recordStat(statId, value)
+    -- If already recording, add to queue
+    if self.recordingState and self.recordingState.active and not self.recordingState.isRecordAll then
+        if self:addToRecordQueue("stat", statId, value) then
+            local stat = BurdJournals.getStatById(statId)
+            local statName = stat and stat.name or statId
+            self:showFeedback("Queued: " .. statName, {r=0.5, g=0.7, b=0.8})
+        else
+            self:showFeedback("Already queued", {r=0.9, g=0.7, b=0.3})
+        end
+        return
+    end
+
+    if not self:startRecordingStat(statId, value) then
         self:showFeedback("Cannot record", {r=0.9, g=0.5, b=0.3})
     end
 end
@@ -1764,34 +1895,29 @@ function BurdJournals.UI.MainPanel:completeLearning()
 end
 
 -- Send skill absorption command to server (actual application)
+-- Always use sendClientCommand - PZ routes this locally in single player
 function BurdJournals.UI.MainPanel:sendAbsorbSkill(skillName, xp)
     local journalId = self.journal:getID()
-    if isClient() and not isServer() then
-        sendClientCommand(self.player, "BurdJournals", "absorbSkill", {
-            journalId = journalId,
-            skillName = skillName
-        })
-    else
-        self:applySkillXPDirectly(skillName, xp)
-    end
+    sendClientCommand(self.player, "BurdJournals", "absorbSkill", {
+        journalId = journalId,
+        skillName = skillName
+    })
 end
 
 -- Send trait absorption command to server (actual application)
+-- Always use sendClientCommand - PZ routes this locally in single player
 function BurdJournals.UI.MainPanel:sendAbsorbTrait(traitId)
     local journalId = self.journal:getID()
-    if isClient() and not isServer() then
-        sendClientCommand(self.player, "BurdJournals", "absorbTrait", {
-            journalId = journalId,
-            traitId = traitId
-        })
-    else
-        self:applyTraitDirectly(traitId)
-    end
+    sendClientCommand(self.player, "BurdJournals", "absorbTrait", {
+        journalId = journalId,
+        traitId = traitId
+    })
 end
 
 -- ==================== CLAIM FUNCTIONS (for Player Journals - SET mode) ====================
 
 -- Send skill claim command to server (SET mode - for player journals)
+-- Always use sendClientCommand - PZ routes this locally in single player
 function BurdJournals.UI.MainPanel:sendClaimSkill(skillName, recordedXP)
     local journalId = self.journal:getID()
 
@@ -1799,17 +1925,14 @@ function BurdJournals.UI.MainPanel:sendClaimSkill(skillName, recordedXP)
     if not self.pendingClaims then self.pendingClaims = {skills = {}, traits = {}} end
     self.pendingClaims.skills[skillName] = true
 
-    if isClient() and not isServer() then
-        sendClientCommand(self.player, "BurdJournals", "claimSkill", {
-            journalId = journalId,
-            skillName = skillName
-        })
-    else
-        self:applySkillXPSetMode(skillName, recordedXP)
-    end
+    sendClientCommand(self.player, "BurdJournals", "claimSkill", {
+        journalId = journalId,
+        skillName = skillName
+    })
 end
 
 -- Send trait claim command to server (for player journals)
+-- Always use sendClientCommand - PZ routes this locally in single player
 function BurdJournals.UI.MainPanel:sendClaimTrait(traitId)
     local journalId = self.journal:getID()
 
@@ -1817,14 +1940,10 @@ function BurdJournals.UI.MainPanel:sendClaimTrait(traitId)
     if not self.pendingClaims then self.pendingClaims = {skills = {}, traits = {}} end
     self.pendingClaims.traits[traitId] = true
 
-    if isClient() and not isServer() then
-        sendClientCommand(self.player, "BurdJournals", "claimTrait", {
-            journalId = journalId,
-            traitId = traitId
-        })
-    else
-        self:applyTraitDirectly(traitId)
-    end
+    sendClientCommand(self.player, "BurdJournals", "claimTrait", {
+        journalId = journalId,
+        traitId = traitId
+    })
 end
 
 -- Apply skill XP in SET mode (single player fallback)
@@ -1940,30 +2059,32 @@ end
 -- ==================== RECORDING QUEUE FUNCTIONS ====================
 
 -- Add to recording queue
+-- For stats, 'xp' parameter is used as 'value'
 function BurdJournals.UI.MainPanel:addToRecordQueue(recordType, name, xp, level)
     if not self.recordingState then return false end
     if not self.recordingState.queue then
         self.recordingState.queue = {}
     end
-    
+
     -- Check if already recording this one
-    if self.recordingState.skillName == name or self.recordingState.traitId == name then
+    if self.recordingState.skillName == name or self.recordingState.traitId == name or self.recordingState.statId == name then
         return false
     end
-    
+
     -- Check if already in queue
     for _, queued in ipairs(self.recordingState.queue) do
         if queued.name == name then
             return false
         end
     end
-    
-    -- Add to queue
+
+    -- Add to queue (for stats, xp is used as the value)
     table.insert(self.recordingState.queue, {
         type = recordType,
         name = name,
         xp = xp,
-        level = level
+        level = level,
+        value = xp  -- For stats, we use xp parameter as value
     })
     
     -- Play queue sound
@@ -2129,6 +2250,24 @@ function BurdJournals.UI.MainPanel:update()
             self.feedbackLabel:setVisible(false)
         end
     end
+
+    -- Check for pending journal update (from blank->filled conversion)
+    -- This runs every update tick until the new journal is found
+    if self.pendingNewJournalId then
+        -- Throttle the check to avoid excessive searching
+        self.pendingJournalCheckCounter = (self.pendingJournalCheckCounter or 0) + 1
+        if self.pendingJournalCheckCounter >= 30 then  -- Check every ~30 ticks
+            self.pendingJournalCheckCounter = 0
+            local newJournal = BurdJournals.findItemById(self.player, self.pendingNewJournalId)
+            if newJournal then
+                print("[BurdJournals] update: Found pending new journal! Updating reference.")
+                self.journal = newJournal
+                self.pendingNewJournalId = nil
+                -- Refresh the UI with new journal data
+                self:refreshJournalData()
+            end
+        end
+    end
 end
 
 -- ==================== CLOSE ====================
@@ -2271,21 +2410,22 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode)
     end
 
     local width = 360
-    
+
     -- Calculate dynamic height based on content
     local baseHeight = 180  -- Header + author + footer
-    local itemHeight = 52   -- Height per skill/trait row
+    local itemHeight = 52   -- Height per skill/trait/stat row
     local headerRowHeight = 52  -- Height for section headers
     local minHeight = 420   -- Show about 4-5 items
-    local maxHeight = 550   -- Cap the max height to prevent it from getting too tall
-    
+    local maxHeight = 650   -- Increased max height to accommodate stats section
+
     -- Count items for height calculation
     local journalData = BurdJournals.getJournalData(journal)
     local hasBloodyOrigin = BurdJournals.hasBloodyOrigin(journal)
     local skillCount = 0
     local traitCount = 0
-    
-    -- For log mode (recording), count player's skills instead
+    local statCount = 0
+
+    -- For log mode (recording), count player's skills and stats
     if mode == "log" then
         local allowedSkills = BurdJournals.getAllowedSkills()
         if allowedSkills then
@@ -2300,6 +2440,15 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode)
                 end
             end
         end
+
+        -- Count enabled stats
+        if BurdJournals.RECORDABLE_STATS then
+            for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
+                if BurdJournals.isStatEnabled(stat.id) then
+                    statCount = statCount + 1
+                end
+            end
+        end
     else
         if journalData and journalData.skills then
             for _ in pairs(journalData.skills) do
@@ -2307,14 +2456,14 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode)
             end
         end
     end
-    
+
     if hasBloodyOrigin and journalData and journalData.traits then
         for _ in pairs(journalData.traits) do
             traitCount = traitCount + 1
         end
     end
-    
-    -- Calculate ideal height: base + skills header + skills + traits header (if any) + traits
+
+    -- Calculate ideal height: base + skills header + skills + traits header (if any) + traits + stats header (if any) + stats
     local contentHeight = baseHeight
     contentHeight = contentHeight + headerRowHeight  -- Skills header
     contentHeight = contentHeight + (skillCount * itemHeight)
@@ -2322,7 +2471,11 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode)
         contentHeight = contentHeight + headerRowHeight  -- Traits header
         contentHeight = contentHeight + (traitCount * itemHeight)
     end
-    
+    if statCount > 0 then
+        contentHeight = contentHeight + headerRowHeight  -- Stats header
+        contentHeight = contentHeight + (statCount * itemHeight)
+    end
+
     -- Clamp to min/max
     local height = math.max(minHeight, math.min(maxHeight, contentHeight))
     
@@ -2419,6 +2572,8 @@ function BurdJournals.UI.MainPanel:createLogUI()
                             listbox.mainPanel:recordSkill(item.skillName, item.xp, item.level)
                         elseif item.isTrait then
                             listbox.mainPanel:recordTrait(item.traitId)
+                        elseif item.isStat then
+                            listbox.mainPanel:recordStat(item.statId, item.currentValue)
                         end
                     end
                 end
@@ -2579,6 +2734,59 @@ function BurdJournals.UI.MainPanel:populateRecordList()
                 isRecorded = isRecorded,
                 canRecord = not isRecorded,
             })
+        end
+    end
+
+    -- ============ PLAYER STATS SECTION ============
+    -- Only show stats section if stat recording is enabled
+    if BurdJournals.getSandboxOption("EnableStatRecording") then
+        local recordedStats = journalData.stats or {}
+
+        -- Count recordable stats (only enabled ones)
+        local recordableStatCount = 0
+        local enabledStatCount = 0
+        for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
+            if BurdJournals.isStatEnabled(stat.id) then
+                enabledStatCount = enabledStatCount + 1
+                local canUpdate, currentVal, recordedVal = BurdJournals.canUpdateStat(self.journal, stat.id, self.player)
+                if canUpdate then
+                    recordableStatCount = recordableStatCount + 1
+                end
+            end
+        end
+
+        -- Only show stats section if at least one stat type is enabled
+        if enabledStatCount > 0 then
+            self.skillList:addItem("STATS", {isHeader = true, text = "YOUR STATS", count = recordableStatCount})
+
+            for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
+                -- Skip disabled stats
+                if BurdJournals.isStatEnabled(stat.id) then
+                    local currentValue = BurdJournals.getStatValue(self.player, stat.id)
+                    local recorded = recordedStats[stat.id]
+                    local recordedValue = recorded and recorded.value or nil
+                    local canUpdate, _, _ = BurdJournals.canUpdateStat(self.journal, stat.id, self.player)
+
+                    -- Format for display
+                    local currentFormatted = BurdJournals.formatStatValue(stat.id, currentValue)
+                    local recordedFormatted = recordedValue and BurdJournals.formatStatValue(stat.id, recordedValue) or nil
+
+                    self.skillList:addItem(stat.id, {
+                        isStat = true,
+                        statId = stat.id,
+                        statName = stat.name,
+                        statCategory = stat.category,
+                        statDescription = stat.description,
+                        currentValue = currentValue,
+                        currentFormatted = currentFormatted,
+                        recordedValue = recordedValue,
+                        recordedFormatted = recordedFormatted,
+                        isRecorded = recordedValue ~= nil,
+                        canRecord = canUpdate,
+                        isText = stat.isText,
+                    })
+                end
+            end
         end
     end
 end
@@ -2801,7 +3009,76 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
             end
         end
     end
-    
+
+    -- ============ STAT ROW ============
+    if data.isStat then
+        local recordingState = mainPanel.recordingState
+        local isRecordingThis = recordingState and recordingState.active and not recordingState.isRecordAll
+                               and recordingState.statId == data.statId
+
+        -- Stat name with category
+        local statName = data.statName or data.statId or "Unknown Stat"
+        self:drawText(statName, textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
+
+        -- Check if in queue
+        local queuePosition = mainPanel:getRecordQueuePosition(data.statId)
+        local isQueued = queuePosition ~= nil
+
+        -- Value display
+        if isRecordingThis then
+            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            self:drawText(progressText, textX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
+        elseif isQueued then
+            local valueText = "Current: " .. (data.currentFormatted or "?") .. " - Queued #" .. queuePosition
+            self:drawText(valueText, textX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
+        elseif data.isRecorded then
+            if data.canRecord then
+                -- Can update (current value is higher/different)
+                local valueText = "Now: " .. (data.currentFormatted or "?") .. " (was " .. (data.recordedFormatted or "?") .. ")"
+                self:drawText(valueText, textX, cardY + 22, 0.5, 0.8, 0.5, 1, UIFont.Small)
+            else
+                -- Already at max
+                local valueText = "Recorded: " .. (data.recordedFormatted or "?")
+                self:drawText(valueText, textX, cardY + 22, 0.4, 0.5, 0.4, 1, UIFont.Small)
+            end
+        else
+            -- Not yet recorded
+            local valueText = "Current: " .. (data.currentFormatted or "?")
+            self:drawText(valueText, textX, cardY + 22, 0.5, 0.7, 0.8, 1, UIFont.Small)
+        end
+
+        -- RECORD/QUEUE button
+        if data.canRecord and not isRecordingThis then
+            local btnW = 65
+            local btnH = 24
+            local btnX = cardX + cardW - btnW - 10
+            local btnY = cardY + (cardH - btnH) / 2
+
+            if isQueued then
+                -- Show queue position indicator
+                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.35, 0.45, 0.5)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.45, 0.55, 0.6)
+                local btnText = "#" .. queuePosition
+                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
+            elseif recordingState and recordingState.active and not recordingState.isRecordAll then
+                -- Show QUEUE button when another item is recording
+                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.3, 0.4, 0.5)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.45, 0.55, 0.65)
+                local btnText = "QUEUE"
+                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
+            else
+                -- Normal RECORD button (cyan/teal for stats)
+                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.4, 0.45)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.35, 0.55, 0.6)
+                local btnText = "RECORD"
+                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+            end
+        end
+    end
+
     return y + h
 end
 
@@ -2818,11 +3095,11 @@ function BurdJournals.UI.MainPanel:createViewUI()
     -- For player journals, we use a modified absorption UI
     -- The main difference is SET mode instead of ADD mode, and no dissolution
     self:refreshPlayer()
-    
+
     local padding = 16
     local y = 0
     local btnHeight = 32
-    
+
     local journalData = BurdJournals.getJournalData(self.journal)
 
     -- Store for rendering
@@ -2832,7 +3109,7 @@ function BurdJournals.UI.MainPanel:createViewUI()
     -- Track pending claims for immediate UI feedback (before async XP applies)
     -- This allows the UI to show "claimed" immediately while XP is being applied
     self.pendingClaims = self.pendingClaims or {skills = {}, traits = {}}
-
+    
     -- ============ HEADER STYLING (Blue/Teal for personal journals) ============
     local headerHeight = 52
     self.headerColor = {r=0.12, g=0.25, b=0.35}

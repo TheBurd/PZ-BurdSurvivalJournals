@@ -16,6 +16,8 @@
 
 require "BurdJournals_Shared"
 
+print("[BurdJournals] SERVER MODULE LOADING...")
+
 BurdJournals = BurdJournals or {}
 BurdJournals.Server = BurdJournals.Server or {}
 
@@ -47,6 +49,25 @@ function BurdJournals.Server.copyJournalData(journal)
     return journalData
 end
 
+-- ==================== SINGLE PLAYER WORKAROUND ====================
+-- In single player, sendServerCommand doesn't trigger OnServerCommand events.
+-- This wrapper directly calls client handlers when in SP mode.
+
+function BurdJournals.Server.sendToClient(player, command, args)
+    -- Always send the standard command (works in MP)
+    sendServerCommand(player, "BurdJournals", command, args)
+
+    -- In single player, also directly invoke the client handler
+    -- SP mode: both isClient() and isServer() return true
+    if isClient() and isServer() then
+        -- Call client handler directly - no deferral needed in SP
+        -- The server code has already updated the journal modData
+        if BurdJournals.Client and BurdJournals.Client.onServerCommand then
+            BurdJournals.Client.onServerCommand("BurdJournals", command, args)
+        end
+    end
+end
+
 -- ==================== SERVER INITIALIZATION ====================
 
 function BurdJournals.Server.init()
@@ -56,15 +77,17 @@ end
 
 function BurdJournals.Server.onClientCommand(module, command, player, args)
     if module ~= "BurdJournals" then return end
+
+    print("[BurdJournals] Server received command: " .. tostring(command) .. " from player: " .. tostring(player and player:getUsername() or "nil"))
+
     if not player then
-        -- Debug removed
+        print("[BurdJournals] ERROR: No player in command")
         return
     end
 
-
     if not BurdJournals.isEnabled() then
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journals are disabled on this server."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journals are disabled on this server."})
         return
     end
 
@@ -90,6 +113,8 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         BurdJournals.Server.handleInitializeJournal(player, args)
     elseif command == "recordProgress" then
         BurdJournals.Server.handleRecordProgress(player, args)
+    elseif command == "syncJournalData" then
+        BurdJournals.Server.handleSyncJournalData(player, args)
     end
 end
 
@@ -167,7 +192,7 @@ end
 function BurdJournals.Server.handleInitializeJournal(player, args)
     if not args or not args.itemType then
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
@@ -177,7 +202,7 @@ function BurdJournals.Server.handleInitializeJournal(player, args)
     -- Find the journal in player's inventory by type that needs initialization
     local inventory = player:getInventory()
     if not inventory then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Inventory not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Inventory not found."})
         return
     end
 
@@ -246,7 +271,7 @@ function BurdJournals.Server.handleInitializeJournal(player, args)
 
     if not journal then
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found for initialization."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found for initialization."})
         return
     end
 
@@ -356,7 +381,7 @@ function BurdJournals.Server.handleInitializeJournal(player, args)
     end
 
     -- Send success response with the UUID
-    sendServerCommand(player, "BurdJournals", "journalInitialized", {
+    BurdJournals.Server.sendToClient(player, "journalInitialized", {
         uuid = uuid,
         itemType = itemType,
         skillCount = modData.BurdJournals.skills and BurdJournals.countTable(modData.BurdJournals.skills) or 0
@@ -367,18 +392,18 @@ end
 
 function BurdJournals.Server.handleLogSkills(player, args)
     if not args or not args.journalId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
     local journal = BurdJournals.findItemById(player, args.journalId)
     if not journal then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
     if not BurdJournals.isBlankJournal(journal) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal already has content."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal already has content."})
         return
     end
 
@@ -386,7 +411,7 @@ function BurdJournals.Server.handleLogSkills(player, args)
     if BurdJournals.getSandboxOption("RequirePenToWrite") then
         local pen = BurdJournals.findWritingTool(player)
         if not pen then
-            sendServerCommand(player, "BurdJournals", "error", {message = "You need a pen or pencil to write."})
+            BurdJournals.Server.sendToClient(player, "error", {message = "You need a pen or pencil to write."})
             return
         end
         local usesPerLog = BurdJournals.getSandboxOption("PenUsesPerLog") or 1
@@ -434,14 +459,18 @@ function BurdJournals.Server.handleLogSkills(player, args)
         BurdJournals.updateJournalName(filledJournal)
         BurdJournals.updateJournalIcon(filledJournal)
 
-        -- CRITICAL: Sync modData and notify clients about new item
+        -- CRITICAL: Sync modData to clients in multiplayer
         if filledJournal.transmitModData then
             filledJournal:transmitModData()
+            print("[BurdJournals] Server: transmitModData called for filled journal in handleLogSkills")
         end
+
+        -- CRITICAL: Notify clients about the new item!
         sendAddItemToContainer(inventory, filledJournal)
+        print("[BurdJournals] Server: sendAddItemToContainer called for filled journal in handleLogSkills")
     end
 
-    sendServerCommand(player, "BurdJournals", "logSuccess", {})
+    BurdJournals.Server.sendToClient(player, "logSuccess", {})
 end
 
 -- ==================== RECORD PROGRESS (Incremental Updates - MP Safe) ====================
@@ -450,13 +479,13 @@ end
 
 function BurdJournals.Server.handleRecordProgress(player, args)
     if not args or not args.journalId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
     local journal = BurdJournals.findItemById(player, args.journalId)
     if not journal then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
@@ -464,7 +493,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     if BurdJournals.getSandboxOption("RequirePenToWrite") then
         local pen = BurdJournals.findWritingTool(player)
         if not pen then
-            sendServerCommand(player, "BurdJournals", "error", {message = "You need a pen or pencil to write."})
+            BurdJournals.Server.sendToClient(player, "error", {message = "You need a pen or pencil to write."})
             return
         end
         local usesPerLog = BurdJournals.getSandboxOption("PenUsesPerLog") or 1
@@ -482,9 +511,13 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     if not modData.BurdJournals.traits then
         modData.BurdJournals.traits = {}
     end
+    if not modData.BurdJournals.stats then
+        modData.BurdJournals.stats = {}
+    end
 
     local skillsRecorded = 0
     local traitsRecorded = 0
+    local statsRecorded = 0
 
     -- Apply skills from client
     if args.skills then
@@ -513,6 +546,19 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         end
     end
 
+    -- Apply stats from client
+    if args.stats then
+        for statId, statData in pairs(args.stats) do
+            -- Stats can always be updated (overwrite with current value)
+            modData.BurdJournals.stats[statId] = {
+                value = statData.value,
+                recordedBy = player:getUsername(),
+                timestamp = getGameTime():getWorldAgeHours()
+            }
+            statsRecorded = statsRecorded + 1
+        end
+    end
+
     -- Update journal metadata
     modData.BurdJournals.author = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname()
     modData.BurdJournals.ownerUsername = player:getUsername()  -- Store username for ownership checks
@@ -523,14 +569,18 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     -- Check if this is a blank journal that needs to become filled
     local journalType = journal:getFullType()
     local isBlank = string.find(journalType, "Blank") ~= nil
-    local totalItems = BurdJournals.countTable(modData.BurdJournals.skills) + BurdJournals.countTable(modData.BurdJournals.traits)
+    local totalItems = BurdJournals.countTable(modData.BurdJournals.skills) + BurdJournals.countTable(modData.BurdJournals.traits) + BurdJournals.countTable(modData.BurdJournals.stats)
+
+    print("[BurdJournals] handleRecordProgress: journalType=" .. tostring(journalType) .. ", isBlank=" .. tostring(isBlank) .. ", totalItems=" .. tostring(totalItems))
 
     local newJournalId = nil
 
     if isBlank and totalItems > 0 then
+        print("[BurdJournals] Converting blank journal to filled...")
         -- Convert blank to filled journal
         local inventory = journal:getContainer()
         if inventory then
+            print("[BurdJournals] Got inventory container: " .. tostring(inventory))
             -- Store the modData before removing
             local savedData = {}
             for k, v in pairs(modData.BurdJournals) do
@@ -540,10 +590,12 @@ function BurdJournals.Server.handleRecordProgress(player, args)
             -- Remove the blank journal and notify clients (CRITICAL for MP sync!)
             inventory:Remove(journal)
             sendRemoveItemFromContainer(inventory, journal)
+            print("[BurdJournals] Removed blank journal and notified clients")
 
-            -- Create a new filled journal
+            -- Create a new filled journal and notify clients (CRITICAL for MP sync!)
             local filledJournal = inventory:AddItem("BurdJournals.FilledSurvivalJournal")
             if filledJournal then
+                print("[BurdJournals] Created filled journal: " .. tostring(filledJournal:getID()))
                 -- Copy the modData to the new journal
                 local newModData = filledJournal:getModData()
                 newModData.BurdJournals = savedData
@@ -555,15 +607,23 @@ function BurdJournals.Server.handleRecordProgress(player, args)
                 -- Sync modData to clients in multiplayer
                 if filledJournal.transmitModData then
                     filledJournal:transmitModData()
+                    print("[BurdJournals] transmitModData called on filled journal")
                 end
 
-                -- Notify clients about the new item (CRITICAL for MP sync!)
+                -- Notify clients about the new item in inventory (CRITICAL for MP sync!)
                 sendAddItemToContainer(inventory, filledJournal)
+                print("[BurdJournals] sendAddItemToContainer called for filled journal")
 
                 newJournalId = filledJournal:getID()
+                print("[BurdJournals] Conversion complete, newJournalId=" .. tostring(newJournalId))
+            else
+                print("[BurdJournals] ERROR: Failed to create filled journal!")
             end
+        else
+            print("[BurdJournals] ERROR: No inventory container found!")
         end
     else
+        print("[BurdJournals] Not converting (isBlank=" .. tostring(isBlank) .. ", totalItems=" .. tostring(totalItems) .. ")")
         -- Just update the existing journal
         BurdJournals.updateJournalName(journal)
         BurdJournals.updateJournalIcon(journal)
@@ -571,6 +631,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         -- Sync modData to clients in multiplayer
         if journal.transmitModData then
             journal:transmitModData()
+            print("[BurdJournals] transmitModData called on existing journal")
         end
     end
 
@@ -605,38 +666,62 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     end
 
     -- Send success response with feedback data AND the updated journal data
-    sendServerCommand(player, "BurdJournals", "recordSuccess", {
+    print("[BurdJournals] Sending recordSuccess response, newJournalId=" .. tostring(newJournalId) .. ", journalId=" .. tostring(finalJournalId))
+    BurdJournals.Server.sendToClient(player, "recordSuccess", {
         skillsRecorded = skillsRecorded,
         traitsRecorded = traitsRecorded,
+        statsRecorded = statsRecorded,
         newJournalId = newJournalId,
         journalId = finalJournalId,
         journalData = journalData  -- Include the actual data so client can apply it directly
     })
 end
 
--- ==================== LEARN SKILLS (Clean Journals - SET Mode) ====================
+-- ==================== SYNC JOURNAL DATA ====================
+-- Called by client after local modData changes to sync to server
 
-function BurdJournals.Server.handleLearnSkills(player, args)
+function BurdJournals.Server.handleSyncJournalData(player, args)
     if not args or not args.journalId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        print("[BurdJournals] handleSyncJournalData: Invalid request (no journalId)")
         return
     end
 
     local journal = BurdJournals.findItemById(player, args.journalId)
     if not journal then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        print("[BurdJournals] handleSyncJournalData: Journal not found: " .. tostring(args.journalId))
+        return
+    end
+
+    -- Just transmit the current modData to ensure sync
+    if journal.transmitModData then
+        journal:transmitModData()
+        print("[BurdJournals] handleSyncJournalData: transmitModData called for journal " .. tostring(args.journalId))
+    end
+end
+
+-- ==================== LEARN SKILLS (Clean Journals - SET Mode) ====================
+
+function BurdJournals.Server.handleLearnSkills(player, args)
+    if not args or not args.journalId then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
+        return
+    end
+
+    local journal = BurdJournals.findItemById(player, args.journalId)
+    if not journal then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
     -- Must be a clean filled journal
     if not BurdJournals.canSetXP(journal) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Cannot learn from this journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Cannot learn from this journal."})
         return
     end
 
     local modData = journal:getModData()
     if not modData.BurdJournals or not modData.BurdJournals.skills then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal has no skill data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no skill data."})
         return
     end
 
@@ -675,7 +760,7 @@ function BurdJournals.Server.handleLearnSkills(player, args)
         end
     end
 
-    sendServerCommand(player, "BurdJournals", "applyXP", {skills = skillsToSet, mode = "set"})
+    BurdJournals.Server.sendToClient(player, "applyXP", {skills = skillsToSet, mode = "set"})
 end
 
 -- ==================== CLAIM SKILL (Player Journals - SET Mode, Individual) ====================
@@ -685,7 +770,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
     -- Debug removed
     if not args or not args.skillName then
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
@@ -696,14 +781,14 @@ function BurdJournals.Server.handleClaimSkill(player, args)
     local journal = BurdJournals.findItemById(player, journalId)
     if not journal then
         print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
     -- Check permission to claim from this journal
     local canClaim, reason = BurdJournals.canPlayerClaimFromJournal(player, journal)
     if not canClaim then
-        sendServerCommand(player, "BurdJournals", "error", {message = reason or "Permission denied."})
+        BurdJournals.Server.sendToClient(player, "error", {message = reason or "Permission denied."})
         return
     end
 
@@ -712,14 +797,14 @@ function BurdJournals.Server.handleClaimSkill(player, args)
     local journalData = modData.BurdJournals
 
     if not journalData or not journalData.skills then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal has no skill data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no skill data."})
         return
     end
 
     -- Check if skill exists in journal
     if not journalData.skills[skillName] then
         print("[BurdJournals] Server ERROR: Skill '" .. skillName .. "' not found in journal")
-        sendServerCommand(player, "BurdJournals", "error", {message = "Skill not found in journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Skill not found in journal."})
         return
     end
 
@@ -732,7 +817,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
     local perk = BurdJournals.getPerkByName(skillName)
     if not perk then
         print("[BurdJournals] Server ERROR: Could not find perk for skill '" .. skillName .. "'")
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid skill: " .. skillName})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid skill: " .. skillName})
         return
     end
 
@@ -743,7 +828,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
         local xpDiff = recordedXP - playerXP
 
         -- Send the SET mode command to client
-        sendServerCommand(player, "BurdJournals", "applyXP", {
+        BurdJournals.Server.sendToClient(player, "applyXP", {
             skills = {
                 [skillName] = {
                     xp = recordedXP,  -- Total XP to set to
@@ -766,7 +851,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
         end
 
         -- Send success response with journal data for UI update
-        sendServerCommand(player, "BurdJournals", "claimSuccess", {
+        BurdJournals.Server.sendToClient(player, "claimSuccess", {
             skillName = skillName,
             xpSet = recordedXP,
             xpGained = xpDiff,
@@ -776,7 +861,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
     else
         -- Player already at or above this level
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "skillMaxed", {
+        BurdJournals.Server.sendToClient(player, "skillMaxed", {
             skillName = skillName,
             message = "You already have higher or equal skill level."
         })
@@ -789,7 +874,7 @@ end
 function BurdJournals.Server.handleClaimTrait(player, args)
     -- Debug removed
     if not args or not args.traitId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
@@ -800,14 +885,14 @@ function BurdJournals.Server.handleClaimTrait(player, args)
     local journal = BurdJournals.findItemById(player, journalId)
     if not journal then
         print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
     -- Check permission to claim from this journal
     local canClaim, reason = BurdJournals.canPlayerClaimFromJournal(player, journal)
     if not canClaim then
-        sendServerCommand(player, "BurdJournals", "error", {message = reason or "Permission denied."})
+        BurdJournals.Server.sendToClient(player, "error", {message = reason or "Permission denied."})
         return
     end
 
@@ -816,20 +901,20 @@ function BurdJournals.Server.handleClaimTrait(player, args)
     local journalData = modData.BurdJournals
 
     if not journalData or not journalData.traits then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal has no trait data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no trait data."})
         return
     end
 
     -- Check if trait exists in journal
     if not journalData.traits[traitId] then
         print("[BurdJournals] Server ERROR: Trait '" .. traitId .. "' not found in journal")
-        sendServerCommand(player, "BurdJournals", "error", {message = "Trait not found in journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Trait not found in journal."})
         return
     end
 
     -- Check if player already has this trait
     if BurdJournals.playerHasTrait(player, traitId) then
-        sendServerCommand(player, "BurdJournals", "traitAlreadyKnown", {traitId = traitId})
+        BurdJournals.Server.sendToClient(player, "traitAlreadyKnown", {traitId = traitId})
         return
     end
 
@@ -849,13 +934,13 @@ function BurdJournals.Server.handleClaimTrait(player, args)
         end
 
         -- Send success response with journal data for UI update
-        sendServerCommand(player, "BurdJournals", "claimSuccess", {
+        BurdJournals.Server.sendToClient(player, "claimSuccess", {
             traitId = traitId,
             journalId = journal:getID(),
             journalData = BurdJournals.Server.copyJournalData(journal)
         })
     else
-        sendServerCommand(player, "BurdJournals", "error", {message = "Could not learn trait."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Could not learn trait."})
     end
 end
 
@@ -864,7 +949,7 @@ end
 function BurdJournals.Server.handleAbsorbSkill(player, args)
     if not args or not args.skillName then
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
@@ -877,14 +962,14 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
     if not journal then
         print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
 
     -- Must be a worn/bloody journal (readable for absorption)
     if not BurdJournals.canAbsorbXP(journal) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Cannot absorb from this journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Cannot absorb from this journal."})
         return
     end
 
@@ -901,7 +986,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
     local journalData = modData.BurdJournals
 
     if not journalData then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal has no data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no data."})
         return
     end
 
@@ -915,7 +1000,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
     end
 
     if not journalData.skills then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal has no skill data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no skill data."})
         return
     end
 
@@ -939,14 +1024,14 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
         for k, _ in pairs(journalData.skills) do
             print("  - '" .. tostring(k) .. "'")
         end
-        sendServerCommand(player, "BurdJournals", "error", {message = "Skill not found in journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Skill not found in journal."})
         return
     end
 
     -- Check if skill already claimed
     if BurdJournals.isSkillClaimed(journal, skillName) then
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "error", {message = "This skill has already been claimed."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This skill has already been claimed."})
         return
     end
 
@@ -955,7 +1040,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
     if type(skillData) ~= "table" then
         print("[BurdJournals] Server ERROR: skillData is not a table! It's: " .. type(skillData) .. " = " .. tostring(skillData))
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid skill data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid skill data."})
         return
     end
 
@@ -998,7 +1083,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
     if not perk then
         print("[BurdJournals] Server ERROR: Could not find perk for skill '" .. skillName .. "'")
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid skill: " .. skillName})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid skill: " .. skillName})
         return
     end
 
@@ -1017,7 +1102,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
         -- Send applyXP command to CLIENT - client will apply XP
         -- Debug removed
-        sendServerCommand(player, "BurdJournals", "applyXP", {
+        BurdJournals.Server.sendToClient(player, "applyXP", {
             skills = {
                 [skillName] = {
                     xp = xpToAdd,
@@ -1058,7 +1143,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
             end
 
             -- Notify client
-            sendServerCommand(player, "BurdJournals", "journalDissolved", {
+            BurdJournals.Server.sendToClient(player, "journalDissolved", {
                 message = BurdJournals.getRandomDissolutionMessage(),
                 journalId = journalId
             })
@@ -1066,11 +1151,10 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
             -- Sync modData since we're keeping the journal
             if journal.transmitModData then
                 journal:transmitModData()
-                -- Debug removed
             end
 
             -- Tell client to update UI with journal data
-            sendServerCommand(player, "BurdJournals", "absorbSuccess", {
+            BurdJournals.Server.sendToClient(player, "absorbSuccess", {
                 skillName = skillName,
                 xpGained = xpToAdd,
                 remaining = unclaimedSkills + unclaimedTraits,
@@ -1081,8 +1165,7 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
         end
     else
         -- xpToAdd was 0 or negative - this is the "maxed" case
-        -- Debug removed
-        sendServerCommand(player, "BurdJournals", "skillMaxed", {
+        BurdJournals.Server.sendToClient(player, "skillMaxed", {
             skillName = skillName
         })
     end
@@ -1093,7 +1176,7 @@ end
 
 function BurdJournals.Server.handleAbsorbTrait(player, args)
     if not args or not args.traitId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
 
@@ -1105,14 +1188,14 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
 
     if not journal then
         print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
 
 
     -- Must be a worn/bloody journal
     if not BurdJournals.canAbsorbXP(journal) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Cannot absorb from this journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Cannot absorb from this journal."})
         return
     end
 
@@ -1120,26 +1203,26 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
     local journalData = modData.BurdJournals
 
     if not journalData or not journalData.traits then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This journal has no trait data."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no trait data."})
         return
     end
 
     -- Check if trait exists in journal (double-check after fallback)
     if not journalData.traits[traitId] then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Trait not found in journal."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Trait not found in journal."})
         return
     end
 
     -- Check if trait already claimed
     if BurdJournals.isTraitClaimed(journal, traitId) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "This trait has already been claimed."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "This trait has already been claimed."})
         return
     end
 
     -- Check if player already has this trait - DON'T claim if they do
     if BurdJournals.playerHasTrait(player, traitId) then
         -- Player already knows this trait - leave it unclaimed in journal
-        sendServerCommand(player, "BurdJournals", "traitAlreadyKnown", {traitId = traitId})
+        BurdJournals.Server.sendToClient(player, "traitAlreadyKnown", {traitId = traitId})
         return  -- Don't dissolve check - trait stays in journal
     end
 
@@ -1280,7 +1363,7 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
         local shouldDis = (unclaimedSkills == 0 and unclaimedTraits == 0)
 
         -- Send command to show feedback on client with journal data for UI sync
-        sendServerCommand(player, "BurdJournals", "grantTrait", {
+        BurdJournals.Server.sendToClient(player, "grantTrait", {
             traitId = traitId,
             journalId = journal:getID(),
             journalData = BurdJournals.Server.copyJournalData(journal)
@@ -1317,7 +1400,7 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
             end
 
             -- Notify client
-            sendServerCommand(player, "BurdJournals", "journalDissolved", {
+            BurdJournals.Server.sendToClient(player, "journalDissolved", {
                 message = BurdJournals.getRandomDissolutionMessage(),
                 journalId = journalId
             })
@@ -1325,10 +1408,10 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
             -- Only sync modData if we're keeping the journal
             if journal.transmitModData then
                 journal:transmitModData()
-                -- Debug removed
             end
+
             -- Send success response with journal data for UI update
-            sendServerCommand(player, "BurdJournals", "absorbSuccess", {
+            BurdJournals.Server.sendToClient(player, "absorbSuccess", {
                 traitId = traitId,
                 remaining = unclaimedSkills + unclaimedTraits,
                 total = BurdJournals.getTotalRewards(journal),
@@ -1338,7 +1421,7 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
         end
     else
         -- Failed to grant trait - don't claim
-        sendServerCommand(player, "BurdJournals", "error", {message = "Could not learn trait."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Could not learn trait."})
     end
 end
 
@@ -1346,19 +1429,19 @@ end
 
 function BurdJournals.Server.handleEraseJournal(player, args)
     if not args or not args.journalId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
     
     local journal = BurdJournals.findItemById(player, args.journalId)
     if not journal then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
     
     -- Can only erase clean journals
     if not BurdJournals.isClean(journal) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Can only erase clean journals."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Can only erase clean journals."})
         return
     end
     
@@ -1366,7 +1449,7 @@ function BurdJournals.Server.handleEraseJournal(player, args)
     if BurdJournals.getSandboxOption("RequireEraserToErase") then
         local eraser = BurdJournals.findEraser(player)
         if not eraser then
-            sendServerCommand(player, "BurdJournals", "error", {message = "You need an eraser to wipe the journal."})
+            BurdJournals.Server.sendToClient(player, "error", {message = "You need an eraser to wipe the journal."})
             return
         end
     end
@@ -1387,14 +1470,18 @@ function BurdJournals.Server.handleEraseJournal(player, args)
         BurdJournals.updateJournalName(blankJournal)
         BurdJournals.updateJournalIcon(blankJournal)
 
-        -- CRITICAL: Sync modData and notify clients about new item
+        -- CRITICAL: Sync modData to clients in multiplayer
         if blankJournal.transmitModData then
             blankJournal:transmitModData()
+            print("[BurdJournals] Server: transmitModData called for blank journal in handleEraseJournal")
         end
+
+        -- CRITICAL: Notify clients about the new item!
         sendAddItemToContainer(inventory, blankJournal)
+        print("[BurdJournals] Server: sendAddItemToContainer called for blank journal in handleEraseJournal")
     end
 
-    sendServerCommand(player, "BurdJournals", "eraseSuccess", {})
+    BurdJournals.Server.sendToClient(player, "eraseSuccess", {})
 end
 
 -- ==================== CLEAN BLOODY -> WORN (DEPRECATED) ====================
@@ -1403,7 +1490,7 @@ end
 
 function BurdJournals.Server.handleCleanBloody(player, args)
     -- Bloody journals no longer need cleaning - they can be read directly
-    sendServerCommand(player, "BurdJournals", "error", {
+    BurdJournals.Server.sendToClient(player, "error", {
         message = "Bloody journals can now be read directly. Right-click to open and absorb XP."
     })
 end
@@ -1412,25 +1499,25 @@ end
 
 function BurdJournals.Server.handleConvertToClean(player, args)
     if not args or not args.journalId then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Invalid request."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
         return
     end
     
     local journal = BurdJournals.findItemById(player, args.journalId)
     if not journal then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Journal not found."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
         return
     end
     
     -- Must be worn
     if not BurdJournals.isWorn(journal) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "Only worn journals can be converted."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "Only worn journals can be converted."})
         return
     end
     
     -- Check for materials and skill
     if not BurdJournals.canConvertToClean(player) then
-        sendServerCommand(player, "BurdJournals", "error", {message = "You need leather, thread, needle, and Tailoring Lv1."})
+        BurdJournals.Server.sendToClient(player, "error", {message = "You need leather, thread, needle, and Tailoring Lv1."})
         return
     end
     
@@ -1460,24 +1547,28 @@ function BurdJournals.Server.handleConvertToClean(player, args)
         BurdJournals.updateJournalName(cleanJournal)
         BurdJournals.updateJournalIcon(cleanJournal)
 
-        -- CRITICAL: Sync modData and notify clients about new item
+        -- CRITICAL: Sync modData to clients in multiplayer
         if cleanJournal.transmitModData then
             cleanJournal:transmitModData()
+            print("[BurdJournals] Server: transmitModData called for clean journal in handleConvertToClean")
         end
+
+        -- CRITICAL: Notify clients about the new item!
         sendAddItemToContainer(inventory, cleanJournal)
+        print("[BurdJournals] Server: sendAddItemToContainer called for clean journal in handleConvertToClean")
     end
 
-    sendServerCommand(player, "BurdJournals", "convertSuccess", {
+    BurdJournals.Server.sendToClient(player, "convertSuccess", {
         message = "The worn journal has been restored to a clean blank journal."
     })
 end
 
 -- ==================== EVENT REGISTRATION ====================
 
+print("[BurdJournals] Registering OnClientCommand handler...")
 Events.OnClientCommand.Add(BurdJournals.Server.onClientCommand)
 Events.OnServerStarted.Add(BurdJournals.Server.init)
-
--- print removed
+print("[BurdJournals] Server module fully loaded!")
 
 
 

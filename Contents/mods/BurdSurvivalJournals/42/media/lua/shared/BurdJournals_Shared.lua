@@ -218,35 +218,267 @@ end
 
 -- ==================== TRAIT REWARDS (For bloody journals) ====================
 
--- Positive traits that can be granted from bloody journals
--- These are the B42 internal trait names (from character_traits.txt)
--- The display labels come from CharacterTraitDefinition
+-- All positive traits that can be granted via journals
+-- Based on character_traits.txt from Build 42
+-- Excludes profession-only traits (cost=0) and physical body traits (Athletic, Strong, etc.)
 BurdJournals.GRANTABLE_TRAITS = {
-    -- Combat/Survival
-    "brave",              -- Brave (4 pts)
-    "resilient",          -- Resilient (4 pts)
-    "thickskinned",       -- Thick Skinned (8 pts)
-    "fasthealer",         -- Fast Healer (6 pts)
-    -- Movement/Stealth
-    "graceful",           -- Graceful (4 pts)
-    "inconspicuous",      -- Inconspicuous (4 pts)
-    "nightvision",        -- Night Vision (2 pts)
-    -- Learning/Reading
-    "fastlearner",        -- Fast Learner (6 pts)
-    "fastreader",         -- Fast Reader (2 pts)
-    -- Utility
-    "organized",          -- Organized/Packmule (4 pts)
-    "dextrous",           -- Dextrous (2 pts)
-    "needslesssleep",     -- Wakeful (2 pts)
-    "lighteater",         -- Light Eater (2 pts)
-    "lowthirst",          -- Low Thirst (2 pts)
-    "irongut",            -- Iron Gut (3 pts)
-    "outdoorsman",        -- Outdoorsman (2 pts)
-    "keenhearing",        -- Keen Hearing (6 pts)
-    "eagleeyed",          -- Eagle Eyed (4 pts)
-    -- Note: "Lucky" was removed from B42
-    -- Note: "Desensitized" is profession-only, can't be added mid-game
+    -- ============ COMBAT & SURVIVAL (High Value) ============
+    "brave",              -- Brave (4 pts) - Less panic
+    "resilient",          -- Resilient (4 pts) - Better zombie resistance
+    "thickskinned",       -- Thick Skinned (8 pts) - Less bite/scratch chance
+    "fasthealer",         -- Fast Healer (6 pts) - Heal wounds faster
+    "adrenalinejunkie",   -- Adrenaline Junkie (4 pts) - Speed boost when panicked
+
+    -- ============ MOVEMENT & STEALTH ============
+    "graceful",           -- Graceful (4 pts) - Less noise, trips less
+    "inconspicuous",      -- Inconspicuous (4 pts) - Zombies notice you less
+    "nightvision",        -- Night Vision (2 pts) - See better at night
+
+    -- ============ PERCEPTION ============
+    "keenhearing",        -- Keen Hearing (6 pts) - Larger perception radius
+    "eagleeyed",          -- Eagle Eyed (4 pts) - Better spotting range
+
+    -- ============ LEARNING & CRAFTING ============
+    "fastlearner",        -- Fast Learner (6 pts) - +30% XP gain
+    "fastreader",         -- Fast Reader (2 pts) - Read books faster
+    "inventive",          -- Inventive (2 pts) - Extra recipe XP (B42)
+    "crafty",             -- Crafty (3 pts) - Better crafting results (B42)
+
+    -- ============ METABOLISM & NEEDS ============
+    "lighteater",         -- Light Eater (2 pts) - Less food needed
+    "lowthirst",          -- Low Thirst (2 pts) - Less water needed
+    "needslesssleep",     -- Needs Less Sleep (2 pts) - Sleep less
+    "irongut",            -- Iron Gut (3 pts) - Resist food poisoning
+
+    -- ============ ORGANIZATION & UTILITY ============
+    "organized",          -- Organized (4 pts) - +30% container capacity
+    "dextrous",           -- Dextrous (2 pts) - Faster inventory transfers
+
+    -- ============ ENVIRONMENTAL ============
+    "outdoorsman",        -- Outdoorsman (2 pts) - Weather resistance
+    "nutritionist",       -- Nutritionist (4 pts) - See food nutrition values
+
+    -- ============ DRIVING ============
+    "speeddemon",         -- Speed Demon (1 pt) - Faster driving
+
+    -- ============ SKILL BOOST TRAITS (Medium Value) ============
+    -- These grant starting skill levels and XP boosts
+    "baseballplayer",     -- Baseball Player (4 pts) - Blunt +1
+    "jogger",             -- Jogger (4 pts) - Sprinting +1
+    "gymnast",            -- Gymnast (5 pts) - Lightfoot +1, Nimble +1
+    "firstaid",           -- First Aid (4 pts) - Doctor +1
+    "gardener",           -- Gardener (2 pts) - Farming +1
+    "herbalist",          -- Herbalist (4 pts) - Foraging +1
+    "fishing",            -- Angler (4 pts) - Fishing +1
+    "tailor",             -- Tailor (4 pts) - Tailoring +1
+    "mechanics",          -- Amateur Mechanic (3 pts) - Mechanics +1
+    "cook",               -- Cook (3 pts) - Cooking +2, Butchering +1
+
+    -- ============ BUILD 42 NEW TRAITS ============
+    "hiker",              -- Hiker (6 pts) - Foraging +1, Trapping +1
+    "hunter",             -- Hunter (8 pts) - Aiming +1, Trapping +1, Sneak +1, etc.
+    "brawler",            -- Brawler (6 pts) - Axe +1, Blunt +1
+    "formerscout",        -- Former Scout (6 pts) - Doctor +1, Foraging +1, Fishing +1
+    "handy",              -- Handy (8 pts) - Multiple crafting +1
+    "artisan",            -- Artisan (2 pts) - Glassmaking +1, Pottery +1 (B42)
+    "blacksmith",         -- Blacksmith (6 pts) - Blacksmith +2, Maintenance +1 (B42)
+    "mason",              -- Mason (2 pts) - Masonry +2 (B42)
+    "whittler",           -- Whittler (2 pts) - Carving +2 (B42)
+    "wildernessknowledge", -- Wilderness Knowledge (8 pts) - Multiple survival skills (B42)
+
+    -- Note: The following are excluded:
+    -- "athletic", "strong", "stout", "fit" - Physical stats that affect character model
+    -- "desensitized", "burglar", "marksman" etc. - Profession-only (cost=0)
+    -- "axeman", "cook2", "mechanics2" etc. - Profession boosters (cost=0)
 }
+
+-- ==================== PLAYER STATS (For player journals) ====================
+
+-- Player statistics that can be recorded to journals
+-- These represent character meta-information and achievements
+BurdJournals.RECORDABLE_STATS = {
+    -- ============ SURVIVAL MILESTONES ============
+    {
+        id = "zombieKills",
+        name = "Zombie Kills",
+        category = "Combat",
+        description = "Total zombies killed",
+        icon = "media/ui/zombie.png",
+        getValue = function(player)
+            if not player then return 0 end
+            return player:getZombieKills() or 0
+        end,
+        format = function(value)
+            return tostring(value)
+        end,
+    },
+    {
+        id = "hoursSurvived",
+        name = "Hours Survived",
+        category = "Survival",
+        description = "Total hours alive in the apocalypse",
+        icon = "media/ui/clock.png",
+        getValue = function(player)
+            if not player then return 0 end
+            return math.floor(player:getHoursSurvived() or 0)
+        end,
+        format = function(value)
+            local days = math.floor(value / 24)
+            local hours = value % 24
+            if days > 0 then
+                return days .. " days, " .. hours .. " hours"
+            end
+            return hours .. " hours"
+        end,
+    },
+}
+
+-- Get a stat definition by ID
+function BurdJournals.getStatById(statId)
+    for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
+        if stat.id == statId then
+            return stat
+        end
+    end
+    return nil
+end
+
+-- Get current value of a stat for a player
+function BurdJournals.getStatValue(player, statId)
+    local stat = BurdJournals.getStatById(statId)
+    if stat and stat.getValue then
+        local ok, value = pcall(stat.getValue, player)
+        if ok then
+            return value
+        end
+    end
+    return nil
+end
+
+-- Format a stat value for display
+function BurdJournals.formatStatValue(statId, value)
+    local stat = BurdJournals.getStatById(statId)
+    if stat and stat.format then
+        local ok, formatted = pcall(stat.format, value)
+        if ok then
+            return formatted
+        end
+    end
+    return tostring(value)
+end
+
+-- Get all stats grouped by category
+function BurdJournals.getStatsByCategory()
+    local categories = {}
+    for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
+        local cat = stat.category or "Other"
+        if not categories[cat] then
+            categories[cat] = {}
+        end
+        table.insert(categories[cat], stat)
+    end
+    return categories
+end
+
+-- Record a stat to a journal
+function BurdJournals.recordStat(journal, statId, value, player)
+    if not journal then return false end
+
+    local modData = journal:getModData()
+    if not modData.BurdJournals then
+        modData.BurdJournals = {}
+    end
+    if not modData.BurdJournals.stats then
+        modData.BurdJournals.stats = {}
+    end
+
+    local stat = BurdJournals.getStatById(statId)
+    if not stat then return false end
+
+    -- Store both raw value and formatted display
+    modData.BurdJournals.stats[statId] = {
+        value = value,
+        timestamp = getGameTime():getWorldAgeHours(),
+        recordedBy = player and (player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname()) or "Unknown",
+    }
+
+    return true
+end
+
+-- Get recorded stat from journal
+function BurdJournals.getRecordedStat(journal, statId)
+    if not journal then return nil end
+
+    local modData = journal:getModData()
+    if modData.BurdJournals and modData.BurdJournals.stats then
+        return modData.BurdJournals.stats[statId]
+    end
+    return nil
+end
+
+-- Get all recorded stats from journal
+function BurdJournals.getAllRecordedStats(journal)
+    if not journal then return {} end
+
+    local modData = journal:getModData()
+    if modData.BurdJournals and modData.BurdJournals.stats then
+        return modData.BurdJournals.stats
+    end
+    return {}
+end
+
+-- Check if a stat can be updated (current value is different/higher)
+function BurdJournals.canUpdateStat(journal, statId, player)
+    if not journal or not player then return false, nil, nil end
+
+    local stat = BurdJournals.getStatById(statId)
+    if not stat then return false, nil, nil end
+
+    local currentValue = BurdJournals.getStatValue(player, statId)
+    local recorded = BurdJournals.getRecordedStat(journal, statId)
+    local recordedValue = recorded and recorded.value or nil
+
+    -- For numeric stats, only allow update if current is higher
+    -- For text stats, allow update if different
+    if stat.isText then
+        if recordedValue == nil or recordedValue ~= currentValue then
+            return true, currentValue, recordedValue
+        end
+    else
+        if recordedValue == nil or currentValue > recordedValue then
+            return true, currentValue, recordedValue
+        end
+    end
+
+    return false, currentValue, recordedValue
+end
+
+-- Check if a specific stat type is enabled via sandbox options
+function BurdJournals.isStatEnabled(statId)
+    -- First check master toggle
+    if not BurdJournals.getSandboxOption("EnableStatRecording") then
+        return false
+    end
+
+    -- Check individual stat toggles
+    local statToggleMap = {
+        zombieKills = "RecordZombieKills",
+        hoursSurvived = "RecordHoursSurvived",
+    }
+
+    local toggleOption = statToggleMap[statId]
+    if toggleOption then
+        local enabled = BurdJournals.getSandboxOption(toggleOption)
+        -- Default to true if option not found
+        if enabled == nil then
+            return true
+        end
+        return enabled
+    end
+
+    -- Unknown stat, default to enabled
+    return true
+end
 
 -- ==================== DISSOLUTION MESSAGES ====================
 
@@ -290,6 +522,10 @@ function BurdJournals.getSandboxOption(optionName)
         LearningTimePerSkill = 3.0,
         LearningTimePerTrait = 5.0,
         LearningTimeMultiplier = 1.0,
+        -- Player stats recording
+        EnableStatRecording = true,
+        RecordZombieKills = true,
+        RecordHoursSurvived = true,
         -- Worn journal spawns (world containers)
         EnableWornJournalSpawns = true,
         WornJournalSpawnChance = 2.0,
@@ -317,6 +553,8 @@ function BurdJournals.getSandboxOption(optionName)
         -- Multiplayer sharing settings
         AllowOthersToOpenJournals = true,
         AllowOthersToClaimFromJournals = true,
+        -- Baseline restriction (anti-exploit)
+        EnableBaselineRestriction = true,
     }
     return defaults[optionName]
 end
@@ -482,6 +720,95 @@ function BurdJournals.getPerkDisplayName(perkName)
         return PerkFactory.getPerk(perk):getName()
     end
     return perkName
+end
+
+-- Reverse lookup: get our skill name from a perk object
+-- Used when processing profession/trait XP boosts which give us perk objects
+function BurdJournals.getSkillNameFromPerk(perk)
+    if not perk then return nil end
+
+    -- Get the perk's internal name using multiple methods
+    local perkName = nil
+
+    -- Method 1: If it's already a string
+    if type(perk) == "string" then
+        perkName = perk
+    end
+
+    -- Method 2: Try PerkFactory to get the perk definition and name
+    if not perkName and PerkFactory and PerkFactory.getPerk then
+        local ok, result = pcall(function()
+            local perkDef = PerkFactory.getPerk(perk)
+            if perkDef then
+                -- Try to get internal ID name
+                if perkDef.getId then
+                    return tostring(perkDef:getId())
+                elseif perkDef.getName then
+                    -- This returns display name, not ID - but we can try
+                    return perkDef:getName()
+                end
+            end
+            return nil
+        end)
+        if ok and result then
+            perkName = result
+        end
+    end
+
+    -- Method 3: Try direct name access on Java enum
+    if not perkName and perk.name then
+        perkName = tostring(perk.name)
+    end
+
+    -- Method 4: Convert to string and clean up
+    if not perkName then
+        perkName = tostring(perk)
+        -- Clean up common prefixes
+        perkName = perkName:gsub("^Perks%.", "")
+        perkName = perkName:gsub("^zombie%.characters%.skills%.PerkFactory%$Perk%.", "")
+        perkName = perkName:gsub("^zombie%.characters%.skills%.PerkFactory%$", "")
+    end
+
+    if not perkName or perkName == "" then return nil end
+
+    -- Debug output
+    -- print("[BurdJournals] getSkillNameFromPerk: input=" .. tostring(perk) .. " -> perkName=" .. tostring(perkName))
+
+    -- Check reverse mappings (PlantScavenging -> Foraging, Woodwork -> Carpentry)
+    local reverseMap = {
+        PlantScavenging = "Foraging",
+        Woodwork = "Carpentry"
+    }
+    if reverseMap[perkName] then
+        return reverseMap[perkName]
+    end
+
+    -- Check if it matches any of our allowed skills directly
+    local allowedSkills = BurdJournals.getAllowedSkills()
+    for _, skillName in ipairs(allowedSkills) do
+        if skillName == perkName then
+            return skillName
+        end
+    end
+
+    -- Try case-insensitive match
+    local lowerPerkName = string.lower(perkName)
+    for _, skillName in ipairs(allowedSkills) do
+        if string.lower(skillName) == lowerPerkName then
+            return skillName
+        end
+    end
+
+    -- If we got here with a display name, try matching it
+    -- (e.g., "Carpentry" display name should match "Carpentry" skill)
+    for _, skillName in ipairs(allowedSkills) do
+        local displayName = BurdJournals.getPerkDisplayName(skillName)
+        if displayName == perkName or string.lower(displayName) == lowerPerkName then
+            return skillName
+        end
+    end
+
+    return nil
 end
 
 -- ==================== ITEM UTILITIES ====================
@@ -1283,36 +1610,136 @@ function BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     return skills
 end
 
+-- ==================== BASELINE TRACKING (Anti-Exploit System) ====================
+
+-- Map PZ perk IDs (like "Woodwork") to our skill names (like "Carpentry")
+-- This is needed because PZ uses different internal names for some skills
+function BurdJournals.mapPerkIdToSkillName(perkId)
+    if not perkId then return nil end
+
+    -- Known mappings where PZ uses different internal names
+    local mappings = {
+        Woodwork = "Carpentry",
+        PlantScavenging = "Foraging",
+    }
+
+    if mappings[perkId] then
+        return mappings[perkId]
+    end
+
+    -- Check if perkId directly matches an allowed skill
+    local allowedSkills = BurdJournals.getAllowedSkills()
+    for _, skillName in ipairs(allowedSkills) do
+        if skillName == perkId then
+            return skillName
+        end
+        -- Case insensitive fallback
+        if string.lower(skillName) == string.lower(perkId) then
+            return skillName
+        end
+    end
+
+    return nil
+end
+
+-- Get skill baseline XP (what the character started with from profession/traits)
+function BurdJournals.getSkillBaseline(player, skillName)
+    if not player then return 0 end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return 0 end
+    if not modData.BurdJournals.skillBaseline then return 0 end
+    return modData.BurdJournals.skillBaseline[skillName] or 0
+end
+
+-- Check if trait was a starting trait (not acquired during gameplay)
+function BurdJournals.isStartingTrait(player, traitId)
+    if not player then return false end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return false end
+    if not modData.BurdJournals.traitBaseline then return false end
+    return modData.BurdJournals.traitBaseline[traitId] == true
+end
+
+-- Get the full trait baseline table for a player
+function BurdJournals.getTraitBaseline(player)
+    if not player then return {} end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return {} end
+    return modData.BurdJournals.traitBaseline or {}
+end
+
+-- Get earned XP for a skill (current - baseline)
+function BurdJournals.getEarnedXP(player, skillName)
+    if not player then return 0 end
+    local perk = BurdJournals.getPerkByName(skillName)
+    if not perk then return 0 end
+
+    local currentXP = player:getXp():getXP(perk)
+    local baselineXP = BurdJournals.getSkillBaseline(player, skillName)
+
+    return math.max(0, currentXP - baselineXP)
+end
+
+-- Check if baseline restriction is enabled (sandbox option)
+function BurdJournals.isBaselineRestrictionEnabled()
+    return BurdJournals.getSandboxOption("EnableBaselineRestriction") ~= false
+end
+
+-- Check if baseline has been captured for this player
+function BurdJournals.hasBaselineCaptured(player)
+    if not player then return false end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return false end
+    return modData.BurdJournals.baselineCaptured == true
+end
+
 -- ==================== PLAYER DATA COLLECTION (Clean journals only) ====================
 
 function BurdJournals.collectPlayerSkills(player)
     if not player then return {} end
-    
+
     local skills = {}
     local allowedSkills = BurdJournals.getAllowedSkills()
-    
+    local useBaseline = BurdJournals.isBaselineRestrictionEnabled()
+
     for _, skillName in ipairs(allowedSkills) do
         local perk = BurdJournals.getPerkByName(skillName)
         if perk then
-            local xp = player:getXp():getXP(perk)
+            local currentXP = player:getXp():getXP(perk)
             local level = player:getPerkLevel(perk)
-            if xp > 0 or level > 0 then
+
+            -- If baseline restriction enabled, subtract starting XP
+            local recordXP = currentXP
+            if useBaseline then
+                local baseline = BurdJournals.getSkillBaseline(player, skillName)
+                recordXP = math.max(0, currentXP - baseline)
+            end
+
+            -- Only record if there's earned progress (or any XP if baseline disabled)
+            if recordXP > 0 then
                 skills[skillName] = {
-                    xp = xp,
-                    level = level
+                    xp = recordXP,
+                    level = level  -- Keep display level for UI
                 }
             end
         end
     end
-    
+
     return skills
 end
 
-function BurdJournals.collectPlayerTraits(player)
+-- Collect player traits for journal recording
+-- excludeStarting: if nil, uses sandbox option; if true/false, overrides
+function BurdJournals.collectPlayerTraits(player, excludeStarting)
     if not player then return {} end
-    
+
+    -- If excludeStarting not specified, check sandbox option
+    if excludeStarting == nil then
+        excludeStarting = BurdJournals.isBaselineRestrictionEnabled()
+    end
+
     local traits = {}
-    
+
     -- Build 42 method: player:getCharacterTraits():getKnownTraits()
     local ok, err = pcall(function()
         local charTraits = player:getCharacterTraits()
@@ -1324,7 +1751,7 @@ function BurdJournals.collectPlayerTraits(player)
                     if traitType then
                         -- Get the trait definition using CharacterTraitDefinition
                         local traitDef = CharacterTraitDefinition.getCharacterTraitDefinition(traitType)
-                        
+
                         -- Get trait ID from the type
                         local traitId = nil
                         pcall(function()
@@ -1334,38 +1761,43 @@ function BurdJournals.collectPlayerTraits(player)
                                 traitId = tostring(traitType)
                             end
                         end)
-                        
+
                         if traitId then
                             -- Clean up the trait ID (remove "base:" prefix if present)
                             traitId = string.gsub(traitId, "^base:", "")
-                            
-                            local traitData = {
-                                name = traitId,
-                                cost = 0,
-                                isPositive = false
-                            }
-                            
-                            -- Get details from definition if available
-                            if traitDef then
-                                pcall(function()
-                                    traitData.name = traitDef:getLabel() or traitId
-                                    traitData.cost = traitDef:getCost() or 0
-                                    traitData.isPositive = (traitDef:getCost() or 0) < 0
-                                end)
+
+                            -- Skip starting traits if baseline restriction is enabled
+                            if excludeStarting and BurdJournals.isStartingTrait(player, traitId) then
+                                -- Skip this trait - it was spawned with
+                            else
+                                local traitData = {
+                                    name = traitId,
+                                    cost = 0,
+                                    isPositive = false
+                                }
+
+                                -- Get details from definition if available
+                                if traitDef then
+                                    pcall(function()
+                                        traitData.name = traitDef:getLabel() or traitId
+                                        traitData.cost = traitDef:getCost() or 0
+                                        traitData.isPositive = (traitDef:getCost() or 0) < 0
+                                    end)
+                                end
+
+                                traits[traitId] = traitData
                             end
-                            
-                            traits[traitId] = traitData
                         end
                     end
                 end
             end
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] collectPlayerTraits error: " .. tostring(err))
     end
-    
+
     return traits
 end
 

@@ -49,7 +49,21 @@ Sandbox_EN = {
     
     Sandbox_BurdJournals_LearningTimeMultiplier = "Learning Time Multiplier",
     Sandbox_BurdJournals_LearningTimeMultiplier_tooltip = "Global multiplier for all learning times. 0.5 = twice as fast, 2.0 = twice as slow.",
-    
+
+    -- Player Stats Recording
+    Sandbox_BurdJournals_EnableStatRecording = "Enable Stat Recording",
+    Sandbox_BurdJournals_EnableStatRecording_tooltip = "Master toggle for recording player stats (kills, survival time, etc.) in personal journals.",
+
+    Sandbox_BurdJournals_RecordZombieKills = "Record Zombie Kills",
+    Sandbox_BurdJournals_RecordZombieKills_tooltip = "Allow players to record their zombie kill count in journals.",
+
+    Sandbox_BurdJournals_RecordHoursSurvived = "Record Hours Survived",
+    Sandbox_BurdJournals_RecordHoursSurvived_tooltip = "Allow players to record their survival time in journals.",
+
+    -- Baseline Restriction (Anti-Exploit)
+    Sandbox_BurdJournals_EnableBaselineRestriction = "Only Record Earned Progress",
+    Sandbox_BurdJournals_EnableBaselineRestriction_tooltip = "When enabled, journals only record XP earned through gameplay - not profession starting bonuses or trait skill boosts. This prevents exploits where players farm profession skills by creating multiple characters. Recommended ON for multiplayer servers.",
+
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
     -- ============================================================
@@ -107,7 +121,7 @@ Sandbox_EN = {
     -- Feature Toggles
     Sandbox_BurdJournals_EnablePlayerJournals = "Enable Player Journals",
     Sandbox_BurdJournals_EnablePlayerJournals_tooltip = "Allow players to craft and use personal journals for recording/recovering skills. Disable to only allow looted journals.",
-    
+
     -- Reading Skill Integration
     Sandbox_BurdJournals_ReadingSkillAffectsSpeed = "Reading Skill Affects Speed",
     Sandbox_BurdJournals_ReadingSkillAffectsSpeed_tooltip = "Higher reading skill levels reduce learning time when absorbing from journals.",
@@ -128,4 +142,5 @@ Sandbox_EN = {
 
     Sandbox_BurdJournals_AllowOthersToClaimFromJournals = "Allow Others to Claim from Personal Journals",
     Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip = "If enabled, other players can claim skills/traits from personal journals they didn't create. Requires 'Allow Others to Open' to be enabled. If disabled, only the author can claim from their own journals.",
+
 }

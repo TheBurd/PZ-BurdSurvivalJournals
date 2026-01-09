@@ -111,6 +111,36 @@ option BurdJournals.LearningTimeMultiplier = {
     translation = BurdJournals_LearningTimeMultiplier,
 }
 
+/* Player Stats Recording */
+option BurdJournals.EnableStatRecording = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_EnableStatRecording,
+}
+
+option BurdJournals.RecordZombieKills = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_RecordZombieKills,
+}
+
+option BurdJournals.RecordHoursSurvived = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_RecordHoursSurvived,
+}
+
+/* Baseline Restriction - Only record earned progress (anti-exploit) */
+option BurdJournals.EnableBaselineRestriction = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_EnableBaselineRestriction,
+}
+
 /* ============================================================ */
 /* TAB 2: SURVIVAL JOURNALS - LOOT                              */
 /* Settings for world-found worn & bloody journals              */
@@ -310,3 +340,21 @@ option BurdJournals.AllowOthersToClaimFromJournals = {
     page = BurdJournals_Advanced,
     translation = BurdJournals_AllowOthersToClaimFromJournals,
 }
+
+/* ============================================================ */
+/* CRAFTING NOTES                                                */
+/* ============================================================ */
+
+/* All journal crafting is done through the standard crafting    */
+/* menu (B key). Available recipes:                              */
+/*                                                                */
+/* BIND (Journal/Notebook -> Survival Journal):                  */
+/*   - Thread + Any Cover (3x binding material + thread + needle)*/
+/*   - Adhesive + Any Cover (10x binding material + tape/glue)   */
+/*                                                                */
+/* RESTORE (Worn/Bloody -> Clean Filled):                        */
+/*   - Thread + Any Cover (1x binding + thread + needle)         */
+/*   - Adhesive + Any Cover (5x binding + tape/glue)             */
+/*                                                                */
+/* Thread recipes require Tailoring 1 and award 3 Tailoring XP.  */
+/* Adhesive recipes have no skill requirement but use more mats. */

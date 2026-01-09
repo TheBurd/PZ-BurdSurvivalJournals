@@ -134,7 +134,7 @@ function BurdJournals.Client.requestJournalInitialization(journal, callback)
     -- Store callback for when server responds
     BurdJournals.Client.pendingInitCallback = callback
 
-    sendClientCommand("BurdJournals", "initializeJournal", {
+    sendClientCommand(getPlayer(), "BurdJournals", "initializeJournal", {
         itemType = itemType,
         clientUUID = clientUUID
     })
@@ -178,9 +178,12 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
         message = "Recorded: " .. table.concat(feedbackParts, ", ")
     end
 
-    BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.SUCCESS)
+    BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
 
     -- CRITICAL: Apply journal data directly from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     local journalId = args.newJournalId or args.journalId
     if journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for ID " .. tostring(journalId))
@@ -206,9 +209,23 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
                 print("[BurdJournals] Client: Found new journal, updating panel reference")
                 panel.journal = newJournal
                 panel.pendingNewJournalId = nil
+                -- Also apply journalData to the new panel.journal reference directly
+                if args.journalData then
+                    local panelModData = panel.journal:getModData()
+                    panelModData.BurdJournals = args.journalData
+                    print("[BurdJournals] Client: Applied journalData to new panel.journal")
+                end
             else
                 print("[BurdJournals] Client: New journal NOT found in inventory yet!")
+                -- Store the pending journal ID - we'll try to find it on next UI refresh
                 panel.pendingNewJournalId = args.newJournalId
+            end
+        elseif journalId and panel.journal and panel.journal:getID() == journalId then
+            -- Same journal, just update modData directly on panel's reference
+            if args.journalData then
+                local panelModData = panel.journal:getModData()
+                panelModData.BurdJournals = args.journalData
+                print("[BurdJournals] Client: Applied journalData to existing panel.journal")
             end
         end
 
@@ -309,15 +326,38 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     if args.journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for absorb")
+
+        -- Update journal found by ID
         local journal = BurdJournals.findItemById(player, args.journalId)
         if journal then
             local modData = journal:getModData()
+            -- Debug: show claimed skills before
+            local claimedBefore = modData.BurdJournals and modData.BurdJournals.claimedSkills or {}
+            print("[BurdJournals] Client: claimedSkills BEFORE: " .. tostring(BurdJournals.countTable(claimedBefore)))
+
             modData.BurdJournals = args.journalData
+
+            -- Debug: show claimed skills after
+            local claimedAfter = modData.BurdJournals and modData.BurdJournals.claimedSkills or {}
+            print("[BurdJournals] Client: claimedSkills AFTER: " .. tostring(BurdJournals.countTable(claimedAfter)))
             print("[BurdJournals] Client: Journal data applied successfully for absorb")
         else
             print("[BurdJournals] Client: Could not find journal to apply absorb data")
+        end
+
+        -- ALSO update the UI panel's journal directly if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                print("[BurdJournals] Client: Also updating panel.journal modData directly")
+                panelModData.BurdJournals = args.journalData
+            end
         end
     elseif args.journalId then
         -- Fallback: Mark skill/trait as claimed locally if no journalData provided
@@ -330,11 +370,36 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
                 BurdJournals.claimTrait(journal, args.traitId)
             end
         end
+
+        -- Also mark on panel's journal
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                if args.skillName then
+                    BurdJournals.claimSkill(panel.journal, args.skillName)
+                end
+                if args.traitId then
+                    BurdJournals.claimTrait(panel.journal, args.traitId)
+                end
+            end
+        end
     end
 
     -- Refresh UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-        BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+        local panel = BurdJournals.UI.MainPanel.instance
+        -- Debug: Check if UI panel's journal matches the one we updated
+        local panelJournalId = panel.journal and panel.journal:getID() or "nil"
+        print("[BurdJournals] Client: UI panel journal ID = " .. tostring(panelJournalId) .. ", server response journalId = " .. tostring(args.journalId))
+
+        -- Double-check: Read the claimed skills from panel's journal directly
+        if panel.journal then
+            local panelModData = panel.journal:getModData()
+            local panelClaimed = panelModData.BurdJournals and panelModData.BurdJournals.claimedSkills or {}
+            print("[BurdJournals] Client: Panel's journal claimedSkills count = " .. tostring(BurdJournals.countTable(panelClaimed)))
+        end
+
+        panel:refreshAbsorptionList()
     end
 end
 
@@ -364,6 +429,9 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     if args.journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for claimSuccess")
         local journal = BurdJournals.findItemById(player, args.journalId)
@@ -374,23 +442,42 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
         else
             print("[BurdJournals] Client: Could not find journal to apply claimSuccess data")
         end
-    end
 
-    -- Refresh UI with delay to allow applyXP to process first
-    -- The applyXP command uses sendAddXp which is async, so we need to wait
-    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-        local ticksWaited = 0
-        local refreshAfterXP
-        refreshAfterXP = function()
-            ticksWaited = ticksWaited + 1
-            if ticksWaited >= 2 then
-                Events.OnTick.Remove(refreshAfterXP)
-                if BurdJournals.UI.MainPanel.instance then
-                    BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
-                end
+        -- ALSO update the UI panel's journal directly if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                print("[BurdJournals] Client: Also updating panel.journal modData directly for claimSuccess")
+                panelModData.BurdJournals = args.journalData
             end
         end
-        Events.OnTick.Add(refreshAfterXP)
+    end
+
+    -- Refresh UI if open - in SP mode, refresh immediately since server response is synchronous
+    -- In MP, we still delay slightly to allow applyXP to process first
+    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+        -- In single player, isClient() and isServer() are both true, and our SP workaround
+        -- calls handlers synchronously, so no delay needed
+        if isClient() and isServer() then
+            -- Single player: refresh immediately
+            print("[BurdJournals] Client: SP mode - refreshing UI immediately for claimSuccess")
+            BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+        else
+            -- Multiplayer: delay to allow applyXP async processing
+            local ticksWaited = 0
+            local refreshAfterXP
+            refreshAfterXP = function()
+                ticksWaited = ticksWaited + 1
+                if ticksWaited >= 2 then
+                    Events.OnTick.Remove(refreshAfterXP)
+                    if BurdJournals.UI.MainPanel.instance then
+                        BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+                    end
+                end
+            end
+            Events.OnTick.Add(refreshAfterXP)
+        end
     end
 end
 
@@ -572,6 +659,9 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     if args.journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for grantTrait")
         local journal = BurdJournals.findItemById(player, args.journalId)
@@ -582,11 +672,29 @@ function BurdJournals.Client.handleGrantTrait(player, args)
         else
             print("[BurdJournals] Client: Could not find journal to apply grantTrait data")
         end
+
+        -- ALSO update the UI panel's journal directly if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                print("[BurdJournals] Client: Also updating panel.journal modData directly for grantTrait")
+                panelModData.BurdJournals = args.journalData
+            end
+        end
     elseif args.journalId then
         -- Fallback: Mark trait as claimed locally if no journalData provided
         local journal = BurdJournals.findItemById(player, args.journalId)
         if journal then
             BurdJournals.claimTrait(journal, traitId)
+        end
+
+        -- Also mark on panel's journal
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                BurdJournals.claimTrait(panel.journal, traitId)
+            end
         end
     end
 

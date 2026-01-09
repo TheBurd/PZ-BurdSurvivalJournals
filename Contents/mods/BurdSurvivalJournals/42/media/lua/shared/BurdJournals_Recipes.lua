@@ -1,20 +1,18 @@
 --[[
     Burd's Survival Journals - Recipe & OnCreate Callbacks
     Build 42
-    
+
     Handles OnCreate callbacks for journal creation.
-    
+
     IMPORTANT: OnCreate is called in TWO different contexts:
     1. Recipe crafting: (items, result, player, selectedItem) - result is the created item
     2. Loot spawning:   (item) - item is the created item directly
-    
+
     Each callback must handle BOTH signatures to work with world loot spawns!
 ]]
 
+-- Load the shared module
 require "BurdJournals_Shared"
-
-BurdJournals = BurdJournals or {}
-BurdJournals.Recipes = BurdJournals.Recipes or {}
 
 -- ============================================================
 --                    HELPER FUNCTION
@@ -39,7 +37,7 @@ local function getItemFromArgs(arg1, arg2, arg3, arg4)
             return resultItem, arg2, consumedItems
         end
     end
-    
+
     -- Check for B41 recipe signature: (items, result, player, selectedItem)
     if arg2 and type(arg2) ~= "nil" then
         -- Verify arg2 is actually an item (has getModData)
@@ -47,12 +45,12 @@ local function getItemFromArgs(arg1, arg2, arg3, arg4)
             return arg2, arg3, arg1
         end
     end
-    
+
     -- Loot spawn signature: (item) - arg1 IS the item directly
     if arg1 and arg1.getModData then
         return arg1, nil, nil
     end
-    
+
     -- Fallback: something went wrong
     return nil, nil, nil
 end
@@ -122,7 +120,7 @@ function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
             BurdJournals.updateJournalIcon(item)
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateBlankClean: " .. tostring(err))
     end
@@ -151,7 +149,7 @@ function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
             BurdJournals.updateJournalIcon(item)
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateBlankWorn: " .. tostring(err))
     end
@@ -180,7 +178,7 @@ function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
             BurdJournals.updateJournalIcon(item)
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateBlankBloody: " .. tostring(err))
     end
@@ -250,7 +248,7 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
             item:transmitModData()
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledClean: " .. tostring(err))
     end
@@ -262,17 +260,17 @@ end
 function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
-        if not item then 
-            return 
+        if not item then
+            return
         end
-        
+
 
         -- Get sandbox settings for worn journal rewards (with safe fallbacks)
         local minSkills = 1
         local maxSkills = 2
         local minXP = 25
         local maxXP = 75
-        
+
         if BurdJournals and BurdJournals.getSandboxOption then
             minSkills = BurdJournals.getSandboxOption("WornJournalMinSkills") or minSkills
             maxSkills = BurdJournals.getSandboxOption("WornJournalMaxSkills") or maxSkills
@@ -323,7 +321,7 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         local skillCount = 0
         for _ in pairs(modData.BurdJournals.skills or {}) do skillCount = skillCount + 1 end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledWorn: " .. tostring(err))
     end
@@ -341,7 +339,7 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
         local minXP = 50
         local maxXP = 150
         local traitChance = 15
-        
+
         if BurdJournals and BurdJournals.getSandboxOption then
             minSkills = BurdJournals.getSandboxOption("BloodyJournalMinSkills") or minSkills
             maxSkills = BurdJournals.getSandboxOption("BloodyJournalMaxSkills") or maxSkills
@@ -419,7 +417,7 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             item:transmitModData()
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledBloody: " .. tostring(err))
     end
@@ -440,7 +438,7 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
-        
+
         -- Find the worn journal in the input items
         local wornJournal = nil
         if inputItems and inputItems.size then
@@ -452,14 +450,14 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
                 end
             end
         end
-        
+
         if not wornJournal then
             return
         end
-        
+
         local wornModData = wornJournal:getModData()
         local journalData = wornModData.BurdJournals
-        
+
         if journalData then
             local resultModData = result:getModData()
             resultModData.BurdJournals = {
@@ -481,7 +479,7 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
                 claimedSkills = journalData.claimedSkills or {},
                 claimedTraits = journalData.claimedTraits or {}
             }
-            
+
             if BurdJournals and BurdJournals.updateJournalName then
                 BurdJournals.updateJournalName(result)
             end
@@ -490,26 +488,22 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
             end
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCleanWornJournal: " .. tostring(err))
     end
 end
 
 -- ============================================================
---                   CLEANING CALLBACKS
--- ============================================================
-
--- ============================================================
 --           FILLED JOURNAL CONVERSION CALLBACKS
 -- ============================================================
 
--- Convert Worn Filled → Clean Filled (preserves data)
+-- Convert Worn Filled -> Clean Filled (preserves data)
 function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
-        
+
         -- Find the worn journal in the input items
         local wornJournal = nil
         if inputItems and inputItems.size then
@@ -521,11 +515,11 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
                 end
             end
         end
-        
+
         if wornJournal then
             local wornModData = wornJournal:getModData()
             local journalData = wornModData.BurdJournals
-            
+
             if journalData then
                 local resultModData = result:getModData()
                 resultModData.BurdJournals = {
@@ -547,7 +541,7 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
                     restoredBy = player and player:getUsername() or "Unknown",
                     restoredTimestamp = getGameTime():getWorldAgeHours(),
                 }
-                
+
                 if BurdJournals and BurdJournals.updateJournalName then
                     BurdJournals.updateJournalName(result)
                 end
@@ -567,18 +561,18 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
             }
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledCleanFromWorn: " .. tostring(err))
     end
 end
 
--- Convert Bloody Filled → Worn Filled (preserves data)
+-- Convert Bloody Filled -> Worn Filled (preserves data)
 function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
-        
+
         -- Find the bloody journal in the input items
         local bloodyJournal = nil
         if inputItems and inputItems.size then
@@ -590,11 +584,11 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
                 end
             end
         end
-        
+
         if bloodyJournal then
             local bloodyModData = bloodyJournal:getModData()
             local journalData = bloodyModData.BurdJournals
-            
+
             if journalData then
                 local resultModData = result:getModData()
                 resultModData.BurdJournals = {
@@ -616,7 +610,7 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
                     cleanedBy = player and player:getUsername() or "Unknown",
                     cleanedTimestamp = getGameTime():getWorldAgeHours(),
                 }
-                
+
                 if BurdJournals and BurdJournals.updateJournalName then
                     BurdJournals.updateJournalName(result)
                 end
@@ -629,13 +623,13 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
             BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledWornFromBloody: " .. tostring(err))
     end
 end
 
--- Convert Worn or Bloody Filled → Clean Filled (preserves data)
+-- Convert Worn or Bloody Filled -> Clean Filled (preserves data)
 -- Universal restore callback that handles both worn and bloody inputs
 function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
@@ -710,12 +704,12 @@ function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4
     end
 end
 
--- Convert Bloody Filled → Clean Filled directly (preserves data)
+-- Convert Bloody Filled -> Clean Filled directly (preserves data)
 function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
-        
+
         -- Find the bloody journal in the input items
         local bloodyJournal = nil
         if inputItems and inputItems.size then
@@ -727,11 +721,11 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
                 end
             end
         end
-        
+
         if bloodyJournal then
             local bloodyModData = bloodyJournal:getModData()
             local journalData = bloodyModData.BurdJournals
-            
+
             if journalData then
                 local resultModData = result:getModData()
                 resultModData.BurdJournals = {
@@ -754,7 +748,7 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
                     restoredBy = player and player:getUsername() or "Unknown",
                     restoredTimestamp = getGameTime():getWorldAgeHours(),
                 }
-                
+
                 if BurdJournals and BurdJournals.updateJournalName then
                     BurdJournals.updateJournalName(result)
                 end
@@ -774,11 +768,8 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
             }
         end
     end)
-    
+
     if not ok then
         print("[BurdJournals] ERROR in OnCreateFilledCleanFromBloody: " .. tostring(err))
     end
 end
-
-
-

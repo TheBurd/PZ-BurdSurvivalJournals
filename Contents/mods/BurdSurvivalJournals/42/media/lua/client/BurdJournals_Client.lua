@@ -25,6 +25,28 @@ BurdJournals.Client = BurdJournals.Client or {}
 -- ==================== CLIENT INITIALIZATION ====================
 
 function BurdJournals.Client.init()
+    -- Try to capture baseline for existing characters that don't have it yet
+    -- This handles:
+    -- 1. Existing saves (characters created before the mod update)
+    -- 2. Characters where OnCreatePlayer might have been missed
+    local player = getPlayer()
+    if player then
+        local modData = player:getModData()
+        if not modData.BurdJournals or not modData.BurdJournals.baselineCaptured then
+            -- Small delay to ensure player is fully loaded
+            local captureAfterDelay
+            local ticksWaited = 0
+            captureAfterDelay = function()
+                ticksWaited = ticksWaited + 1
+                if ticksWaited >= 10 then  -- Wait 10 ticks (~1 second) for game start
+                    Events.OnTick.Remove(captureAfterDelay)
+                    -- Pass false for isNewCharacter - calculate baseline from profession/traits
+                    BurdJournals.Client.captureBaseline(player, false)
+                end
+            end
+            Events.OnTick.Add(captureAfterDelay)
+        end
+    end
 end
 
 -- ==================== HALO TEXT UTILITIES ====================
@@ -164,23 +186,51 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
 
     print("[BurdJournals] Client: handleRecordSuccess received, newJournalId=" .. tostring(args.newJournalId) .. ", journalId=" .. tostring(args.journalId))
 
-    -- Build feedback message
-    local feedbackParts = {}
-    if args.skillsRecorded and args.skillsRecorded > 0 then
-        table.insert(feedbackParts, args.skillsRecorded .. " skill" .. (args.skillsRecorded > 1 and "s" or ""))
-    end
-    if args.traitsRecorded and args.traitsRecorded > 0 then
-        table.insert(feedbackParts, args.traitsRecorded .. " trait" .. (args.traitsRecorded > 1 and "s" or ""))
+    -- Build specific feedback message with actual names
+    local recordedItems = {}
+
+    -- Add skill names (get display names)
+    if args.skillNames then
+        for _, skillName in ipairs(args.skillNames) do
+            local displayName = BurdJournals.getPerkDisplayName(skillName) or skillName
+            table.insert(recordedItems, displayName)
+        end
     end
 
-    local message = "Progress saved!"
-    if #feedbackParts > 0 then
-        message = "Recorded: " .. table.concat(feedbackParts, ", ")
+    -- Add trait names (get display names)
+    if args.traitNames then
+        for _, traitId in ipairs(args.traitNames) do
+            local traitName = traitId
+            -- Try to get translated trait name
+            if TraitFactory and TraitFactory.getTrait then
+                local trait = TraitFactory.getTrait(traitId)
+                if trait and trait.getLabel then
+                    traitName = trait:getLabel() or traitId
+                end
+            end
+            table.insert(recordedItems, traitName)
+        end
+    end
+
+    -- Create concise message
+    local message
+    if #recordedItems == 0 then
+        message = "Progress saved!"
+    elseif #recordedItems == 1 then
+        message = "Recorded " .. recordedItems[1]
+    elseif #recordedItems <= 3 then
+        message = "Recorded " .. table.concat(recordedItems, ", ")
+    else
+        -- More than 3 items, abbreviate
+        message = "Recorded " .. recordedItems[1] .. ", " .. recordedItems[2] .. " +" .. (#recordedItems - 2) .. " more"
     end
 
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
 
     -- CRITICAL: Apply journal data directly from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     local journalId = args.newJournalId or args.journalId
     if journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for ID " .. tostring(journalId))
@@ -206,10 +256,23 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
                 print("[BurdJournals] Client: Found new journal, updating panel reference")
                 panel.journal = newJournal
                 panel.pendingNewJournalId = nil
+                -- Also apply journalData to the new panel.journal reference directly
+                if args.journalData then
+                    local panelModData = panel.journal:getModData()
+                    panelModData.BurdJournals = args.journalData
+                    print("[BurdJournals] Client: Applied journalData to new panel.journal")
+                end
             else
                 print("[BurdJournals] Client: New journal NOT found in inventory yet!")
                 -- Store the pending journal ID - we'll try to find it on next UI refresh
                 panel.pendingNewJournalId = args.newJournalId
+            end
+        elseif journalId and panel.journal and panel.journal:getID() == journalId then
+            -- Same journal, just update modData directly on panel's reference
+            if args.journalData then
+                local panelModData = panel.journal:getModData()
+                panelModData.BurdJournals = args.journalData
+                print("[BurdJournals] Client: Applied journalData to existing panel.journal")
             end
         end
 
@@ -219,10 +282,14 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
         end
 
         -- Refresh the UI to show updated data
+        -- Pass journalData directly to populateRecordList to bypass getModData() timing issues in SP
         if panel.refreshJournalData then
             panel:refreshJournalData()
         end
-        if panel.populateRecordList then
+        if panel.populateRecordList and args.journalData then
+            print("[BurdJournals] Client: Calling populateRecordList with server journalData")
+            pcall(function() panel:populateRecordList(args.journalData) end)
+        elseif panel.populateRecordList then
             pcall(function() panel:populateRecordList() end)
         end
     end
@@ -249,24 +316,23 @@ function BurdJournals.Client.handleApplyXP(player, args)
             local xpToApply = data.xp or 0
             local skillMode = data.mode or mode
 
-            -- Debug removed
-
             local beforeXP = player:getXp():getXP(perk)
 
             if skillMode == "add" then
-                -- ADD mode: Use sendAddXp - the vanilla MP-safe function
-                -- This is what ISPlayerStatsUI uses for the debug panel
+                -- ADD mode: Add XP to current value
+                -- Use sendAddXp - works in both SP and MP (like Skill Recovery Journal does)
                 if sendAddXp then
-                    sendAddXp(player, perk, xpToApply, true)  -- true = noMultiplier
+                    sendAddXp(player, perk, xpToApply, true)
                     skillsApplied = skillsApplied + 1
                     totalXPGained = totalXPGained + xpToApply
+                    print("[BurdJournals] Applied +" .. tostring(xpToApply) .. " XP to " .. tostring(skillName))
                 else
-                    -- Fallback for single player
-                    player:getXp():AddXP(perk, xpToApply, true, true)
+                    -- Fallback: direct AddXP (should rarely happen)
+                    player:getXp():AddXP(perk, xpToApply)
                     local afterXP = player:getXp():getXP(perk)
                     totalXPGained = totalXPGained + (afterXP - beforeXP)
                     skillsApplied = skillsApplied + 1
-                    -- Debug removed
+                    print("[BurdJournals] Fallback: Applied XP to " .. tostring(skillName))
                 end
             else
                 -- SET mode: Only apply if journal XP is higher
@@ -274,16 +340,14 @@ function BurdJournals.Client.handleApplyXP(player, args)
                     local xpDiff = xpToApply - beforeXP
                     if sendAddXp then
                         sendAddXp(player, perk, xpDiff, true)
-                        -- Debug removed
+                        print("[BurdJournals] Set " .. tostring(skillName) .. " to " .. tostring(xpToApply) .. " (added " .. tostring(xpDiff) .. ")")
                     else
-                        player:getXp():AddXP(perk, xpDiff, true, true)
+                        player:getXp():AddXP(perk, xpDiff)
                     end
                     totalXPGained = totalXPGained + xpDiff
                     skillsApplied = skillsApplied + 1
-                    -- Debug removed
                 end
             end
-        else
         end
     end
 
@@ -310,15 +374,38 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     if args.journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for absorb")
+
+        -- Update journal found by ID
         local journal = BurdJournals.findItemById(player, args.journalId)
         if journal then
             local modData = journal:getModData()
+            -- Debug: show claimed skills before
+            local claimedBefore = modData.BurdJournals and modData.BurdJournals.claimedSkills or {}
+            print("[BurdJournals] Client: claimedSkills BEFORE: " .. tostring(BurdJournals.countTable(claimedBefore)))
+
             modData.BurdJournals = args.journalData
+
+            -- Debug: show claimed skills after
+            local claimedAfter = modData.BurdJournals and modData.BurdJournals.claimedSkills or {}
+            print("[BurdJournals] Client: claimedSkills AFTER: " .. tostring(BurdJournals.countTable(claimedAfter)))
             print("[BurdJournals] Client: Journal data applied successfully for absorb")
         else
             print("[BurdJournals] Client: Could not find journal to apply absorb data")
+        end
+
+        -- ALSO update the UI panel's journal directly if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                print("[BurdJournals] Client: Also updating panel.journal modData directly")
+                panelModData.BurdJournals = args.journalData
+            end
         end
     elseif args.journalId then
         -- Fallback: Mark skill/trait as claimed locally if no journalData provided
@@ -331,11 +418,36 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
                 BurdJournals.claimTrait(journal, args.traitId)
             end
         end
+
+        -- Also mark on panel's journal
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                if args.skillName then
+                    BurdJournals.claimSkill(panel.journal, args.skillName)
+                end
+                if args.traitId then
+                    BurdJournals.claimTrait(panel.journal, args.traitId)
+                end
+            end
+        end
     end
 
     -- Refresh UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-        BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+        local panel = BurdJournals.UI.MainPanel.instance
+        -- Debug: Check if UI panel's journal matches the one we updated
+        local panelJournalId = panel.journal and panel.journal:getID() or "nil"
+        print("[BurdJournals] Client: UI panel journal ID = " .. tostring(panelJournalId) .. ", server response journalId = " .. tostring(args.journalId))
+
+        -- Double-check: Read the claimed skills from panel's journal directly
+        if panel.journal then
+            local panelModData = panel.journal:getModData()
+            local panelClaimed = panelModData.BurdJournals and panelModData.BurdJournals.claimedSkills or {}
+            print("[BurdJournals] Client: Panel's journal claimedSkills count = " .. tostring(BurdJournals.countTable(panelClaimed)))
+        end
+
+        panel:refreshAbsorptionList()
     end
 end
 
@@ -365,6 +477,9 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     if args.journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for claimSuccess")
         local journal = BurdJournals.findItemById(player, args.journalId)
@@ -375,23 +490,29 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
         else
             print("[BurdJournals] Client: Could not find journal to apply claimSuccess data")
         end
-    end
 
-    -- Refresh UI if open - delay slightly to allow applyXP to process first
-    -- The applyXP command is sent before claimSuccess, but sendAddXp is async
-    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-        local ticksWaited = 0
-        local refreshAfterXP
-        refreshAfterXP = function()
-            ticksWaited = ticksWaited + 1
-            if ticksWaited >= 2 then
-                Events.OnTick.Remove(refreshAfterXP)
-                if BurdJournals.UI.MainPanel.instance then
-                    BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
-                end
+        -- ALSO update the UI panel's journal directly if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                print("[BurdJournals] Client: Also updating panel.journal modData directly for claimSuccess")
+                panelModData.BurdJournals = args.journalData
             end
         end
-        Events.OnTick.Add(refreshAfterXP)
+    end
+
+    -- Refresh UI if open
+    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+        local panel = BurdJournals.UI.MainPanel.instance
+        -- Use refreshJournalData which handles both absorption and log UIs
+        -- In SP, this is synchronous. In MP, sendAddXp is async but should still work.
+        print("[BurdJournals] Client: Refreshing UI for claimSuccess")
+        if panel.refreshJournalData then
+            panel:refreshJournalData()
+        elseif panel.refreshAbsorptionList then
+            panel:refreshAbsorptionList()
+        end
     end
 end
 
@@ -573,6 +694,9 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
+    -- We need to update BOTH:
+    -- 1. The journal found by ID (for consistency)
+    -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     if args.journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for grantTrait")
         local journal = BurdJournals.findItemById(player, args.journalId)
@@ -583,11 +707,29 @@ function BurdJournals.Client.handleGrantTrait(player, args)
         else
             print("[BurdJournals] Client: Could not find journal to apply grantTrait data")
         end
+
+        -- ALSO update the UI panel's journal directly if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                print("[BurdJournals] Client: Also updating panel.journal modData directly for grantTrait")
+                panelModData.BurdJournals = args.journalData
+            end
+        end
     elseif args.journalId then
         -- Fallback: Mark trait as claimed locally if no journalData provided
         local journal = BurdJournals.findItemById(player, args.journalId)
         if journal then
             BurdJournals.claimTrait(journal, traitId)
+        end
+
+        -- Also mark on panel's journal
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                BurdJournals.claimTrait(panel.journal, traitId)
+            end
         end
     end
 
@@ -636,11 +778,228 @@ function BurdJournals.Client.handleSkillMaxed(player, args)
     end
 end
 
+-- ==================== BASELINE CAPTURE (Anti-Exploit System) ====================
+
+-- Calculate the expected starting XP from profession and traits
+-- This allows us to retroactively determine baseline for existing saves
+-- Based on Skill Recovery Journal's approach - proven to work in Build 42
+function BurdJournals.Client.calculateProfessionBaseline(player)
+    if not player then return {}, {} end
+
+    local skillBaseline = {}
+    local traitBaseline = {}
+
+    -- Step 1: Collect bonus LEVELS from profession and traits
+    -- We store levels first (like SRJ does), then convert to XP
+    local bonusLevels = {}
+
+    local desc = player:getDescriptor()
+    if not desc then
+        print("[BurdJournals] calculateProfessionBaseline: No descriptor found!")
+        return skillBaseline, traitBaseline
+    end
+
+    -- Get profession
+    local playerProfessionID = desc:getCharacterProfession()
+    print("[BurdJournals] calculateProfessionBaseline: profession=" .. tostring(playerProfessionID))
+
+    if playerProfessionID and CharacterProfessionDefinition then
+        local profDef = CharacterProfessionDefinition.getCharacterProfessionDefinition(playerProfessionID)
+        if profDef then
+            -- Get profession's XP boosts (these are skill level bonuses)
+            local profXpBoost = transformIntoKahluaTable(profDef:getXpBoosts())
+            if profXpBoost then
+                for perk, level in pairs(profXpBoost) do
+                    -- Use tostring() to get the perk ID string (e.g., "Carpentry", "Mechanics")
+                    local perkId = tostring(perk)
+                    local levelNum = tonumber(tostring(level))
+                    if levelNum and levelNum > 0 then
+                        bonusLevels[perkId] = (bonusLevels[perkId] or 0) + levelNum
+                        print("[BurdJournals] Profession grants " .. perkId .. " +" .. levelNum .. " levels")
+                    end
+                end
+            end
+
+            -- Get profession's granted (free) traits
+            local grantedTraits = profDef:getGrantedTraits()
+            if grantedTraits then
+                for i = 0, grantedTraits:size() - 1 do
+                    local traitName = tostring(grantedTraits:get(i))
+                    traitBaseline[traitName] = true
+                    print("[BurdJournals] Profession grants trait: " .. traitName)
+                end
+            end
+        end
+    end
+
+    -- Get trait XP boosts
+    local playerTraits = player:getCharacterTraits()
+    if playerTraits and playerTraits.getKnownTraits then
+        local knownTraits = playerTraits:getKnownTraits()
+        for i = 0, knownTraits:size() - 1 do
+            local traitTrait = knownTraits:get(i)
+            local traitId = tostring(traitTrait)
+
+            -- Mark all current traits as baseline (they were chosen at start)
+            traitBaseline[traitId] = true
+
+            -- Get trait's XP boosts
+            if CharacterTraitDefinition then
+                local traitDef = CharacterTraitDefinition.getCharacterTraitDefinition(traitTrait)
+                if traitDef then
+                    local traitXpBoost = transformIntoKahluaTable(traitDef:getXpBoosts())
+                    if traitXpBoost then
+                        for perk, level in pairs(traitXpBoost) do
+                            local perkId = tostring(perk)
+                            local levelNum = tonumber(tostring(level))
+                            if levelNum and levelNum > 0 then
+                                bonusLevels[perkId] = (bonusLevels[perkId] or 0) + levelNum
+                                print("[BurdJournals] Trait " .. traitId .. " grants " .. perkId .. " +" .. levelNum .. " levels")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Step 2: Convert bonus levels to XP values
+    -- Use PZ's perk:getTotalXpForLevel() method for accurate conversion
+    for perkId, level in pairs(bonusLevels) do
+        -- Get the actual perk object from Perks global
+        local perk = Perks[perkId]
+        if perk then
+            -- Use PZ's built-in method to get XP for this level
+            local xp = perk:getTotalXpForLevel(level)
+            if xp and xp > 0 then
+                -- Map perk ID to our skill names
+                local skillName = BurdJournals.mapPerkIdToSkillName(perkId)
+                if skillName then
+                    skillBaseline[skillName] = (skillBaseline[skillName] or 0) + xp
+                    print("[BurdJournals] Baseline: " .. skillName .. " = " .. xp .. " XP (Lv" .. level .. ")")
+                end
+            end
+        else
+            print("[BurdJournals] WARNING: Unknown perk ID: " .. perkId)
+        end
+    end
+
+    print("[BurdJournals] Final skill baseline:")
+    for skill, xp in pairs(skillBaseline) do
+        print("[BurdJournals]   " .. skill .. " = " .. xp .. " XP")
+    end
+
+    return skillBaseline, traitBaseline
+end
+
+-- Capture and store the player's starting skills/traits as baseline
+-- This is called on character creation to track what they spawned with
+-- For existing saves, it calculates baseline from profession + traits
+-- Parameters:
+--   player: the player object
+--   isNewCharacter: true if called from OnCreatePlayer (fresh spawn)
+function BurdJournals.Client.captureBaseline(player, isNewCharacter)
+    if not player then return end
+
+    local modData = player:getModData()
+    if not modData.BurdJournals then modData.BurdJournals = {} end
+
+    -- Don't overwrite if already captured (reconnect, save load, etc.)
+    if modData.BurdJournals.baselineCaptured then
+        print("[BurdJournals] Baseline already captured, skipping")
+        return
+    end
+
+    if isNewCharacter then
+        -- NEW CHARACTER: Capture current XP directly (it IS their spawn XP)
+        print("[BurdJournals] Capturing baseline for NEW character (direct capture)")
+        modData.BurdJournals.skillBaseline = {}
+        local allowedSkills = BurdJournals.getAllowedSkills()
+        for _, skillName in ipairs(allowedSkills) do
+            local perk = BurdJournals.getPerkByName(skillName)
+            if perk then
+                local xp = player:getXp():getXP(perk)
+                if xp > 0 then
+                    modData.BurdJournals.skillBaseline[skillName] = xp
+                end
+            end
+        end
+
+        -- Capture trait baseline (all current traits are "starting" traits)
+        modData.BurdJournals.traitBaseline = {}
+        local traits = BurdJournals.collectPlayerTraits(player, false)
+        for traitId, _ in pairs(traits) do
+            modData.BurdJournals.traitBaseline[traitId] = true
+        end
+    else
+        -- EXISTING SAVE: Calculate baseline from profession + traits
+        print("[BurdJournals] Calculating baseline for EXISTING save (retroactive)")
+        local calcSkills, calcTraits = BurdJournals.Client.calculateProfessionBaseline(player)
+        modData.BurdJournals.skillBaseline = calcSkills
+        modData.BurdJournals.traitBaseline = calcTraits
+    end
+
+    modData.BurdJournals.baselineCaptured = true
+
+    -- Detailed logging for debugging
+    local method = isNewCharacter and "direct capture" or "calculated from profession/traits"
+    print("[BurdJournals] Baseline captured (" .. method .. "): " ..
+          tostring(BurdJournals.countTable(modData.BurdJournals.skillBaseline)) .. " skills, " ..
+          tostring(BurdJournals.countTable(modData.BurdJournals.traitBaseline)) .. " traits")
+
+    -- Log each baseline skill with XP for debugging
+    for skillName, xp in pairs(modData.BurdJournals.skillBaseline) do
+        print("[BurdJournals]   Baseline skill: " .. skillName .. " = " .. tostring(xp) .. " XP")
+    end
+    for traitId, _ in pairs(modData.BurdJournals.traitBaseline) do
+        print("[BurdJournals]   Baseline trait: " .. traitId)
+    end
+end
+
+-- Force recalculate baseline (for testing/admin use)
+-- Call from console: BurdJournals.Client.forceRecalculateBaseline()
+function BurdJournals.Client.forceRecalculateBaseline()
+    local player = getPlayer()
+    if not player then
+        print("[BurdJournals] No player found")
+        return
+    end
+
+    local modData = player:getModData()
+    if modData.BurdJournals then
+        modData.BurdJournals.baselineCaptured = nil
+        modData.BurdJournals.skillBaseline = nil
+        modData.BurdJournals.traitBaseline = nil
+    end
+
+    print("[BurdJournals] Baseline cleared, recalculating...")
+    BurdJournals.Client.captureBaseline(player, false)
+    print("[BurdJournals] Baseline recalculated from profession/traits")
+end
+
+-- Handler for OnCreatePlayer event (NEW characters only)
+function BurdJournals.Client.onCreatePlayer(playerIndex)
+    local player = getSpecificPlayer(playerIndex)
+    if player then
+        -- Small delay to ensure player is fully initialized
+        local captureAfterDelay
+        local ticksWaited = 0
+        captureAfterDelay = function()
+            ticksWaited = ticksWaited + 1
+            if ticksWaited >= 5 then  -- Wait 5 ticks (~0.5 seconds)
+                Events.OnTick.Remove(captureAfterDelay)
+                -- Pass true for isNewCharacter - direct capture of spawn XP
+                BurdJournals.Client.captureBaseline(player, true)
+            end
+        end
+        Events.OnTick.Add(captureAfterDelay)
+    end
+end
+
 -- ==================== EVENT REGISTRATION ====================
 
 Events.OnServerCommand.Add(BurdJournals.Client.onServerCommand)
 Events.OnGameStart.Add(BurdJournals.Client.init)
-
--- Debug removed
+Events.OnCreatePlayer.Add(BurdJournals.Client.onCreatePlayer)
 
 

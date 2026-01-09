@@ -1,25 +1,25 @@
 --[[
     Burd's Survival Journals - Context Menu
-    Build 41 - Version 2.0
+    Build 42 - Version 2.0
 
     Right-click context menu options for journals
 
     BLOODY JOURNALS (rare, from zombie corpses):
-    - Open Journal... ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ absorption UI (better XP + rare traits)
-    - Absorb All ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ quick absorb all remaining (with confirmation)
-    - Convert to Personal Journal ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ via crafting menu (destroys rewards)
+    - Open Journal... â†’ absorption UI (better XP + rare traits)
+    - Absorb All â†’ quick absorb all remaining (with confirmation)
+    - Convert to Personal Journal â†’ via crafting menu (destroys rewards)
     Note: Bloody journals can be read directly without cleaning.
 
     WORN JOURNALS (common, from world containers):
-    - Open Journal... ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ absorption UI (light XP rewards)
-    - Absorb All ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ quick absorb all remaining (with confirmation)
-    - Convert to Personal Journal ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ Tailoring Lv1 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ Clean Blank
+    - Open Journal... â†’ absorption UI (light XP rewards)
+    - Absorb All â†’ quick absorb all remaining (with confirmation)
+    - Convert to Personal Journal â†’ Tailoring Lv1 â†’ Clean Blank
 
     CLEAN JOURNALS (player-created, reusable):
-    - Open Journal... ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ view/set XP
-    - Read ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ apply XP (SET mode)
-    - Erase ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ convert to blank
-    - Record Progress ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ log skills
+    - Open Journal... â†’ view/set XP
+    - Read â†’ apply XP (SET mode)
+    - Erase â†’ convert to blank
+    - Record Progress â†’ log skills
 ]]
 
 require "BurdJournals_Shared"
@@ -373,11 +373,6 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
         local journalData = BurdJournals.getJournalData(journal)
         local isFilled = BurdJournals.isFilledJournal(journal)
         
-        
-        if not journalData then
-            return
-        end
-        
         if isFilled and journalData then
             -- Debug removed
             
@@ -505,7 +500,7 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
     local canOpen, openReason = BurdJournals.canPlayerOpenJournal(player, journal)
     local canClaim, claimReason = BurdJournals.canPlayerClaimFromJournal(player, journal)
     local isOwner = BurdJournals.isJournalOwner(player, journal)
-
+    
     -- Count claimable skills and traits
     local claimableSkills = 0
     local claimableTraits = 0
@@ -576,7 +571,7 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         tooltip.description = desc
         openOption.toolTip = tooltip
     end
-
+    
     -- Update Records (adds/updates current skills to journal) - Owner only
     if hasPen and isOwner then
         local recordOption = context:addOption(
@@ -592,7 +587,7 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         tooltip.description = "Opens journal to update your recorded skills.\nRecorded values are only updated if your current level is higher."
         recordOption.toolTip = tooltip
     end
-
+    
     -- Claim All (with timed learning UI)
     if totalClaimable > 0 and canOpen then
         local claimAllOption = context:addOption(
@@ -624,7 +619,7 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
             claimAllOption.toolTip = tooltip
         end
     end
-
+    
     -- Rename - Owner only
     if isOwner then
         context:addOption(
@@ -656,7 +651,7 @@ end
 
 function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, journal)
     local hasPen = BurdJournals.hasWritingTool(player)
-    
+
     -- Open Journal... (for blank journals, opens in log/record mode)
     local openOption = context:addOption(
         getText("ContextMenu_BurdJournals_OpenJournal") or "Open Journal...",
@@ -673,7 +668,7 @@ function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, j
     if not hasPen then
         openOption.notAvailable = true
     end
-    
+
     -- Rename
     context:addOption(
         getText("ContextMenu_BurdJournals_Rename") or "Rename",
@@ -681,6 +676,20 @@ function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, j
         BurdJournals.ContextMenu.onRenameJournal,
         journal
     )
+
+    -- Disassemble Journal (get materials back)
+    local disassembleOption = context:addOption(
+        getText("ContextMenu_BurdJournals_Disassemble") or "Disassemble Journal",
+        player,
+        BurdJournals.ContextMenu.onDisassembleJournal,
+        journal
+    )
+    local tooltip2 = ISToolTip:new()
+    tooltip2:initialise()
+    tooltip2:setVisible(false)
+    tooltip2:setName(getText("Tooltip_BurdJournals_Disassemble") or "Disassemble Journal")
+    tooltip2.description = "Tear apart this journal for materials.\n\nYou will receive:\n  2x Paper\n  1x Leather Strips"
+    disassembleOption.toolTip = tooltip2
 end
 
 -- ==================== ACTION CALLBACKS ====================
@@ -846,10 +855,11 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
                     xpToApply = xpToApply * 5
                 end
 
-                -- B41 XP API: Simple 2-arg form
-                xpObj:AddXP(perk, xpToApply)
+                -- Use sendAddXp if available, otherwise fall back to AddXP
                 if sendAddXp then
-                    sendAddXp(player, perk:getType(), xpToApply)
+                    sendAddXp(player, perk, xpToApply, true)
+                else
+                    xpObj:AddXP(perk, xpToApply, true, true)
                 end
 
                 local afterXP = xpObj:getXP(perk)
@@ -909,8 +919,8 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
             if traitsSkipped > 0 then
                 if skipMsg ~= "" then skipMsg = skipMsg .. ", " end
                 skipMsg = skipMsg .. traitsSkipped .. " trait" .. (traitsSkipped > 1 and "s" or "") .. " already known"
-            end
-            player:Say(skipMsg)
+        end
+        player:Say(skipMsg)
         end
 
         -- Only dissolve if ALL rewards have been claimed (nothing left)
@@ -1132,11 +1142,73 @@ function BurdJournals.ContextMenu.onConfirmOverwrite(target, button, journal)
     end
 end
 
+-- Disassemble journal (get materials back)
+function BurdJournals.ContextMenu.onDisassembleJournal(player, journal)
+    -- Pick up the journal first if it's not in inventory
+    BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
+        -- Show confirmation dialog
+        local confirmText = getText("UI_BurdJournals_ConfirmDisassemble") or "Disassemble this journal?"
+        confirmText = confirmText .. "\n\nYou will receive:\n2x Paper, 1x Leather Strips"
+
+        local modal = ISModalDialog:new(
+            getCore():getScreenWidth() / 2 - 150,
+            getCore():getScreenHeight() / 2 - 75,
+            300, 150,
+            confirmText,
+            true,
+            p,
+            BurdJournals.ContextMenu.onConfirmDisassemble,
+            nil,
+            j
+        )
+        modal:initialise()
+        modal:addToUIManager()
+    end)
+end
+
+function BurdJournals.ContextMenu.onConfirmDisassemble(target, button, journal)
+    if button.internal == "YES" then
+        if BurdJournals.DisassembleJournalAction then
+            ISTimedActionQueue.add(BurdJournals.DisassembleJournalAction:new(target, journal))
+        end
+    end
+end
+
+-- ==================== RECIPE STRING PARSER (for disassemble output) ====================
+
+function BurdJournals.ContextMenu.parseRecipeString(recipeStr)
+    local materials = {}
+    if not recipeStr or recipeStr == "" then return materials end
+
+    -- Split by pipe |
+    for part in recipeStr:gmatch("[^|]+") do
+        part = part:match("^%s*(.-)%s*$") -- trim whitespace
+        if part and part ~= "" then
+            local mat = {}
+            -- Check for :keep suffix
+            mat.keep = part:match(":keep$") ~= nil
+            if mat.keep then
+                part = part:gsub(":keep$", "")
+            end
+
+            -- Parse type:qty format
+            local itemType, qty = part:match("^(.+):(%d+)$")
+            if itemType and qty then
+                mat.type = itemType
+                mat.count = tonumber(qty)
+                -- Generate display name
+                mat.name = itemType:gsub("Base%.", ""):gsub("tag:", "")
+                mat.name = mat.name:gsub("(%l)(%u)", "%1 %2") -- CamelCase to spaced
+                table.insert(materials, mat)
+            end
+        end
+    end
+    return materials
+end
+
 -- ==================== EVENT REGISTRATION ====================
 
 Events.OnFillInventoryObjectContextMenu.Add(BurdJournals.ContextMenu.onFillInventoryObjectContextMenu)
-
--- Debug removed
 
 
 
