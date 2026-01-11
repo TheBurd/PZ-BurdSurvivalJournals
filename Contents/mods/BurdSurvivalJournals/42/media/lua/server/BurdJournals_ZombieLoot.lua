@@ -133,9 +133,9 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
         usedSkills[skill] = true
     end
 
-    -- If profession has fewer skills than needed, fill with random skills from ALL_SKILLS
+    -- If profession has fewer skills than needed, fill with random skills (uses dynamic discovery)
     if #availableSkills < numSkills then
-        local allSkills = BurdJournals.ALL_SKILLS
+        local allSkills = BurdJournals.getAllowedSkills()
         local extraSkills = {}
 
         -- Collect skills not already in profession
@@ -189,21 +189,42 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
         }
     end
     
-    -- Maybe include a rare trait reward
+    -- Maybe include rare trait rewards (1 to maxTraits based on sandbox setting)
     local traits = nil
     if ZombRand(100) < traitChance then
-        -- Pick a random grantable trait
-        local availableTraits = BurdJournals.GRANTABLE_TRAITS
+        -- Pick random grantable traits
+        local availableTraits = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or BurdJournals.GRANTABLE_TRAITS
         if availableTraits and #availableTraits > 0 then
-            local traitId = availableTraits[ZombRand(#availableTraits) + 1]
-            if traitId then
-                -- Just use the trait ID as the name - we'll look up the display name when showing UI
-                -- Avoids calling TraitFactory.getTrait during zombie death (can cause crashes)
-                traits = {}
-                traits[traitId] = {
-                    name = traitId,  -- Will be resolved to display name in UI
-                    id = traitId,
-                }
+            -- Respect BloodyJournalMaxTraits sandbox setting
+            local maxTraits = SandboxVars.BurdJournals and SandboxVars.BurdJournals.BloodyJournalMaxTraits or 2
+            local numTraits = ZombRand(1, maxTraits + 1)  -- 1 to maxTraits
+
+            -- Build list of available traits to pick from
+            local traitPool = {}
+            for _, t in ipairs(availableTraits) do
+                table.insert(traitPool, t)
+            end
+
+            traits = {}
+            for i = 1, numTraits do
+                if #traitPool == 0 then break end
+                local idx = ZombRand(#traitPool) + 1
+                local traitId = traitPool[idx]
+                if traitId then
+                    -- Just use the trait ID as the name - we'll look up the display name when showing UI
+                    -- Avoids calling TraitFactory.getTrait during zombie death (can cause crashes)
+                    traits[traitId] = {
+                        name = traitId,  -- Will be resolved to display name in UI
+                        id = traitId,
+                    }
+                    -- Remove from pool to avoid duplicates
+                    table.remove(traitPool, idx)
+                end
+            end
+
+            -- If no traits were added, set back to nil
+            if next(traits) == nil then
+                traits = nil
             end
         end
     end
@@ -290,7 +311,7 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
         BurdJournals.updateJournalIcon(journal)
 
         -- Force sync in multiplayer
-        if isServer() then
+        if isServer() and journal.transmitModData then
             journal:transmitModData()
         end
     end

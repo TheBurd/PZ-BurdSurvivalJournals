@@ -24,15 +24,40 @@ BurdJournals.Client = BurdJournals.Client or {}
 
 -- ==================== CLIENT INITIALIZATION ====================
 
+-- Baseline data version - increment when baseline calculation logic changes
+-- This allows automatic recalculation when users update the mod
+BurdJournals.Client.BASELINE_VERSION = 2  -- v2: Fixed existing save detection and trait baseline
+
 function BurdJournals.Client.init()
     -- Try to capture baseline for existing characters that don't have it yet
     -- This handles:
     -- 1. Existing saves (characters created before the mod update)
     -- 2. Characters where OnCreatePlayer might have been missed
+    -- 3. Saves with outdated baseline data that needs recalculation
     local player = getPlayer()
     if player then
         local modData = player:getModData()
-        if not modData.BurdJournals or not modData.BurdJournals.baselineCaptured then
+        local needsBaseline = not modData.BurdJournals or not modData.BurdJournals.baselineCaptured
+
+        -- Check if baseline was captured with an older version
+        if modData.BurdJournals and modData.BurdJournals.baselineCaptured then
+            local currentVersion = modData.BurdJournals.baselineVersion or 1
+            if currentVersion < BurdJournals.Client.BASELINE_VERSION then
+                print("[BurdJournals] Baseline version " .. currentVersion .. " is outdated (current: " .. BurdJournals.Client.BASELINE_VERSION .. ")")
+                -- Only recalculate for existing saves (players who have played for a while)
+                local hoursAlive = player:getHoursSurvived() or 0
+                if hoursAlive > 1 then
+                    print("[BurdJournals] Existing save detected (" .. hoursAlive .. " hours survived), will recalculate baseline")
+                    -- Clear old baseline to allow recapture
+                    modData.BurdJournals.baselineCaptured = nil
+                    modData.BurdJournals.skillBaseline = nil
+                    modData.BurdJournals.traitBaseline = nil
+                    needsBaseline = true
+                end
+            end
+        end
+
+        if needsBaseline then
             -- Small delay to ensure player is fully loaded
             local captureAfterDelay
             local ticksWaited = 0
@@ -55,6 +80,7 @@ end
 BurdJournals.Client.HaloColors = {
     XP_GAIN = {r=0.3, g=0.9, b=0.3, a=1},       -- Green for XP gain
     TRAIT_GAIN = {r=0.9, g=0.7, b=0.2, a=1},    -- Gold for traits
+    RECIPE_GAIN = {r=0.4, g=0.85, b=0.95, a=1}, -- Cyan/teal for recipes
     DISSOLVE = {r=0.7, g=0.5, b=0.3, a=1},      -- Brown for dissolution
     ERROR = {r=0.9, g=0.3, b=0.3, a=1},         -- Red for errors
     INFO = {r=1, g=1, b=1, a=1},                -- White for info
@@ -72,6 +98,8 @@ function BurdJournals.Client.showHaloMessage(player, message, color)
             haloColor = HaloTextHelper.getColorGreen()
         elseif color == BurdJournals.Client.HaloColors.TRAIT_GAIN then
             haloColor = HaloTextHelper.getColorGreen()
+        elseif color == BurdJournals.Client.HaloColors.RECIPE_GAIN then
+            haloColor = HaloTextHelper.getColorBlue()  -- Closest to cyan/teal
         elseif color == BurdJournals.Client.HaloColors.ERROR then
             haloColor = HaloTextHelper.getColorRed()
         end
@@ -113,20 +141,20 @@ function BurdJournals.Client.onServerCommand(module, command, args)
         BurdJournals.Client.handleClaimSuccess(player, args)
 
     elseif command == "logSuccess" then
-        BurdJournals.Client.showHaloMessage(player, "Skills recorded!", BurdJournals.Client.HaloColors.INFO)
+        BurdJournals.Client.showHaloMessage(player, getText("UI_BurdJournals_SkillsRecorded") or "Skills recorded!", BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "recordSuccess" then
         BurdJournals.Client.handleRecordSuccess(player, args)
 
     elseif command == "eraseSuccess" then
-        BurdJournals.Client.showHaloMessage(player, "Journal erased", BurdJournals.Client.HaloColors.INFO)
+        BurdJournals.Client.showHaloMessage(player, getText("UI_BurdJournals_JournalErased") or "Journal erased", BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "cleanSuccess" then
-        local message = args and args.message or "Journal cleaned"
+        local message = args and args.message or (getText("UI_BurdJournals_JournalCleaned") or "Journal cleaned")
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "convertSuccess" then
-        local message = args and args.message or "Journal rebound"
+        local message = args and args.message or (getText("UI_BurdJournals_JournalRebound") or "Journal rebound")
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "removeJournal" then
@@ -134,6 +162,9 @@ function BurdJournals.Client.onServerCommand(module, command, args)
 
     elseif command == "journalInitialized" then
         BurdJournals.Client.handleJournalInitialized(player, args)
+
+    elseif command == "recipeAlreadyKnown" then
+        BurdJournals.Client.handleRecipeAlreadyKnown(player, args)
 
     elseif command == "error" then
         if args and args.message then
@@ -197,32 +228,33 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
         end
     end
 
-    -- Add trait names (get display names)
+    -- Add trait names (get display names using shared helper)
     if args.traitNames then
         for _, traitId in ipairs(args.traitNames) do
-            local traitName = traitId
-            -- Try to get translated trait name
-            if TraitFactory and TraitFactory.getTrait then
-                local trait = TraitFactory.getTrait(traitId)
-                if trait and trait.getLabel then
-                    traitName = trait:getLabel() or traitId
-                end
-            end
+            local traitName = BurdJournals.getTraitDisplayName(traitId)
             table.insert(recordedItems, traitName)
+        end
+    end
+
+    -- Add recipe names (get display names)
+    if args.recipeNames then
+        for _, recipeName in ipairs(args.recipeNames) do
+            local displayName = BurdJournals.getRecipeDisplayName and BurdJournals.getRecipeDisplayName(recipeName) or recipeName
+            table.insert(recordedItems, displayName)
         end
     end
 
     -- Create concise message
     local message
     if #recordedItems == 0 then
-        message = "Progress saved!"
+        message = getText("UI_BurdJournals_ProgressSaved") or "Progress saved!"
     elseif #recordedItems == 1 then
-        message = "Recorded " .. recordedItems[1]
+        message = string.format(getText("UI_BurdJournals_RecordedItem") or "Recorded %s", recordedItems[1])
     elseif #recordedItems <= 3 then
-        message = "Recorded " .. table.concat(recordedItems, ", ")
+        message = string.format(getText("UI_BurdJournals_RecordedItems") or "Recorded %s", table.concat(recordedItems, ", "))
     else
         -- More than 3 items, abbreviate
-        message = "Recorded " .. recordedItems[1] .. ", " .. recordedItems[2] .. " +" .. (#recordedItems - 2) .. " more"
+        message = string.format(getText("UI_BurdJournals_RecordedItemsMore") or "Recorded %s, %s +%d more", recordedItems[1], recordedItems[2], #recordedItems - 2)
     end
 
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
@@ -371,6 +403,10 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
         -- Show halo text above player's head
         local message = "+" .. BurdJournals.formatXP(xpGained) .. " " .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
+    elseif args.recipeName then
+        local displayName = BurdJournals.getRecipeDisplayName(args.recipeName)
+        local message = "+" .. displayName
+        BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.RECIPE_GAIN)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -408,7 +444,7 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
             end
         end
     elseif args.journalId then
-        -- Fallback: Mark skill/trait as claimed locally if no journalData provided
+        -- Fallback: Mark skill/trait/recipe as claimed locally if no journalData provided
         local journal = BurdJournals.findItemById(player, args.journalId)
         if journal then
             if args.skillName then
@@ -416,6 +452,9 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
             end
             if args.traitId then
                 BurdJournals.claimTrait(journal, args.traitId)
+            end
+            if args.recipeName then
+                BurdJournals.claimRecipe(journal, args.recipeName)
             end
         end
 
@@ -428,6 +467,9 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
                 end
                 if args.traitId then
                     BurdJournals.claimTrait(panel.journal, args.traitId)
+                end
+                if args.recipeName then
+                    BurdJournals.claimRecipe(panel.journal, args.recipeName)
                 end
             end
         end
@@ -460,20 +502,16 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
     -- Show halo text feedback
     if args.skillName and args.xpGained then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
-        local message = "Claimed: " .. displayName .. " (+" .. BurdJournals.formatXP(args.xpGained) .. " XP)"
+        local message = string.format(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(args.xpGained))
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
     elseif args.traitId then
-        local traitName = args.traitId
-        pcall(function()
-            if TraitFactory and TraitFactory.getTrait then
-                local trait = TraitFactory.getTrait(args.traitId)
-                if trait and trait.getLabel then
-                    traitName = trait:getLabel()
-                end
-            end
-        end)
-        local message = "Learned: " .. traitName
+        local traitName = BurdJournals.getTraitDisplayName(args.traitId)
+        local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
+    elseif args.recipeName then
+        local displayName = BurdJournals.getRecipeDisplayName(args.recipeName)
+        local message = "+" .. displayName
+        BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.RECIPE_GAIN)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -574,16 +612,8 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     if not args or not args.traitId then return end
 
     local traitId = args.traitId
-    -- Safely get trait name (TraitFactory may not exist in Build 42)
-    local traitName = traitId
-    pcall(function()
-        if TraitFactory and TraitFactory.getTrait then
-            local trait = TraitFactory.getTrait(traitId)
-            if trait and trait.getLabel then
-                traitName = trait:getLabel()
-            end
-        end
-    end)
+    -- Get trait display name using shared helper
+    local traitName = BurdJournals.getTraitDisplayName(traitId)
 
     -- Grant the trait using EXACT pattern from ISPlayerStatsUI:onAddTrait
     -- This is the CLIENT-side authoritative way to add traits mid-game
@@ -690,7 +720,7 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     end
 
     -- Show halo text feedback
-    local message = "Learned: " .. traitName
+    local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -743,19 +773,11 @@ function BurdJournals.Client.handleTraitAlreadyKnown(player, args)
     if not args or not args.traitId then return end
 
     local traitId = args.traitId
-    -- Safely get trait name (TraitFactory may not exist in Build 42)
-    local traitName = traitId
-    pcall(function()
-        if TraitFactory and TraitFactory.getTrait then
-            local trait = TraitFactory.getTrait(traitId)
-            if trait and trait.getLabel then
-                traitName = trait:getLabel()
-            end
-        end
-    end)
+    -- Get trait display name using shared helper
+    local traitName = BurdJournals.getTraitDisplayName(traitId)
 
     -- Show feedback that player already has this trait (as speech bubble)
-    player:Say("Already know: " .. traitName)
+    player:Say(string.format(getText("UI_BurdJournals_AlreadyKnowTrait") or "Already know: %s", traitName))
 
     -- Refresh UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
@@ -770,11 +792,49 @@ function BurdJournals.Client.handleSkillMaxed(player, args)
     local displayName = BurdJournals.getPerkDisplayName(skillName)
 
     -- Show feedback that skill is already maxed (as speech bubble)
-    player:Say(displayName .. " is already maxed!")
+    player:Say(string.format(getText("UI_BurdJournals_SkillAlreadyMaxedMsg") or "%s is already maxed!", displayName))
 
     -- Refresh UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
         BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+    end
+end
+
+function BurdJournals.Client.handleRecipeAlreadyKnown(player, args)
+    if not args or not args.recipeName then return end
+
+    local recipeName = args.recipeName
+    local displayName = BurdJournals.getRecipeDisplayName(recipeName)
+
+    -- Show feedback that recipe is already known (as speech bubble)
+    player:Say(string.format(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName))
+
+    -- Apply journal data if provided (for worn/bloody journals - marks as claimed)
+    if args.journalId and args.journalData then
+        local journal = BurdJournals.findItemById(player, args.journalId)
+        if journal then
+            local modData = journal:getModData()
+            modData.BurdJournals = args.journalData
+        end
+
+        -- Also update UI panel if matching
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                panelModData.BurdJournals = args.journalData
+            end
+        end
+    end
+
+    -- Refresh UI if open
+    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+        local panel = BurdJournals.UI.MainPanel.instance
+        if panel.refreshJournalData then
+            panel:refreshJournalData()
+        elseif panel.refreshAbsorptionList then
+            panel:refreshAbsorptionList()
+        end
     end
 end
 
@@ -833,6 +893,12 @@ function BurdJournals.Client.calculateProfessionBaseline(player)
     end
 
     -- Get trait XP boosts
+    -- NOTE: For existing saves, we can't definitively know which traits are from character
+    -- creation vs earned in-game. We only mark traits as baseline if:
+    -- 1. They were granted by the profession (already handled above)
+    -- 2. They have XP boosts (skill bonus traits are always chosen at character creation)
+    -- Traits without XP boosts (like Illiterate, etc.) could be earned later, so we use
+    -- a conservative approach: only mark XP-boosting traits as baseline
     local playerTraits = player:getCharacterTraits()
     if playerTraits and playerTraits.getKnownTraits then
         local knownTraits = playerTraits:getKnownTraits()
@@ -840,14 +906,13 @@ function BurdJournals.Client.calculateProfessionBaseline(player)
             local traitTrait = knownTraits:get(i)
             local traitId = tostring(traitTrait)
 
-            -- Mark all current traits as baseline (they were chosen at start)
-            traitBaseline[traitId] = true
-
-            -- Get trait's XP boosts
+            -- Get trait's XP boosts - only mark as baseline if it has skill bonuses
+            -- Traits with skill bonuses are always from character creation
             if CharacterTraitDefinition then
                 local traitDef = CharacterTraitDefinition.getCharacterTraitDefinition(traitTrait)
                 if traitDef then
                     local traitXpBoost = transformIntoKahluaTable(traitDef:getXpBoosts())
+                    local hasSkillBonus = false
                     if traitXpBoost then
                         for perk, level in pairs(traitXpBoost) do
                             local perkId = tostring(perk)
@@ -855,8 +920,17 @@ function BurdJournals.Client.calculateProfessionBaseline(player)
                             if levelNum and levelNum > 0 then
                                 bonusLevels[perkId] = (bonusLevels[perkId] or 0) + levelNum
                                 print("[BurdJournals] Trait " .. traitId .. " grants " .. perkId .. " +" .. levelNum .. " levels")
+                                hasSkillBonus = true
                             end
                         end
+                    end
+
+                    -- Only mark trait as baseline if it has skill bonuses
+                    -- This is conservative: we'd rather let a starting trait be recordable
+                    -- than incorrectly block an earned trait from being recorded
+                    if hasSkillBonus then
+                        traitBaseline[traitId] = true
+                        print("[BurdJournals] Trait marked as baseline (has skill bonus): " .. traitId)
                     end
                 end
             end
@@ -910,6 +984,18 @@ function BurdJournals.Client.captureBaseline(player, isNewCharacter)
         return
     end
 
+    -- Safety check: If we think this is a new character but they have significant
+    -- survival time, they're actually an existing save (edge case detection)
+    -- This handles cases where OnCreatePlayer fires on save load
+    if isNewCharacter then
+        local hoursAlive = player:getHoursSurvived() or 0
+        if hoursAlive > 1 then  -- More than 1 hour of survival = definitely not new
+            print("[BurdJournals] WARNING: isNewCharacter=true but player has " .. hoursAlive .. " hours survived!")
+            print("[BurdJournals] Treating as existing save to avoid incorrect baseline capture")
+            isNewCharacter = false
+        end
+    end
+
     if isNewCharacter then
         -- NEW CHARACTER: Capture current XP directly (it IS their spawn XP)
         print("[BurdJournals] Capturing baseline for NEW character (direct capture)")
@@ -940,6 +1026,7 @@ function BurdJournals.Client.captureBaseline(player, isNewCharacter)
     end
 
     modData.BurdJournals.baselineCaptured = true
+    modData.BurdJournals.baselineVersion = BurdJournals.Client.BASELINE_VERSION
 
     -- Detailed logging for debugging
     local method = isNewCharacter and "direct capture" or "calculated from profession/traits"

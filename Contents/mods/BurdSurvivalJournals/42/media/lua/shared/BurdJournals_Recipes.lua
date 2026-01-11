@@ -357,7 +357,8 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
         -- Generate traits if lucky (1-4 random traits)
         local traits = {}
         if ZombRand(100) < traitChance then
-            local grantableTraits = (BurdJournals and BurdJournals.GRANTABLE_TRAITS) or {
+            local grantableTraits = (BurdJournals and BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or
+                                    (BurdJournals and BurdJournals.GRANTABLE_TRAITS) or {
                 "brave", "organized", "fastlearner", "needslesssleep",
                 "lighteater", "dextrous", "graceful", "inconspicuous", "lowthirst"
             }

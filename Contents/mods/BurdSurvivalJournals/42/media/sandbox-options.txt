@@ -141,6 +141,23 @@ option BurdJournals.EnableBaselineRestriction = {
     translation = BurdJournals_EnableBaselineRestriction,
 }
 
+/* Recipe Recording */
+option BurdJournals.EnableRecipeRecording = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_EnableRecipeRecording,
+}
+
+option BurdJournals.LearningTimePerRecipe = {
+    type = double,
+    min = 0.5,
+    max = 30.0,
+    default = 5.0,
+    page = BurdJournals_Player,
+    translation = BurdJournals_LearningTimePerRecipe,
+}
+
 /* ============================================================ */
 /* TAB 2: SURVIVAL JOURNALS - LOOT                              */
 /* Settings for world-found worn & bloody journals              */
@@ -339,6 +356,18 @@ option BurdJournals.AllowOthersToClaimFromJournals = {
     default = true,
     page = BurdJournals_Advanced,
     translation = BurdJournals_AllowOthersToClaimFromJournals,
+}
+
+/* ============================================================ */
+/* TRAIT SETTINGS                                                */
+/* ============================================================ */
+
+/* Allow negative traits in journals (for modded trait support) */
+option BurdJournals.AllowNegativeTraits = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_AllowNegativeTraits,
 }
 
 /* ============================================================ */

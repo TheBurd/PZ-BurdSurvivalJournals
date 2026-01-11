@@ -64,6 +64,13 @@ Sandbox_EN = {
     Sandbox_BurdJournals_EnableBaselineRestriction = "Only Record Earned Progress",
     Sandbox_BurdJournals_EnableBaselineRestriction_tooltip = "When enabled, journals only record XP earned through gameplay - not profession starting bonuses or trait skill boosts. This prevents exploits where players farm profession skills by creating multiple characters. Recommended ON for multiplayer servers.",
 
+    -- Recipe Recording
+    Sandbox_BurdJournals_EnableRecipeRecording = "Enable Recipe Recording",
+    Sandbox_BurdJournals_EnableRecipeRecording_tooltip = "Allow players to record magazine-learned recipes in journals. Recipes learned from magazines can be shared with others.",
+
+    Sandbox_BurdJournals_LearningTimePerRecipe = "Learning Time Per Recipe (sec)",
+    Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "Base time in seconds to learn each recipe from a journal.",
+
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
     -- ============================================================
@@ -142,5 +149,9 @@ Sandbox_EN = {
 
     Sandbox_BurdJournals_AllowOthersToClaimFromJournals = "Allow Others to Claim from Personal Journals",
     Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip = "If enabled, other players can claim skills/traits from personal journals they didn't create. Requires 'Allow Others to Open' to be enabled. If disabled, only the author can claim from their own journals.",
+
+    -- Trait Settings
+    Sandbox_BurdJournals_AllowNegativeTraits = "Allow Negative Traits",
+    Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "If enabled, negative traits (like Clumsy, Slow Learner, etc.) can appear in journals and be recorded. Useful for modded traits or challenge runs. Default: OFF (only positive traits).",
 
 }

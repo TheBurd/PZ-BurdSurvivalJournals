@@ -236,12 +236,13 @@ end
 
 -- ==================== TOOLTIP HOOK ====================
 -- Hook into ISToolTipInv to add extra lines for journal items
--- Note: ISToolTipInv uses self:drawRect/self:drawText, not self.tooltip
+-- ISToolTipInv.render() sets self.height from ObjectTooltip dimensions THEN draws background.
+-- We need to draw our own background extension after the original render completes.
 
 local originalRender = ISToolTipInv.render
 
 ISToolTipInv.render = function(self)
-    -- Call original render first
+    -- Call original render first (this draws the base tooltip)
     originalRender(self)
 
     -- Check if we have a journal item
@@ -262,11 +263,34 @@ ISToolTipInv.render = function(self)
     local font = UIFont.Small
     local lineHeight = getTextManager():getFontHeight(font) + 2
 
-    -- Calculate starting Y position (after the existing tooltip content)
-    local startY = self:getHeight() + 5
+    -- Calculate extra height needed
+    local extraHeight = (#extraLines * lineHeight) + 12
 
-    -- Draw a separator line
-    self:drawRect(10, startY - 3, self:getWidth() - 20, 1, 0.3, 0.6, 0.6, 0.6)
+    -- The original tooltip height (what was just rendered)
+    local originalHeight = self:getHeight()
+
+    -- Draw background extension for our extra content
+    -- Use same colors as the original tooltip background
+    local bgColor = self.backgroundColor
+    local borderColor = self.borderColor
+
+    -- Draw background extension (starting where original ended)
+    self:drawRect(0, originalHeight, self:getWidth(), extraHeight, bgColor.a, bgColor.r, bgColor.g, bgColor.b)
+
+    -- Draw border on the sides and bottom of our extension
+    -- Left border
+    self:drawRect(0, originalHeight, 1, extraHeight, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
+    -- Right border
+    self:drawRect(self:getWidth() - 1, originalHeight, 1, extraHeight, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
+    -- Bottom border
+    self:drawRect(0, originalHeight + extraHeight - 1, self:getWidth(), 1, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
+
+    -- Remove the original bottom border (draw over it with background color)
+    self:drawRect(1, originalHeight - 1, self:getWidth() - 2, 1, bgColor.a, bgColor.r, bgColor.g, bgColor.b)
+
+    -- Draw separator line
+    local startY = originalHeight + 5
+    self:drawRect(10, startY - 3, self:getWidth() - 20, 1, 0.5, 0.6, 0.6, 0.6)
 
     -- Draw each extra line
     for i, lineData in ipairs(extraLines) do
@@ -274,9 +298,8 @@ ISToolTipInv.render = function(self)
         self:drawText(lineData.text, 12, y, lineData.color.r, lineData.color.g, lineData.color.b, 1.0, font)
     end
 
-    -- Expand tooltip height to fit new content
-    local extraHeight = (#extraLines * lineHeight) + 10
-    self:setHeight(self:getHeight() + extraHeight)
+    -- Update the panel height so mouse detection works correctly
+    self:setHeight(originalHeight + extraHeight)
 end
 
 print("[BurdJournals] Tooltip hook installed")

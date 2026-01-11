@@ -1,0 +1,51 @@
+Tooltip_CN = {
+    -- Item Tooltips
+    Tooltip_BlankSurvivalJournal = "一本空白日志，可用于记录你的生存知识。",
+    Tooltip_FilledSurvivalJournal = "一本记录了生存技能的日志。右键点击可阅读。",
+
+    -- Skill Info (Tooltip)
+    Tooltip_BurdJournals_ContainsSkills = "已记录%d项技能",
+    Tooltip_BurdJournals_RewardsRemaining = "剩余奖励",
+    Tooltip_BurdJournals_SetModeDesc = "阅读后将把你的经验值同步至日志记录的等级（仅当日志等级更高时生效）。\n\n",
+
+    -- Tool Requirements (Tooltip)
+    Tooltip_BurdJournals_NeedPen = "需要钢笔或铅笔才能书写。",
+    Tooltip_BurdJournals_NeedEraser = "需要橡皮擦才能擦除内容。",
+
+    -- Bloody Journal (Tooltip)
+    Tooltip_BurdJournals_BloodyJournal = "沾血日志",
+    Tooltip_BurdJournals_BloodyJournalDesc = "一本陨落幸存者留下的日志，包含可领悟的技能和特质。",
+    Tooltip_BurdJournals_BloodyDesc = "稀有发现！可能包含珍贵特质。",
+    Tooltip_BurdJournals_ConvertBloodyToClean = "转换为干净日志",
+    Tooltip_BurdJournals_ConvertBloodyToCleanDesc = "通过制作台将这本沾血日志转换为干净的个人日志。",
+
+    -- Worn Journal (Tooltip)
+    Tooltip_BurdJournals_WornJournal = "破旧日志",
+    Tooltip_BurdJournals_NeedsCleaning = "这本日志过于破旧，无法阅读。",
+    Tooltip_BurdJournals_NeedsCleaningDesc = "可使用肥皂和布料清洁，胶带修补，或皮条重新装订。",
+    Tooltip_BurdJournals_AbsorbAll = "全部领悟",
+    Tooltip_BurdJournals_AbsorbAllDesc = "一次性领取所有剩余的技能和特质，日志会随之消失。",
+
+    -- Personal Journal (Clean) (Tooltip)
+    Tooltip_BurdJournals_PersonalJournal = "个人生存日志",
+    Tooltip_BurdJournals_BlankJournal = "空白生存日志",
+    Tooltip_BurdJournals_RecordProgress = "记录你的进度",
+    Tooltip_BurdJournals_RecordProgressDesc = "打开日志以记录你当前的技能和特质。\n仅当当前等级高于日志记录值时，才会更新记录。",
+    Tooltip_BurdJournals_ClaimAll = "领取全部技能",
+    Tooltip_BurdJournals_ClaimAllDesc = "打开日志并领取所有可用技能。\n耗时长短取决于你的阅读速度。",
+    Tooltip_BurdJournals_Disassemble = "拆解日志",
+    Tooltip_BurdJournals_DisassembleDesc = "拆解这本日志以回收制作材料。",
+
+    -- Conversion (Tooltip)
+    Tooltip_BurdJournals_ConvertToClean = "重新装订为个人生存日志",
+    Tooltip_BurdJournals_ConvertToCleanDesc = "将这本破旧日志重新装订为干净的空白生存日志，供个人使用。需要裁缝相关材料。",
+    Tooltip_BurdJournals_CannotConvert = "无法转换",
+    Tooltip_BurdJournals_NeedsConvertMaterials = "所需材料：皮条 + 线团 + 缝针 + 裁缝技能1级",
+
+    -- Materials (Tooltip)
+    Tooltip_BurdJournals_MissingMaterials = "材料不足",
+    Tooltip_BurdJournals_NeedsSoapCloth = "所需材料：肥皂 + 破布或洗碗布",
+    Tooltip_BurdJournals_NeedsTape = "所需材料：胶带",
+    Tooltip_BurdJournals_NeedsLeatherBinding = "所需材料：皮条 + 线团 + 缝针",
+    Tooltip_BurdJournals_NeedsGluePaper = "所需材料：胶水 + 纸张",
+}

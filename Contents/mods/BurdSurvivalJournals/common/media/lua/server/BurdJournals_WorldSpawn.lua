@@ -1,6 +1,6 @@
 --[[
     Burd's Survival Journals - World & Dev Menu Spawns
-    Build 41 - Version 2.0
+    Build 42 - Version 2.0
 
     Handles journal initialization for:
     1. World container spawns (LoadGridsquare) - Worn journals
@@ -267,9 +267,10 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
     -- Determine number of skills (light: 1-2)
     local numSkills = ZombRand(minSkills, maxSkills + 1)
 
-    -- Get all skills and shuffle
+    -- Get all skills (uses dynamic discovery to include mod-added skills) and shuffle
     local availableSkills = {}
-    for _, skill in ipairs(BurdJournals.ALL_SKILLS) do
+    local allSkills = BurdJournals.getAllowedSkills()
+    for _, skill in ipairs(allSkills) do
         table.insert(availableSkills, skill)
     end
 
@@ -345,9 +346,10 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
     -- Determine number of skills (better: 2-4)
     local numSkills = ZombRand(minSkills, maxSkills + 1)
 
-    -- Get all skills and shuffle
+    -- Get all skills (uses dynamic discovery to include mod-added skills) and shuffle
     local availableSkills = {}
-    for _, skill in ipairs(BurdJournals.ALL_SKILLS) do
+    local allSkills = BurdJournals.getAllowedSkills()
+    for _, skill in ipairs(allSkills) do
         table.insert(availableSkills, skill)
     end
 
@@ -383,13 +385,14 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
         }
     end
 
-    -- Generate traits if lucky (1-4 random traits)
+    -- Generate traits if lucky (1 to maxTraits random traits)
     local traits = {}
     if ZombRand(100) < traitChance then
-        local grantableTraits = BurdJournals.GRANTABLE_TRAITS or {}
+        local grantableTraits = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or BurdJournals.GRANTABLE_TRAITS or {}
         if #grantableTraits > 0 then
-            -- Generate 1-4 random unique traits
-            local numTraits = ZombRand(1, 5)  -- 1 to 4 traits
+            -- Generate 1 to maxTraits random unique traits (respecting sandbox setting)
+            local maxTraits = SandboxVars.BurdJournals and SandboxVars.BurdJournals.BloodyJournalMaxTraits or 2
+            local numTraits = ZombRand(1, maxTraits + 1)  -- 1 to maxTraits
             local availableTraits = {}
             for _, t in ipairs(grantableTraits) do
                 table.insert(availableTraits, t)

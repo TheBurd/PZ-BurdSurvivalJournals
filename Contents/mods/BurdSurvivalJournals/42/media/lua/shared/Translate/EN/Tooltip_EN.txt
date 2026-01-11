@@ -15,6 +15,7 @@ Tooltip_EN = {
     -- Bloody Journal
     Tooltip_BurdJournals_BloodyJournal = "Bloody Journal",
     Tooltip_BurdJournals_BloodyJournalDesc = "A journal from a fallen survivor. Contains skills and traits that can be absorbed.",
+    Tooltip_BurdJournals_BloodyDesc = "Rare find! May contain valuable traits.",
     Tooltip_BurdJournals_ConvertBloodyToClean = "Convert to Clean Journal",
     Tooltip_BurdJournals_ConvertBloodyToCleanDesc = "Use crafting to convert this bloody journal to a clean personal journal.",
     
@@ -28,12 +29,47 @@ Tooltip_EN = {
     -- Personal Journal (Clean)
     Tooltip_BurdJournals_PersonalJournal = "Personal Survival Journal",
     Tooltip_BurdJournals_BlankJournal = "Blank Survival Journal",
+    Tooltip_BurdJournals_BlankJournalDesc = "Opens the journal to record your survival progress.\nRequires a writing tool.",
     Tooltip_BurdJournals_RecordProgress = "Record Your Progress",
     Tooltip_BurdJournals_RecordProgressDesc = "Opens journal to record your current skills and traits.\nRecorded values are only updated if your current level is higher.",
     Tooltip_BurdJournals_ClaimAll = "Claim All Skills",
     Tooltip_BurdJournals_ClaimAllDesc = "Opens journal and claims all available skills.\nThis will take time based on your reading speed.",
     Tooltip_BurdJournals_Disassemble = "Disassemble Journal",
-    Tooltip_BurdJournals_DisassembleDesc = "Tear apart this journal to recover materials.",
+    Tooltip_BurdJournals_DisassembleDesc = "Tear apart this journal for materials.\n\nYou will receive:\n  2x Paper\n  1x Leather Strips",
+
+    -- Tooltip Dynamic Text
+    Tooltip_BurdJournals_SkillsAvailable = "Skills: %d/%d available",
+    Tooltip_BurdJournals_TraitsAvailable = "Traits: %d/%d available",
+    Tooltip_BurdJournals_NoRewardsFound = "No rewards found",
+    Tooltip_BurdJournals_AbsorbAllRewards = "Absorb All Rewards",
+    Tooltip_BurdJournals_AbsorbAllSkillsTraits = "Absorb All (%d skills, %d traits)",
+    Tooltip_BurdJournals_AbsorbAllSkills = "Absorb All (%d skills)",
+    Tooltip_BurdJournals_CraftingRequired = "Crafting Required",
+    Tooltip_BurdJournals_ConvertBloodyDesc = "Open the crafting menu (B) to find 'Clean and Convert Bloody Journal'.\nRequires: Soap, Cloth, Leather, Thread, Needle, Tailoring Lv1.\nWARNING: Destroys any remaining rewards!",
+    Tooltip_BurdJournals_WrittenBy = "Written by: %s",
+    Tooltip_BurdJournals_RecordedItem = "Contains %d recorded item",
+    Tooltip_BurdJournals_RecordedItems = "Contains %d recorded items",
+    Tooltip_BurdJournals_ClaimableRewards = "Claimable rewards:",
+    Tooltip_BurdJournals_SkillCount = "  - %d skill",
+    Tooltip_BurdJournals_SkillsCount = "  - %d skills",
+    Tooltip_BurdJournals_TraitCount = "  - %d trait",
+    Tooltip_BurdJournals_TraitsCount = "  - %d traits",
+    Tooltip_BurdJournals_ViewOnly = "View only",
+    Tooltip_BurdJournals_CannotClaimDefault = "Cannot claim from this journal.",
+    Tooltip_BurdJournals_NoNewRewards = "No new rewards available.",
+    Tooltip_BurdJournals_ClaimingInfo = "Claiming sets your XP to the recorded level (if higher).",
+    Tooltip_BurdJournals_UpdateRecords = "Update Journal Records",
+    Tooltip_BurdJournals_UpdateRecordsDesc = "Opens journal to update your recorded skills.\nRecorded values are only updated if your current level is higher.",
+    Tooltip_BurdJournals_CannotClaim = "Cannot Claim",
+    Tooltip_BurdJournals_NoPermissionClaim = "You don't have permission to claim from this journal.",
+    Tooltip_BurdJournals_AvailableSkill = "Available: %d skill",
+    Tooltip_BurdJournals_AvailableSkills = "Available: %d skills",
+    Tooltip_BurdJournals_AndTrait = ", %d trait",
+    Tooltip_BurdJournals_AndTraits = ", %d traits",
+    Tooltip_BurdJournals_ReadingSpeedNote = "This will take time based on your reading speed.",
+    Tooltip_BurdJournals_EraseContents = "Erase All Contents",
+    Tooltip_BurdJournals_EraseContentsDesc = "Erases all recorded data, returning the journal to a blank state.\nRequires an eraser.",
+    Tooltip_BurdJournals_CannotOpen = "Cannot Open",
     
     -- Conversion
     Tooltip_BurdJournals_ConvertToClean = "Rebind as Personal Survival Journal",
@@ -47,4 +83,8 @@ Tooltip_EN = {
     Tooltip_BurdJournals_NeedsTape = "Requires: Duct Tape",
     Tooltip_BurdJournals_NeedsLeatherBinding = "Requires: Leather Strips + Thread + Needle",
     Tooltip_BurdJournals_NeedsGluePaper = "Requires: Glue + Sheet of Paper",
+
+    -- Illiterate Trait Block
+    Tooltip_BurdJournals_IlliterateName = "Illiterate",
+    Tooltip_BurdJournals_IlliterateDesc = "You cannot read or write. Journals are useless to you.",
 }

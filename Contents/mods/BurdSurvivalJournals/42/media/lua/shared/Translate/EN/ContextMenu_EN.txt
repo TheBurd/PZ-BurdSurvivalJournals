@@ -26,6 +26,9 @@ ContextMenu_EN = {
     ContextMenu_BurdJournals_RecordAll = "Record All Progress",
     ContextMenu_BurdJournals_Disassemble = "Disassemble Journal",
 
+    -- Illiterate Trait Block
+    ContextMenu_BurdJournals_CannotRead = "Cannot Read (Illiterate)",
+
     -- Legacy (keeping for compatibility)
     ContextMenu_BurdJournals_CleanRepair = "Clean/Repair",
     ContextMenu_BurdJournals_CleanSoap = "Clean with Soap & Cloth",

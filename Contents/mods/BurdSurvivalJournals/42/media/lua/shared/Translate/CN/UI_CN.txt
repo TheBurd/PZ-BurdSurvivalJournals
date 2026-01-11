@@ -1,0 +1,152 @@
+UI_CN = {
+    -- Journal Types
+    UI_BurdJournals_BlankJournal = "空白生存日志",
+    UI_BurdJournals_FilledJournal = "已填写生存日志",
+    UI_BurdJournals_WornJournal = "破旧生存日志",
+    UI_BurdJournals_BloodyJournal = "沾血生存日志",
+
+    -- Journal Info
+    UI_BurdJournals_Author = "作者",
+    UI_BurdJournals_Written = "撰写时间",
+    UI_BurdJournals_TimesRead = "阅读次数",
+    UI_BurdJournals_Condition = "状态",
+    UI_BurdJournals_NeedsCleaning = "需要清洁",
+
+    -- UI Buttons
+    UI_BurdJournals_SelectAll = "全选",
+    UI_BurdJournals_DeselectAll = "取消全选",
+    UI_BurdJournals_Log = "记录技能",
+    UI_BurdJournals_Learn = "学习",
+    UI_BurdJournals_Update = "更新",
+    UI_BurdJournals_Erase = "清空",
+    UI_BurdJournals_Close = "关闭",
+    UI_BurdJournals_Absorb = "领悟",
+    UI_BurdJournals_AbsorbAll = "全部领悟",
+
+    -- Confirmation Dialogs
+    UI_BurdJournals_ConfirmErase = "确定要清空这本日志吗？所有已记录的技能都将永久丢失。",
+    UI_BurdJournals_ConfirmOverwrite = "这将用你当前的技能覆盖日志中已有的内容。确定要这么做吗？",
+    UI_BurdJournals_ConfirmConvert = "此操作会清除剩余奖励，确定要继续吗？",
+    UI_BurdJournals_ConfirmDisassemble = "确定要拆解这本日志吗？",
+    UI_BurdJournals_RenamePrompt = "请输入这本日志的新名称：",
+
+    -- Messages
+    UI_BurdJournals_NoSkillsSelected = "请先选择至少一项技能。",
+    UI_BurdJournals_SkillsLogged = "技能已记录到日志中。",
+    UI_BurdJournals_SkillsLearned = "已从日志中习得相关知识！",
+    UI_BurdJournals_JournalErased = "日志内容已清空。",
+    UI_BurdJournals_JournalCleaned = "日志已清洁完毕，现在可以阅读了。",
+    UI_BurdJournals_JournalUpdated = "日志技能已更新。",
+    UI_BurdJournals_JournalRenamed = "日志已重命名。",
+    UI_BurdJournals_JournalConverted = "日志已转换为干净的空白日志。",
+    UI_BurdJournals_JournalDissolved = "日志在你手中化为碎片……",
+
+    -- Condition States
+    UI_BurdJournals_ConditionPristine = "完好如初",
+    UI_BurdJournals_ConditionGood = "状态良好",
+    UI_BurdJournals_ConditionWorn = "略有磨损",
+    UI_BurdJournals_ConditionDamaged = "已损坏",
+    UI_BurdJournals_ConditionCritical = "濒临损毁",
+
+    -- Inspect Tooltips
+    UI_BurdJournals_InspectBlank = "一本状态为%1的空白日志。",
+    UI_BurdJournals_InspectFilled = "一本由%1撰写的日志。状态：%2",
+    UI_BurdJournals_InspectWorn = "一本来自%1的破旧日志。状态：%2，需要清洁。",
+    UI_BurdJournals_InspectBloody = "一本从尸体上找到的沾血日志，记录着陨落幸存者的技能和特质。",
+
+    -- Absorption UI
+    UI_BurdJournals_RewardsRemaining = "剩余奖励",
+    UI_BurdJournals_SkillClaimed = "已领取",
+    UI_BurdJournals_TraitAlreadyKnown = "已掌握",
+    UI_BurdJournals_ClickToAbsorb = "点击领悟",
+
+    -- Journal Type Headers (MainPanel)
+    UI_BurdJournals_BloodyJournalHeader = "沾血日志",
+    UI_BurdJournals_WornJournalHeader = "破旧日志",
+    UI_BurdJournals_PersonalJournalHeader = "个人日志",
+    UI_BurdJournals_RecordProgressHeader = "记录进度",
+
+    -- Rarity Labels
+    UI_BurdJournals_RarityRare = "稀有",
+    UI_BurdJournals_RarityUncommon = "罕见",
+
+    -- Flavor Text
+    UI_BurdJournals_BloodyFlavor = "来自陨落幸存者的遗物...",
+    UI_BurdJournals_WornBloodyFlavor = "从废土中回收的残卷...",
+    UI_BurdJournals_WornFlavor = "一位老幸存者的笔记...",
+    UI_BurdJournals_PersonalFlavor = "你记录的生存知识...",
+    UI_BurdJournals_RecordFlavor = "记录你的生存技能...",
+
+    -- Tab Labels
+    UI_BurdJournals_TabSkills = "技能",
+    UI_BurdJournals_TabTraits = "特质",
+    UI_BurdJournals_TabStats = "统计",
+
+    -- Buttons (MainPanel)
+    UI_BurdJournals_BtnAbsorbAll = "全部领悟",
+    UI_BurdJournals_BtnClaimAll = "全部领取",
+    UI_BurdJournals_BtnRecordAll = "全部记录",
+    UI_BurdJournals_BtnClose = "关闭",
+    UI_BurdJournals_BtnKeepReading = "继续阅读",
+    UI_BurdJournals_BtnCancelClose = "取消并关闭",
+    UI_BurdJournals_BtnQueue = "排队",
+    UI_BurdJournals_BtnClaim = "领取",
+    UI_BurdJournals_BtnRecord = "记录",
+
+    -- Button States
+    UI_BurdJournals_StateReading = "阅读中...",
+    UI_BurdJournals_StateClaiming = "领取中...",
+    UI_BurdJournals_StateRecording = "记录中...",
+
+    -- Feedback Messages
+    UI_BurdJournals_AlreadyReading = "正在阅读中...",
+    UI_BurdJournals_AlreadyRecording = "正在记录中...",
+    UI_BurdJournals_NoNewRewards = "没有可领取的新奖励",
+    UI_BurdJournals_AlreadyQueued = "已在排队中",
+    UI_BurdJournals_AlreadyAtLevel = "已达到或超过此等级",
+    UI_BurdJournals_CantRecordStartingSkills = "无法记录初始技能",
+    UI_BurdJournals_CantRecordStartingTraits = "无法记录初始特质",
+
+    -- Empty States
+    UI_BurdJournals_NoRewardsAvailable = "没有可用奖励",
+    UI_BurdJournals_NoSkillsRecorded = "未记录任何技能",
+    UI_BurdJournals_NoRareTraits = "未发现稀有特质",
+    UI_BurdJournals_NoTraitsAvailable = "没有可用特质",
+    UI_BurdJournals_NoTraitsRecorded = "未记录任何特质",
+    UI_BurdJournals_NoStatsRecorded = "未记录任何统计",
+    UI_BurdJournals_NothingToRecord = "没有可记录的内容",
+
+    -- Status Labels
+    UI_BurdJournals_StatusAlreadyKnown = "已掌握",
+    UI_BurdJournals_StatusAlreadyClaimed = "已领取",
+    UI_BurdJournals_StatusAlreadyRecorded = "已记录",
+    UI_BurdJournals_StatusClaimed = "已领取",
+    UI_BurdJournals_RareTraitQueued = "稀有特质 - 排队 #%d",
+    UI_BurdJournals_RareTraitBonus = "稀有特质加成！",
+    UI_BurdJournals_RareTraitBonusQueued = "稀有特质加成！- 已排队",
+
+    -- Author Box
+    UI_BurdJournals_RecordingFor = "正在为 %s 记录进度",
+    UI_BurdJournals_FromNotesOf = "来自 %s 的笔记",
+    UI_BurdJournals_UnknownSurvivor = "未知幸存者",
+    UI_BurdJournals_Unknown = "未知",
+
+    -- Headers
+    UI_BurdJournals_YourSkills = "你的技能",
+    UI_BurdJournals_Skills = "技能",
+    UI_BurdJournals_Available = "（%d 可用）",
+    UI_BurdJournals_Recordable = "（%d 可记录）",
+
+    -- Progress Format
+    UI_BurdJournals_ReadingAllProgress = "阅读进度：%d%%（剩余 %s）",
+    UI_BurdJournals_ReadingProgress = "阅读中... %d%%",
+    UI_BurdJournals_RecordingProgress = "记录中... %d%%",
+    UI_BurdJournals_ItemCount = "%d 项",
+    UI_BurdJournals_ItemCountPlural = "%d 项",
+
+    -- Skill/Trait Row Labels
+    UI_BurdJournals_LevelFormat = "%d 级",
+    UI_BurdJournals_XPFormat = "%d 经验",
+    UI_BurdJournals_CurrentLevel = "当前：%d 级",
+    UI_BurdJournals_RecordedLevel = "已记录：%d 级",
+}

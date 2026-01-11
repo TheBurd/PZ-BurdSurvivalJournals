@@ -59,4 +59,192 @@ UI_EN = {
     UI_BurdJournals_SkillClaimed = "CLAIMED",
     UI_BurdJournals_TraitAlreadyKnown = "Already Known",
     UI_BurdJournals_ClickToAbsorb = "Click to absorb",
+
+    -- Journal Type Headers (MainPanel)
+    UI_BurdJournals_BloodyJournalHeader = "BLOODY JOURNAL",
+    UI_BurdJournals_WornJournalHeader = "WORN JOURNAL",
+    UI_BurdJournals_PersonalJournalHeader = "PERSONAL JOURNAL",
+    UI_BurdJournals_RecordProgressHeader = "RECORD PROGRESS",
+
+    -- Rarity Labels
+    UI_BurdJournals_RarityRare = "RARE",
+    UI_BurdJournals_RarityUncommon = "UNCOMMON",
+
+    -- Flavor Text
+    UI_BurdJournals_BloodyFlavor = "Found on a fallen survivor...",
+    UI_BurdJournals_WornBloodyFlavor = "Recovered from the wasteland...",
+    UI_BurdJournals_WornFlavor = "An old survivor's notes...",
+    UI_BurdJournals_PersonalFlavor = "Your documented survival knowledge...",
+    UI_BurdJournals_RecordFlavor = "Document your survival skills...",
+
+    -- Tab Labels
+    UI_BurdJournals_TabSkills = "Skills",
+    UI_BurdJournals_TabTraits = "Traits",
+    UI_BurdJournals_TabRecipes = "Recipes",
+    UI_BurdJournals_TabStats = "Stats",
+
+    -- Buttons (MainPanel)
+    UI_BurdJournals_BtnAbsorbAll = "Absorb All",
+    UI_BurdJournals_BtnClaimAll = "Claim All",
+    UI_BurdJournals_BtnRecordAll = "Record All",
+    UI_BurdJournals_BtnAbsorbTab = "Absorb %s",
+    UI_BurdJournals_BtnClaimTab = "Claim %s",
+    UI_BurdJournals_BtnRecordTab = "Record %s",
+    UI_BurdJournals_BtnClose = "Close",
+    UI_BurdJournals_BtnKeepReading = "Keep Reading",
+    UI_BurdJournals_BtnCancelClose = "Cancel & Close",
+    UI_BurdJournals_BtnQueue = "QUEUE",
+    UI_BurdJournals_BtnClaim = "CLAIM",
+    UI_BurdJournals_BtnRecord = "RECORD",
+
+    -- Button States
+    UI_BurdJournals_StateReading = "Reading...",
+    UI_BurdJournals_StateClaiming = "Claiming...",
+    UI_BurdJournals_StateRecording = "Recording...",
+
+    -- Feedback Messages
+    UI_BurdJournals_AlreadyReading = "Already reading...",
+    UI_BurdJournals_AlreadyRecording = "Already recording...",
+    UI_BurdJournals_NoNewRewards = "No new rewards to claim",
+    UI_BurdJournals_AlreadyQueued = "Already queued",
+    UI_BurdJournals_AlreadyAtLevel = "Already at or above this level",
+    UI_BurdJournals_CantRecordStartingSkills = "Can't record starting skills",
+    UI_BurdJournals_CantRecordStartingTraits = "Can't record starting traits",
+    UI_BurdJournals_NothingNewToRecord = "Nothing new to record",
+    UI_BurdJournals_SavingProgress = "Saving progress...",
+    UI_BurdJournals_Queued = "Queued: %s",
+    UI_BurdJournals_CannotRecord = "Cannot record: %s",
+    UI_BurdJournals_SetSkillToLevel = "Set %s to recorded level",
+    UI_BurdJournals_SkillMaxed = "%s already at or above this level",
+    UI_BurdJournals_NoPlayer = "No player found",
+    UI_BurdJournals_GainedTrait = "Gained trait: %s",
+    UI_BurdJournals_FailedToAddTrait = "Failed to add trait: %s",
+    UI_BurdJournals_BaselineReset = "Baseline reset!",
+    UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_JournalSyncFailed = "Error: Journal sync failed",
+
+    -- Empty States
+    UI_BurdJournals_NoRewardsAvailable = "No rewards available",
+    UI_BurdJournals_NoSkillsRecorded = "No skills recorded",
+    UI_BurdJournals_NoRareTraits = "No rare traits found",
+    UI_BurdJournals_NoTraitsAvailable = "No traits available",
+    UI_BurdJournals_NoTraitsRecorded = "No traits recorded",
+    UI_BurdJournals_NoStatsRecorded = "No stats recorded",
+    UI_BurdJournals_NothingToRecord = "Nothing to record",
+    UI_BurdJournals_NoSkillsToRecord = "No skills to record",
+    UI_BurdJournals_NoTraitsToRecord = "No traits to record",
+    UI_BurdJournals_NoStatsEnabled = "No stat recording enabled",
+    UI_BurdJournals_NoContent = "No content",
+    UI_BurdJournals_TraitAlreadyKnownFeedback = "You already have this trait",
+
+    -- Status Labels
+    UI_BurdJournals_StatusAlreadyKnown = "Already known",
+    UI_BurdJournals_StatusAlreadyClaimed = "Already claimed",
+    UI_BurdJournals_StatusAlreadyRecorded = "Already recorded",
+    UI_BurdJournals_StatusClaimed = "Claimed",
+    UI_BurdJournals_RareTraitQueued = "Rare trait - Queued #%d",
+    UI_BurdJournals_NegativeTraitQueued = "Cursed trait - Queued #%d",
+    UI_BurdJournals_RareTraitBonus = "Rare trait bonus!",
+    UI_BurdJournals_RareTraitBonusQueued = "Rare trait bonus! - Queued",
+    UI_BurdJournals_NegativeTraitCurse = "Cursed knowledge...",
+    UI_BurdJournals_NegativeTraitCurseQueued = "Cursed knowledge... - Queued",
+
+    -- Author Box
+    UI_BurdJournals_RecordingFor = "Recording progress for %s",
+    UI_BurdJournals_FromNotesOf = "From the notes of %s",
+    UI_BurdJournals_UnknownSurvivor = "Unknown Survivor",
+    UI_BurdJournals_Unknown = "Unknown",
+
+    -- Headers
+    UI_BurdJournals_YourSkills = "YOUR SKILLS",
+    UI_BurdJournals_Skills = "SKILLS",
+    UI_BurdJournals_Available = "(%d available)",
+    UI_BurdJournals_Recordable = "(%d recordable)",
+
+    -- Progress Format
+    UI_BurdJournals_ReadingAllProgress = "Reading All: %d%% (%s remaining)",
+    UI_BurdJournals_ReadingProgress = "Reading... %d%%",
+    UI_BurdJournals_RecordingProgress = "Recording... %d%%",
+    UI_BurdJournals_ItemCount = "%d item",
+    UI_BurdJournals_ItemCountPlural = "%d items",
+
+    -- Skill/Trait Row Labels
+    UI_BurdJournals_LevelFormat = "Lv %d",
+    UI_BurdJournals_XPFormat = "%d XP",
+    UI_BurdJournals_XPWithBaseline = "%s XP (+%s starting)",
+    UI_BurdJournals_StartingXP = "Starting: %s XP",
+    UI_BurdJournals_CurrentLevel = "Current: Lv %d",
+    UI_BurdJournals_RecordedLevel = "Recorded: Lv %d",
+    UI_BurdJournals_RecordedXP = "Recorded: %s XP",
+    UI_BurdJournals_RecordedWas = "%s XP (was %s)",
+    UI_BurdJournals_SpawnedWith = "Spawned with",
+    UI_BurdJournals_YourTrait = "Your trait",
+    UI_BurdJournals_QueuedNumber = "Queued #%d",
+    UI_BurdJournals_NowWas = "Now: %s (was %s)",
+    UI_BurdJournals_RecordedValue = "Recorded: %s",
+    UI_BurdJournals_CurrentValue = "Current: %s",
+    UI_BurdJournals_RecordedAchieved = "Recorded: %s (achieved!)",
+    UI_BurdJournals_RecordedVsCurrent = "Recorded: %s | Current: %s",
+    UI_BurdJournals_CurrentQueued = "Current: %s - Queued #%d",
+
+    -- Confirmation Dialogs (additional)
+    UI_BurdJournals_ConfirmAbsorbAll = "Absorb all remaining rewards?",
+    UI_BurdJournals_SkillCount = "%d skill",
+    UI_BurdJournals_SkillsCount = "%d skills",
+    UI_BurdJournals_RareTraitCount = "%d rare trait",
+    UI_BurdJournals_RareTraitsCount = "%d rare traits",
+    UI_BurdJournals_MaxedSkillsSkipped = "Maxed skills and known traits will be skipped.",
+
+    -- Feedback (additional)
+    UI_BurdJournals_PlusTrait = ", +%d trait",
+    UI_BurdJournals_PlusTraits = ", +%d traits",
+    UI_BurdJournals_SkillAlreadyMaxed = "%d skill already maxed",
+    UI_BurdJournals_SkillsAlreadyMaxed = "%d skills already maxed",
+    UI_BurdJournals_TraitAlreadyKnown = "%d trait already known",
+    UI_BurdJournals_TraitsAlreadyKnown = "%d traits already known",
+
+    -- Client Messages
+    UI_BurdJournals_SkillsRecorded = "Skills recorded!",
+    UI_BurdJournals_JournalErased = "Journal erased",
+    UI_BurdJournals_JournalCleaned = "Journal cleaned",
+    UI_BurdJournals_JournalRebound = "Journal rebound",
+    UI_BurdJournals_ProgressSaved = "Progress saved!",
+    UI_BurdJournals_RecordedItem = "Recorded %s",
+    UI_BurdJournals_RecordedItems = "Recorded %s",
+    UI_BurdJournals_RecordedItemsMore = "Recorded %s, %s +%d more",
+    UI_BurdJournals_ClaimedSkill = "Claimed: %s (+%s XP)",
+    UI_BurdJournals_LearnedTrait = "Learned: %s",
+    UI_BurdJournals_AlreadyKnowTrait = "Already know: %s",
+    UI_BurdJournals_SkillAlreadyMaxedMsg = "%s is already maxed!",
+    UI_BurdJournals_Unknown = "Unknown",
+
+    -- Timed Actions
+    UI_BurdJournals_JournalRestored = "Journal restored!",
+    UI_BurdJournals_JournalBound = "Journal bound!",
+    UI_BurdJournals_Salvaged = "Salvaged: %s",
+    UI_BurdJournals_JournalDisassembled = "Journal disassembled.",
+
+    -- Search Bar
+    UI_BurdJournals_SearchPlaceholder = "Search...",
+    UI_BurdJournals_ClearSearch = "Clear search",
+    UI_BurdJournals_NoSearchResults = "No results found",
+
+    -- Recipe Tab
+    UI_BurdJournals_Recipes = "RECIPES",
+    UI_BurdJournals_RecipesAvailable = "(%d available)",
+    UI_BurdJournals_RecipesRecordable = "(%d recordable)",
+    UI_BurdJournals_NoRecipesRecorded = "No recipes recorded",
+    UI_BurdJournals_NoRecipesToRecord = "No magazine recipes learned",
+    UI_BurdJournals_NoRecipesAvailable = "No recipes available",
+    UI_BurdJournals_RecipeAlreadyKnown = "Already known",
+    UI_BurdJournals_RecipeClaimed = "Claimed",
+    UI_BurdJournals_LearnedRecipe = "Learned: %s",
+    UI_BurdJournals_AlreadyKnowRecipe = "Already know: %s",
+    UI_BurdJournals_RecipeFromMagazine = "From: %s",
+    UI_BurdJournals_RecipeCount = "%d recipe",
+    UI_BurdJournals_RecipesCount = "%d recipes",
+    UI_BurdJournals_PlusRecipe = ", +%d recipe",
+    UI_BurdJournals_PlusRecipes = ", +%d recipes",
+    UI_BurdJournals_RecipeAlreadyKnownCount = "%d recipe already known",
+    UI_BurdJournals_RecipesAlreadyKnownCount = "%d recipes already known",
 }

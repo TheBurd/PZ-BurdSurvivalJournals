@@ -131,6 +131,10 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         BurdJournals.Server.handleRecordProgress(player, args)
     elseif command == "syncJournalData" then
         BurdJournals.Server.handleSyncJournalData(player, args)
+    elseif command == "claimRecipe" then
+        BurdJournals.Server.handleClaimRecipe(player, args)
+    elseif command == "absorbRecipe" then
+        BurdJournals.Server.handleAbsorbRecipe(player, args)
     end
 end
 
@@ -347,7 +351,8 @@ function BurdJournals.Server.handleInitializeJournal(player, args)
         if isBloody then
             local traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or 15
             if ZombRand(100) < traitChance then
-                local grantableTraits = BurdJournals.GRANTABLE_TRAITS or {
+                local grantableTraits = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or
+                                        BurdJournals.GRANTABLE_TRAITS or {
                     "Brave", "Organized", "FastLearner", "Wakeful", "Lucky",
                     "LightEater", "Dextrous", "Graceful", "Inconspicuous", "LowThirst"
                 }
@@ -530,12 +535,17 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     if not modData.BurdJournals.stats then
         modData.BurdJournals.stats = {}
     end
+    if not modData.BurdJournals.recipes then
+        modData.BurdJournals.recipes = {}
+    end
 
     local skillsRecorded = 0
     local traitsRecorded = 0
     local statsRecorded = 0
+    local recipesRecorded = 0
     local skillNames = {}
     local traitNames = {}
+    local recipeNames = {}
 
     -- Apply skills from client
     if args.skills then
@@ -579,6 +589,22 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         end
     end
 
+    -- Apply recipes from client
+    if args.recipes then
+        for recipeName, recipeData in pairs(args.recipes) do
+            if not modData.BurdJournals.recipes[recipeName] then
+                modData.BurdJournals.recipes[recipeName] = {
+                    name = recipeName,
+                    source = recipeData.source,
+                    recordedBy = player:getUsername(),
+                    timestamp = getGameTime():getWorldAgeHours()
+                }
+                recipesRecorded = recipesRecorded + 1
+                table.insert(recipeNames, recipeName)
+            end
+        end
+    end
+
     -- Update journal metadata
     modData.BurdJournals.author = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname()
     modData.BurdJournals.ownerUsername = player:getUsername()  -- Store username for ownership checks
@@ -589,7 +615,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     -- Check if this is a blank journal that needs to become filled
     local journalType = journal:getFullType()
     local isBlank = string.find(journalType, "Blank") ~= nil
-    local totalItems = BurdJournals.countTable(modData.BurdJournals.skills) + BurdJournals.countTable(modData.BurdJournals.traits) + BurdJournals.countTable(modData.BurdJournals.stats)
+    local totalItems = BurdJournals.countTable(modData.BurdJournals.skills) + BurdJournals.countTable(modData.BurdJournals.traits) + BurdJournals.countTable(modData.BurdJournals.stats) + BurdJournals.countTable(modData.BurdJournals.recipes)
 
     print("[BurdJournals] handleRecordProgress: journalType=" .. tostring(journalType) .. ", isBlank=" .. tostring(isBlank) .. ", totalItems=" .. tostring(totalItems))
 
@@ -691,8 +717,10 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         skillsRecorded = skillsRecorded,
         traitsRecorded = traitsRecorded,
         statsRecorded = statsRecorded,
+        recipesRecorded = recipesRecorded,
         skillNames = skillNames,
         traitNames = traitNames,
+        recipeNames = recipeNames,
         newJournalId = newJournalId,
         journalId = finalJournalId,
         journalData = journalData  -- Include the actual data so client can apply it directly
@@ -1583,6 +1611,207 @@ function BurdJournals.Server.handleConvertToClean(player, args)
     BurdJournals.Server.sendToClient(player, "convertSuccess", {
         message = "The worn journal has been restored to a clean blank journal."
     })
+end
+
+-- ==================== CLAIM RECIPE (Player Journals - SET Mode) ====================
+-- Used by the timed learning UI for player journals
+
+function BurdJournals.Server.handleClaimRecipe(player, args)
+    if not args or not args.recipeName then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
+        return
+    end
+
+    local journalId = args.journalId
+    local recipeName = args.recipeName
+
+    -- Find the journal
+    local journal = BurdJournals.findItemById(player, journalId)
+    if not journal then
+        print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
+        return
+    end
+
+    -- Check permission to claim from this journal
+    local canClaim, reason = BurdJournals.canPlayerClaimFromJournal(player, journal)
+    if not canClaim then
+        BurdJournals.Server.sendToClient(player, "error", {message = reason or "Permission denied."})
+        return
+    end
+
+    -- Get modData
+    local modData = journal:getModData()
+    local journalData = modData.BurdJournals
+
+    if not journalData or not journalData.recipes then
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no recipe data."})
+        return
+    end
+
+    -- Check if recipe exists in journal
+    if not journalData.recipes[recipeName] then
+        print("[BurdJournals] Server ERROR: Recipe '" .. recipeName .. "' not found in journal")
+        BurdJournals.Server.sendToClient(player, "error", {message = "Recipe not found in journal."})
+        return
+    end
+
+    -- Check if player already knows this recipe
+    if BurdJournals.playerKnowsRecipe(player, recipeName) then
+        BurdJournals.Server.sendToClient(player, "recipeAlreadyKnown", {recipeName = recipeName})
+        return
+    end
+
+    -- Learn the recipe
+    local recipeWasLearned = false
+    pcall(function()
+        player:learnRecipe(recipeName)
+        recipeWasLearned = true
+    end)
+
+    if recipeWasLearned then
+        -- Mark recipe as claimed
+        if not journalData.claimedRecipes then
+            journalData.claimedRecipes = {}
+        end
+        journalData.claimedRecipes[recipeName] = true
+
+        -- Sync modData
+        if journal.transmitModData then
+            journal:transmitModData()
+        end
+
+        -- Sync player fields (recipes)
+        sendSyncPlayerFields(player, 0x00000007)
+
+        -- Send success response with journal data for UI update
+        BurdJournals.Server.sendToClient(player, "claimSuccess", {
+            recipeName = recipeName,
+            journalId = journal:getID(),
+            journalData = BurdJournals.Server.copyJournalData(journal)
+        })
+    else
+        BurdJournals.Server.sendToClient(player, "error", {message = "Could not learn recipe."})
+    end
+end
+
+-- ==================== ABSORB RECIPE (Worn/Bloody Journals - ADD Mode) ====================
+
+function BurdJournals.Server.handleAbsorbRecipe(player, args)
+    if not args or not args.recipeName then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
+        return
+    end
+
+    local journalId = args.journalId
+    local recipeName = args.recipeName
+
+    -- Find the journal by item ID
+    local journal = BurdJournals.findItemById(player, journalId)
+    if not journal then
+        print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
+        return
+    end
+
+    -- Must be a worn/bloody journal (readable for absorption)
+    if not BurdJournals.canAbsorbXP(journal) then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Cannot absorb from this journal."})
+        return
+    end
+
+    -- Get modData
+    local modData = journal:getModData()
+    local journalData = modData.BurdJournals
+
+    if not journalData or not journalData.recipes then
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no recipe data."})
+        return
+    end
+
+    -- Check if recipe exists in journal
+    if not journalData.recipes[recipeName] then
+        print("[BurdJournals] Server ERROR: Recipe '" .. recipeName .. "' not found in journal")
+        BurdJournals.Server.sendToClient(player, "error", {message = "Recipe not found in journal."})
+        return
+    end
+
+    -- Check if already claimed
+    if BurdJournals.isRecipeClaimed(journal, recipeName) then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Recipe already claimed."})
+        return
+    end
+
+    -- Check if player already knows this recipe
+    if BurdJournals.playerKnowsRecipe(player, recipeName) then
+        -- Mark as claimed but notify player they already know it
+        BurdJournals.claimRecipe(journal, recipeName)
+
+        if journal.transmitModData then
+            journal:transmitModData()
+        end
+
+        BurdJournals.Server.sendToClient(player, "recipeAlreadyKnown", {
+            recipeName = recipeName,
+            journalId = journal:getID(),
+            journalData = BurdJournals.Server.copyJournalData(journal)
+        })
+
+        -- Check for dissolution after claiming
+        if BurdJournals.shouldDissolve(journal) then
+            local dissolutionMessage = BurdJournals.getRandomDissolutionMessage()
+            removeJournalCompletely(player, journal)
+            BurdJournals.Server.sendToClient(player, "journalDissolved", {
+                message = dissolutionMessage
+            })
+        end
+        return
+    end
+
+    -- Learn the recipe
+    local recipeWasLearned = false
+    pcall(function()
+        player:learnRecipe(recipeName)
+        recipeWasLearned = true
+    end)
+
+    if recipeWasLearned then
+        -- Mark recipe as claimed
+        BurdJournals.claimRecipe(journal, recipeName)
+
+        -- Sync modData
+        if journal.transmitModData then
+            journal:transmitModData()
+        end
+
+        -- Sync player fields (recipes)
+        sendSyncPlayerFields(player, 0x00000007)
+
+        -- Get updated journal data for client
+        local updatedJournalData = BurdJournals.Server.copyJournalData(journal)
+
+        -- Check for dissolution
+        if BurdJournals.shouldDissolve(journal) then
+            local dissolutionMessage = BurdJournals.getRandomDissolutionMessage()
+            removeJournalCompletely(player, journal)
+
+            BurdJournals.Server.sendToClient(player, "absorbSuccess", {
+                recipeName = recipeName,
+                journalData = updatedJournalData,
+                dissolved = true,
+                dissolutionMessage = dissolutionMessage
+            })
+        else
+            BurdJournals.Server.sendToClient(player, "absorbSuccess", {
+                recipeName = recipeName,
+                journalId = journal:getID(),
+                journalData = updatedJournalData,
+                dissolved = false
+            })
+        end
+    else
+        BurdJournals.Server.sendToClient(player, "error", {message = "Could not learn recipe."})
+    end
 end
 
 -- ==================== EVENT REGISTRATION ====================
