@@ -247,4 +247,21 @@ UI_EN = {
     UI_BurdJournals_PlusRecipes = ", +%d recipes",
     UI_BurdJournals_RecipeAlreadyKnownCount = "%d recipe already known",
     UI_BurdJournals_RecipesAlreadyKnownCount = "%d recipes already known",
+
+    -- Stats Tab
+    UI_BurdJournals_Stats = "STATS",
+    UI_BurdJournals_StatsAvailable = "(%d available)",
+    UI_BurdJournals_StatsRecordable = "(%d recordable)",
+    UI_BurdJournals_StatZombieKills = "Zombie Kills",
+    UI_BurdJournals_StatZombieKillsDesc = "Total zombies killed",
+    UI_BurdJournals_StatHoursSurvived = "Hours Survived",
+    UI_BurdJournals_StatHoursSurvivedDesc = "Total hours alive in the apocalypse",
+    UI_BurdJournals_StatDays = "%d days",
+    UI_BurdJournals_StatHours = "%d hours",
+    UI_BurdJournals_StatDaysHours = "%d days, %d hours",
+
+    -- Dialog strings
+    UI_BurdJournals_ConfirmCancelLearning = "Cancel learning and close?",
+    UI_BurdJournals_RecordedTrait = "Recorded trait",
+    UI_BurdJournals_RecordedRecipe = "Recorded recipe",
 }

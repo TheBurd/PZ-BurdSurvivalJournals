@@ -1,0 +1,114 @@
+Tooltip_PTBR = {
+    -- Item Tooltips
+    Tooltip_BlankSurvivalJournal = "Um diario em branco pronto para registrar seu conhecimento de sobrevivencia.",
+    Tooltip_FilledSurvivalJournal = "Um diario contendo habilidades de sobrevivencia registradas. Clique com o botao direito para ler.",
+
+    -- Skill Info (Tooltip)
+    Tooltip_BurdJournals_ContainsSkills = "Contem %d habilidade(s) registrada(s)",
+    Tooltip_BurdJournals_RewardsRemaining = "recompensas restantes",
+    Tooltip_BurdJournals_SetModeDesc = "A leitura ira definir seu XP de maneira correspondente aos niveis registrados (se forem maiores).\n\n",
+
+    -- Tool Requirements (Tooltip)
+    Tooltip_BurdJournals_NeedPen = "Requer uma caneta ou lapis para escrever.",
+    Tooltip_BurdJournals_NeedEraser = "Requer uma borracha para apagar o conteudo.",
+
+    -- Bloody Journal (Tooltip)
+    Tooltip_BurdJournals_BloodyJournal = "Diario Ensanguentado",
+    Tooltip_BurdJournals_BloodyJournalDesc = "Um diario de um sobrevivente caido. Contem habilidades e tracos que podem ser absorvidos.",
+    Tooltip_BurdJournals_BloodyDesc = "Achado raro! Pode conter tracos valiosos.",
+    Tooltip_BurdJournals_ConvertBloodyToClean = "Converter em Diario Limpo",
+    Tooltip_BurdJournals_ConvertBloodyToCleanDesc = "Use a producao para converter este diario ensanguentado em um diario pessoal limpo.",
+
+    -- Worn Journal (Tooltip)
+    Tooltip_BurdJournals_WornJournal = "Diario Desgastado",
+    Tooltip_BurdJournals_NeedsCleaning = "Este diario esta desgastado demais para ser lido.",
+    Tooltip_BurdJournals_NeedsCleaningDesc = "Use sabao e pano para limpa-lo, fita adesiva para remenda-lo ou tiras de couro para reencaderna-lo.",
+    Tooltip_BurdJournals_AbsorbAll = "Absorver Tudo",
+    Tooltip_BurdJournals_AbsorbAllDesc = "Reivindica todas as habilidades e tracos restantes de uma so vez. O diario ira se desfazer.",
+
+    -- Personal Journal (Clean) (Tooltip)
+    Tooltip_BurdJournals_PersonalJournal = "Diario de Sobrevivencia Pessoal",
+    Tooltip_BurdJournals_BlankJournal = "Diario de Sobrevivencia em Branco",
+    Tooltip_BurdJournals_BlankJournalDesc = "Abre o diario para gravar seu progresso de sobrevivencia.\nRequer uma ferramenta de escrita.",
+    Tooltip_BurdJournals_RecordProgress = "Gravar Seu Progresso",
+    Tooltip_BurdJournals_RecordProgressDesc = "Abre o diario para gravar suas habilidades e tracos atuais.\nOs valores registrados so sao atualizados se seu nivel atual for maior.",
+    Tooltip_BurdJournals_ClaimAll = "Reivindicar Todas as Habilidades",
+    Tooltip_BurdJournals_ClaimAllDesc = "Abre o diario e reivindica todas as habilidades disponiveis.\nIsso levara tempo com base na sua velocidade de leitura.",
+    Tooltip_BurdJournals_Disassemble = "Desmontar Diario",
+    Tooltip_BurdJournals_DisassembleDesc = "Rasga este diario para recuperar materiais.\n\nVoce recebera:\n  2x Papel\n  1x Tiras de Couro",
+
+    -- Tooltip Dynamic Text
+    Tooltip_BurdJournals_SkillsAvailable = "Habilidades: %d/%d disponiveis",
+    Tooltip_BurdJournals_TraitsAvailable = "Tracos: %d/%d disponiveis",
+    Tooltip_BurdJournals_NoRewardsFound = "Nenhuma recompensa encontrada",
+    Tooltip_BurdJournals_AbsorbAllRewards = "Absorver Todas as Recompensas",
+    Tooltip_BurdJournals_AbsorbAllSkillsTraits = "Absorver Tudo (%d habilidades, %d tracos)",
+    Tooltip_BurdJournals_AbsorbAllSkills = "Absorver Tudo (%d habilidades)",
+    Tooltip_BurdJournals_CraftingRequired = "Producao Necessaria",
+    Tooltip_BurdJournals_ConvertBloodyDesc = "Abra o menu de producao (B) para encontrar 'Limpar e Converter Diario Ensanguentado'.\nRequer: Sabao, Pano, Couro, Linha, Agulha, Costura Nv1.\nAVISO: Destroi quaisquer recompensas restantes!",
+    Tooltip_BurdJournals_WrittenBy = "Escrito por: %s",
+    Tooltip_BurdJournals_RecordedItem = "Contem %d item registrado",
+    Tooltip_BurdJournals_RecordedItems = "Contem %d itens registrados",
+    Tooltip_BurdJournals_ClaimableRewards = "Recompensas reivindicaveis:",
+    Tooltip_BurdJournals_SkillCount = "  - %d habilidade",
+    Tooltip_BurdJournals_SkillsCount = "  - %d habilidades",
+    Tooltip_BurdJournals_TraitCount = "  - %d traco",
+    Tooltip_BurdJournals_TraitsCount = "  - %d tracos",
+    Tooltip_BurdJournals_ViewOnly = "Apenas visualizacao",
+    Tooltip_BurdJournals_CannotClaimDefault = "Nao e possivel reivindicar deste diario.",
+    Tooltip_BurdJournals_NoNewRewards = "Nenhuma recompensa nova disponivel.",
+    Tooltip_BurdJournals_ClaimingInfo = "Reivindicar define seu XP para o nivel registrado (se maior).",
+    Tooltip_BurdJournals_UpdateRecords = "Atualizar Registros do Diario",
+    Tooltip_BurdJournals_UpdateRecordsDesc = "Abre o diario para atualizar suas habilidades registradas.\nOs valores registrados so sao atualizados se seu nivel atual for maior.",
+    Tooltip_BurdJournals_CannotClaim = "Nao e Possivel Reivindicar",
+    Tooltip_BurdJournals_NoPermissionClaim = "Voce nao tem permissao para reivindicar deste diario.",
+    Tooltip_BurdJournals_AvailableSkill = "Disponivel: %d habilidade",
+    Tooltip_BurdJournals_AvailableSkills = "Disponivel: %d habilidades",
+    Tooltip_BurdJournals_AndTrait = ", %d traco",
+    Tooltip_BurdJournals_AndTraits = ", %d tracos",
+    Tooltip_BurdJournals_ReadingSpeedNote = "Isso levara tempo com base na sua velocidade de leitura.",
+    Tooltip_BurdJournals_EraseContents = "Apagar Todo o Conteudo",
+    Tooltip_BurdJournals_EraseContentsDesc = "Apaga todos os dados registrados, retornando o diario ao estado em branco.\nRequer uma borracha.",
+    Tooltip_BurdJournals_CannotOpen = "Nao e Possivel Abrir",
+
+    -- Conversion (Tooltip)
+    Tooltip_BurdJournals_ConvertToClean = "Reencadernar como Diario de Sobrevivencia Pessoal",
+    Tooltip_BurdJournals_ConvertToCleanDesc = "Reencaderna este diario desgastado em um diario de sobrevivencia limpo em branco para uso pessoal. Requer suprimentos de costura.",
+    Tooltip_BurdJournals_CannotConvert = "Nao e Possivel Converter",
+    Tooltip_BurdJournals_NeedsConvertMaterials = "Requer: Tiras de Couro + Linha + Agulha + Costura Nv1",
+
+    -- Materials (Tooltip)
+    Tooltip_BurdJournals_MissingMaterials = "Materiais Faltando",
+    Tooltip_BurdJournals_NeedsSoapCloth = "Requer: Sabao + Tecidos Rasgados ou Pano de Prato",
+    Tooltip_BurdJournals_NeedsTape = "Requer: Fita Adesiva",
+    Tooltip_BurdJournals_NeedsLeatherBinding = "Requer: Tiras de Couro + Linha + Agulha",
+    Tooltip_BurdJournals_NeedsGluePaper = "Requer: Cola + Folha de Papel",
+
+    -- Illiterate Trait Block
+    Tooltip_BurdJournals_IlliterateName = "Analfabeto",
+    Tooltip_BurdJournals_IlliterateDesc = "Voce nao sabe ler ou escrever. Diarios sao inuteis para voce.",
+
+    -- Inventory Tooltip Labels
+    Tooltip_BurdJournals_Owner = "Dono: %s",
+    Tooltip_BurdJournals_OwnerYou = "(Voce)",
+    Tooltip_BurdJournals_Author = "Autor: %s",
+    Tooltip_BurdJournals_Profession = "Profissao: %s",
+    Tooltip_BurdJournals_SkillsLine = "Habilidades: %d/%d",
+    Tooltip_BurdJournals_SkillsLineXP = "Habilidades: %d/%d (%s XP)",
+    Tooltip_BurdJournals_AllClaimed = "(tudo resgatado)",
+    Tooltip_BurdJournals_TraitsLine = "Tracos: %d/%d",
+    Tooltip_BurdJournals_ConditionBloody = "Condicao: Ensanguentado",
+    Tooltip_BurdJournals_ConditionWorn = "Condicao: Gasto",
+    Tooltip_BurdJournals_ConditionRestored = "Condicao: Restaurado",
+    Tooltip_BurdJournals_ConditionClean = "Condicao: Limpo",
+    Tooltip_BurdJournals_OriginZombie = "Origem: Recuperado de zumbi",
+    Tooltip_BurdJournals_OriginWorld = "Origem: Encontrado no mundo",
+    Tooltip_BurdJournals_OriginCrafted = "Origem: Fabricado",
+    Tooltip_BurdJournals_OriginFound = "Origem: Encontrado",
+    Tooltip_BurdJournals_OriginPersonal = "Origem: Pessoal",
+    Tooltip_BurdJournals_Created = "Criado: %s",
+    Tooltip_BurdJournals_LastUpdated = "Ultima atualizacao: %s",
+    Tooltip_BurdJournals_AgeToday = "Hoje",
+    Tooltip_BurdJournals_Age1Day = "1 dia atras",
+    Tooltip_BurdJournals_AgeDays = "%d dias atras",
+}

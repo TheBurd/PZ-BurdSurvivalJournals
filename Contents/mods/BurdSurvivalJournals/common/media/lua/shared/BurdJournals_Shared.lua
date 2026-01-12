@@ -1017,9 +1017,11 @@ BurdJournals.RECORDABLE_STATS = {
     -- ============ SURVIVAL MILESTONES ============
     {
         id = "zombieKills",
-        name = "Zombie Kills",
+        nameKey = "UI_BurdJournals_StatZombieKills",
+        nameFallback = "Zombie Kills",
         category = "Combat",
-        description = "Total zombies killed",
+        descriptionKey = "UI_BurdJournals_StatZombieKillsDesc",
+        descriptionFallback = "Total zombies killed",
         icon = "media/ui/zombie.png",
         getValue = function(player)
             if not player then return 0 end
@@ -1031,9 +1033,11 @@ BurdJournals.RECORDABLE_STATS = {
     },
     {
         id = "hoursSurvived",
-        name = "Hours Survived",
+        nameKey = "UI_BurdJournals_StatHoursSurvived",
+        nameFallback = "Hours Survived",
         category = "Survival",
-        description = "Total hours alive in the apocalypse",
+        descriptionKey = "UI_BurdJournals_StatHoursSurvivedDesc",
+        descriptionFallback = "Total hours alive in the apocalypse",
         icon = "media/ui/clock.png",
         getValue = function(player)
             if not player then return 0 end
@@ -1043,12 +1047,44 @@ BurdJournals.RECORDABLE_STATS = {
             local days = math.floor(value / 24)
             local hours = value % 24
             if days > 0 then
+                local daysHoursText = getText("UI_BurdJournals_StatDaysHours")
+                if daysHoursText and daysHoursText ~= "UI_BurdJournals_StatDaysHours" then
+                    return string.format(daysHoursText, days, hours)
+                end
                 return days .. " days, " .. hours .. " hours"
+            end
+            local hoursText = getText("UI_BurdJournals_StatHours")
+            if hoursText and hoursText ~= "UI_BurdJournals_StatHours" then
+                return string.format(hoursText, hours)
             end
             return hours .. " hours"
         end,
     },
 }
+
+-- Helper to get localized stat name
+function BurdJournals.getStatName(stat)
+    if not stat then return "Unknown" end
+    if stat.nameKey and getText then
+        local localized = getText(stat.nameKey)
+        if localized and localized ~= stat.nameKey then
+            return localized
+        end
+    end
+    return stat.nameFallback or stat.name or "Unknown"
+end
+
+-- Helper to get localized stat description
+function BurdJournals.getStatDescription(stat)
+    if not stat then return "" end
+    if stat.descriptionKey and getText then
+        local localized = getText(stat.descriptionKey)
+        if localized and localized ~= stat.descriptionKey then
+            return localized
+        end
+    end
+    return stat.descriptionFallback or stat.description or ""
+end
 
 -- Get a stat definition by ID
 function BurdJournals.getStatById(statId)
@@ -2836,15 +2872,53 @@ function BurdJournals.safeAddTrait(player, traitId)
         end)
 
 
-        -- If pcall succeeded, the trait was added - return success
+        -- If pcall succeeded, the trait was added - now apply skill bonuses
         -- (Don't verify with playerHasTrait because traitId might be display name like "Wakeful"
         -- but the actual trait name is "needslesssleep")
         if ok then
-            -- NOTE: XP boosts from traits (e.g., Artisan gives +1 Pottery/Glassmaking) are handled
-            -- automatically by the game via modifyTraitXPBoost() called above. We don't need to
-            -- manually iterate xpBoosts - the game's trait system handles this internally.
-            -- Previous attempts to manually apply xpBoosts caused errors due to Java/Lua bridge issues
-            -- with the getXpBoosts() return value not being iterable in Lua.
+            -- Apply skill level bonuses from traits (e.g., Gardener gives +1 Farming)
+            -- modifyTraitXPBoost only affects XP gain RATE, not starting levels!
+            -- We need to manually grant the skill XP for the bonus levels
+            if traitDef and traitDef.getXpBoosts and transformIntoKahluaTable then
+                local applyOk, applyErr = pcall(function()
+                    local xpBoosts = transformIntoKahluaTable(traitDef:getXpBoosts())
+                    if xpBoosts then
+                        for perk, level in pairs(xpBoosts) do
+                            local perkId = tostring(perk)
+                            local levelNum = tonumber(tostring(level))
+                            if levelNum and levelNum > 0 then
+                                -- Get the perk object to calculate XP needed
+                                local perkObj = Perks and Perks[perkId]
+                                if perkObj and perkObj.getTotalXpForLevel then
+                                    -- Get player's current level in this skill
+                                    local currentLevel = 0
+                                    if player.getPerkLevel then
+                                        currentLevel = player:getPerkLevel(perkObj) or 0
+                                    end
+                                    -- Calculate XP needed to reach current + bonus level
+                                    local targetLevel = math.min(currentLevel + levelNum, 10)
+                                    local targetXp = perkObj:getTotalXpForLevel(targetLevel)
+                                    local currentXp = player:getXp():getXP(perkObj) or 0
+                                    local xpToAdd = targetXp - currentXp
+                                    if xpToAdd > 0 then
+                                        player:getXp():AddXP(perkObj, xpToAdd, true, false, false)
+                                        print("[BurdJournals] Trait " .. traitId .. " granted +" .. levelNum .. " " .. perkId .. " (+" .. math.floor(xpToAdd) .. " XP)")
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end)
+                if not applyOk then
+                    print("[BurdJournals] Warning: Failed to apply trait XP boosts: " .. tostring(applyErr))
+                end
+            end
+
+            -- Sync again after applying XP
+            if SyncXp then
+                SyncXp(player)
+            end
+
             return true
         else
         end

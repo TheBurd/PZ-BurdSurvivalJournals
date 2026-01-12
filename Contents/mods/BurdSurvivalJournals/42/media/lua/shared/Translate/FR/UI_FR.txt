@@ -1,0 +1,285 @@
+UI_FR = {
+    -- Journal Types
+    UI_BurdJournals_BlankJournal = "Journal de survie vierge",
+    UI_BurdJournals_FilledJournal = "Journal de survie rempli",
+    UI_BurdJournals_WornJournal = "Journal de survie usé",
+    UI_BurdJournals_BloodyJournal = "Journal de survie ensanglanté",
+
+    -- Journal Name States (for dynamic item names)
+    UI_BurdJournals_StateWorn = "Usé",
+    UI_BurdJournals_StateBloody = "Ensanglanté",
+    UI_BurdJournals_PreviousProfession = "Ancien %s",
+
+    -- Journal Info
+    UI_BurdJournals_Author = "Auteur",
+    UI_BurdJournals_Written = "Écrit le",
+    UI_BurdJournals_TimesRead = "Nombre de lectures",
+    UI_BurdJournals_Condition = "État",
+    UI_BurdJournals_NeedsCleaning = "Nécessite un nettoyage",
+    
+    -- UI Buttons
+    UI_BurdJournals_SelectAll = "Tout sélectionner",
+    UI_BurdJournals_DeselectAll = "Tout désélectionner",
+    UI_BurdJournals_Log = "Consigner les compétences",
+    UI_BurdJournals_Learn = "Apprendre",
+    UI_BurdJournals_Update = "Mettre à jour",
+    UI_BurdJournals_Erase = "Effacer",
+    UI_BurdJournals_Close = "Fermer",
+    UI_BurdJournals_Absorb = "Absorber",
+    UI_BurdJournals_AbsorbAll = "Tout absorber",
+    
+    -- Confirmation Dialogs
+    UI_BurdJournals_ConfirmErase = "Es-tu sûr de vouloir effacer ce journal ? Toutes les compétences consignées seront perdues à jamais.",
+    UI_BurdJournals_ConfirmOverwrite = "Cela va écraser le contenu actuel du journal avec tes compétences actuelles. Es-tu sûr ?",
+    UI_BurdJournals_ConfirmConvert = "Cela détruira les récompenses restantes. Es-tu sûr ?",
+    UI_BurdJournals_ConfirmDisassemble = "Démonter ce journal ?",
+    UI_BurdJournals_RenamePrompt = "Saisis un nouveau nom pour ce journal :",
+    
+    -- Messages
+    UI_BurdJournals_NoSkillsSelected = "Sélectionne d'abord au moins une compétence.",
+    UI_BurdJournals_SkillsLogged = "Compétences consignées dans le journal.",
+    UI_BurdJournals_SkillsLearned = "Connaissances absorbées depuis le journal !",
+    UI_BurdJournals_JournalErased = "Contenu du journal effacé.",
+    UI_BurdJournals_JournalCleaned = "Le journal a été nettoyé et est désormais lisible.",
+    UI_BurdJournals_JournalUpdated = "Compétences du journal mises à jour.",
+    UI_BurdJournals_JournalRenamed = "Journal renommé.",
+    UI_BurdJournals_JournalConverted = "Journal converti en journal vierge propre.",
+    UI_BurdJournals_JournalDissolved = "Le journal tombe en lambeaux entre tes mains...",
+    
+    -- Condition States
+    UI_BurdJournals_ConditionPristine = "Impeccable",
+    UI_BurdJournals_ConditionGood = "Bon",
+    UI_BurdJournals_ConditionWorn = "Usé",
+    UI_BurdJournals_ConditionDamaged = "Endommagé",
+    UI_BurdJournals_ConditionCritical = "Critique",
+    
+    -- Inspect Tooltips
+    UI_BurdJournals_InspectBlank = "Un journal vierge dans un état %1.",
+    UI_BurdJournals_InspectFilled = "Un journal écrit par %1. État : %2",
+    UI_BurdJournals_InspectWorn = "Un journal usé de %1. État : %2. Nécessite un nettoyage.",
+    UI_BurdJournals_InspectBloody = "Un journal ensanglanté trouvé sur un cadavre. Contient les compétences et les traits du survivant décédé.",
+    
+    -- Absorption UI
+    UI_BurdJournals_RewardsRemaining = "récompenses restantes",
+    UI_BurdJournals_SkillClaimed = "ACQUISE",
+    UI_BurdJournals_TraitAlreadyKnown = "Déjà connu",
+    UI_BurdJournals_ClickToAbsorb = "Cliquer pour absorber",
+
+    -- Journal Type Headers (MainPanel)
+    UI_BurdJournals_BloodyJournalHeader = "JOURNAL ENSANGLANTÉ",
+    UI_BurdJournals_WornJournalHeader = "JOURNAL USÉ",
+    UI_BurdJournals_PersonalJournalHeader = "JOURNAL PERSONNEL",
+    UI_BurdJournals_RecordProgressHeader = "CONSIGNER LES PROGRÈS",
+
+    -- Rarity Labels
+    UI_BurdJournals_RarityRare = "RARE",
+    UI_BurdJournals_RarityUncommon = "PEU COMMUN",
+
+    -- Flavor Text
+    UI_BurdJournals_BloodyFlavor = "Trouvé sur un survivant tombé...",
+    UI_BurdJournals_WornBloodyFlavor = "Récupéré dans les terres désolées...",
+    UI_BurdJournals_WornFlavor = "Les notes d'un vieux survivant...",
+    UI_BurdJournals_PersonalFlavor = "Tes connaissances de survie consignées...",
+    UI_BurdJournals_RecordFlavor = "Documente tes compétences de survie...",
+
+    -- Tab Labels
+    UI_BurdJournals_TabSkills = "Compétences",
+    UI_BurdJournals_TabTraits = "Traits",
+    UI_BurdJournals_TabRecipes = "Recettes",
+    UI_BurdJournals_TabStats = "Stats",
+
+    -- Buttons (MainPanel)
+    UI_BurdJournals_BtnAbsorbAll = "Tout absorber",
+    UI_BurdJournals_BtnClaimAll = "Tout récupérer",
+    UI_BurdJournals_BtnRecordAll = "Tout consigner",
+    UI_BurdJournals_BtnAbsorbTab = "Absorber : %s",
+    UI_BurdJournals_BtnClaimTab = "Récupérer : %s",
+    UI_BurdJournals_BtnRecordTab = "Consigner : %s",
+    UI_BurdJournals_BtnClose = "Fermer",
+    UI_BurdJournals_BtnKeepReading = "Continuer la lecture",
+    UI_BurdJournals_BtnCancelClose = "Annuler et fermer",
+    UI_BurdJournals_BtnQueue = "FILE",
+    UI_BurdJournals_BtnClaim = "RÉCUPÉRER",
+    UI_BurdJournals_BtnRecord = "CONSIGNER",
+
+    -- Button States
+    UI_BurdJournals_StateReading = "Lecture...",
+    UI_BurdJournals_StateClaiming = "Récupération...",
+    UI_BurdJournals_StateRecording = "Enregistrement...",
+
+    -- Feedback Messages
+    UI_BurdJournals_AlreadyReading = "Déjà en train de lire...",
+    UI_BurdJournals_AlreadyRecording = "Déjà en train d'enregistrer...",
+    UI_BurdJournals_NoNewRewards = "Aucune nouvelle récompense à récupérer",
+    UI_BurdJournals_AlreadyQueued = "Déjà dans la file",
+    UI_BurdJournals_AlreadyAtLevel = "Déjà à ce niveau ou plus",
+    UI_BurdJournals_CantRecordStartingSkills = "Impossible de consigner les compétences de départ",
+    UI_BurdJournals_CantRecordStartingTraits = "Impossible de consigner les traits de départ",
+    UI_BurdJournals_NothingNewToRecord = "Rien de nouveau à consigner",
+    UI_BurdJournals_SavingProgress = "Sauvegarde des progrès...",
+    UI_BurdJournals_Queued = "En file : %s",
+    UI_BurdJournals_CannotRecord = "Consignation impossible : %s",
+    UI_BurdJournals_SetSkillToLevel = "Niveau de %s ajusté au niveau consigné",
+    UI_BurdJournals_SkillMaxed = "%s est déjà à ce niveau ou supérieur",
+    UI_BurdJournals_NoPlayer = "Joueur non trouvé",
+    UI_BurdJournals_GainedTrait = "Trait obtenu : %s",
+    UI_BurdJournals_FailedToAddTrait = "Échec de l'obtention du trait : %s",
+    UI_BurdJournals_BaselineReset = "Base réinitialisée !",
+    UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_JournalSyncFailed = "Erreur : Échec de la synchronisation du journal",
+
+    -- Empty States
+    UI_BurdJournals_NoRewardsAvailable = "Aucune récompense disponible",
+    UI_BurdJournals_NoSkillsRecorded = "Aucune compétence consignée",
+    UI_BurdJournals_NoRareTraits = "Aucun trait rare trouvé",
+    UI_BurdJournals_NoTraitsAvailable = "Aucun trait disponible",
+    UI_BurdJournals_NoTraitsRecorded = "Aucun trait consigné",
+    UI_BurdJournals_NoStatsRecorded = "Aucune stat consignée",
+    UI_BurdJournals_NothingToRecord = "Rien à consigner",
+    UI_BurdJournals_NoSkillsToRecord = "Aucune compétence à consigner",
+    UI_BurdJournals_NoTraitsToRecord = "Aucun trait à consigner",
+    UI_BurdJournals_NoStatsEnabled = "Enregistrement des stats désactivé",
+    UI_BurdJournals_NoContent = "Aucun contenu",
+    UI_BurdJournals_TraitAlreadyKnownFeedback = "Tu possèdes déjà ce trait",
+
+    -- Status Labels
+    UI_BurdJournals_StatusAlreadyKnown = "Déjà connu",
+    UI_BurdJournals_StatusAlreadyClaimed = "Déjà récupéré",
+    UI_BurdJournals_StatusAlreadyRecorded = "Déjà consigné",
+    UI_BurdJournals_StatusClaimed = "Récupéré",
+    UI_BurdJournals_RareTraitQueued = "Trait rare - En file #%d",
+    UI_BurdJournals_NegativeTraitQueued = "Trait maudit - En file #%d",
+    UI_BurdJournals_RareTraitBonus = "Bonus de trait rare !",
+    UI_BurdJournals_RareTraitBonusQueued = "Bonus de trait rare ! - En file",
+    UI_BurdJournals_NegativeTraitCurse = "Savoir maudit...",
+    UI_BurdJournals_NegativeTraitCurseQueued = "Savoir maudit... - En file",
+
+    -- Author Box
+    UI_BurdJournals_RecordingFor = "Consignation des progrès de %s",
+    UI_BurdJournals_FromNotesOf = "D'après les notes de %s",
+    UI_BurdJournals_UnknownSurvivor = "Survivant inconnu",
+    UI_BurdJournals_Unknown = "Inconnu",
+
+    -- Headers
+    UI_BurdJournals_YourSkills = "TES COMPÉTENCES",
+    UI_BurdJournals_Skills = "COMPÉTENCES",
+    UI_BurdJournals_Traits = "TRAITS",
+    UI_BurdJournals_Available = "(%d disponible)",
+    UI_BurdJournals_Recordable = "(%d consignable)",
+    UI_BurdJournals_Claimable = "(%d récupérable)",
+
+    -- Progress Format
+    UI_BurdJournals_ReadingAllProgress = "Lecture complète : %d%% (%s restant)",
+    UI_BurdJournals_ReadingProgress = "Lecture... %d%%",
+    UI_BurdJournals_RecordingProgress = "Consignation... %d%%",
+    UI_BurdJournals_AbsorbingProgress = "Absorption... %d%%",
+    UI_BurdJournals_LearningProgress = "Apprentissage... %d%%",
+    UI_BurdJournals_RecordingAllProgress = "Consignation complète : %d%% (%s restant)",
+    UI_BurdJournals_ClaimingAllProgress = "Récupération complète : %d%% (%s restant)",
+    UI_BurdJournals_AbsorbingAllProgress = "Absorption complète : %d%% (%s restant)",
+    UI_BurdJournals_ItemCount = "%d élément",
+    UI_BurdJournals_ItemCountPlural = "%d éléments",
+    UI_BurdJournals_RewardQueued = "%d récompense en file",
+    UI_BurdJournals_RewardsQueued = "%d récompenses en file",
+    UI_BurdJournals_SummaryTotalXP = "Total : +%s XP",
+    UI_BurdJournals_SummaryTrait = "%d trait",
+    UI_BurdJournals_SummaryTraits = "%d traits",
+    UI_BurdJournals_SummarySeparator = "  |  ",
+
+    -- Skill/Trait Row Labels
+    UI_BurdJournals_LevelFormat = "Niv %d",
+    UI_BurdJournals_XPFormat = "%d XP",
+    UI_BurdJournals_XPWithBaseline = "%s XP (+%s de départ)",
+    UI_BurdJournals_StartingXP = "Départ : %s XP",
+    UI_BurdJournals_CurrentLevel = "Actuel : Niv %d",
+    UI_BurdJournals_RecordedLevel = "Consigné : Niv %d",
+    UI_BurdJournals_RecordedXP = "Consigné : %s XP",
+    UI_BurdJournals_RecordedWas = "%s XP (auparavant %s)",
+    UI_BurdJournals_SpawnedWith = "Acquis au départ",
+    UI_BurdJournals_YourTrait = "Ton trait",
+    UI_BurdJournals_QueuedNumber = "En file #%d",
+    UI_BurdJournals_NowWas = "Actuel : %s (auparavant %s)",
+    UI_BurdJournals_RecordedValue = "Consigné : %s",
+    UI_BurdJournals_CurrentValue = "Actuel : %s",
+    UI_BurdJournals_RecordedAchieved = "Consigné : %s (atteint !)",
+    UI_BurdJournals_RecordedVsCurrent = "Consigné : %s | Actuel : %s",
+    UI_BurdJournals_CurrentQueued = "Actuel : %s - En file #%d",
+
+    -- Confirmation Dialogs (additional)
+    UI_BurdJournals_ConfirmAbsorbAll = "Absorber toutes les récompenses restantes ?",
+    UI_BurdJournals_SkillCount = "%d compétence",
+    UI_BurdJournals_SkillsCount = "%d compétences",
+    UI_BurdJournals_RareTraitCount = "%d trait rare",
+    UI_BurdJournals_RareTraitsCount = "%d traits rares",
+    UI_BurdJournals_MaxedSkillsSkipped = "Les compétences au maximum et les traits déjà connus seront ignorés.",
+
+    -- Feedback (additional)
+    UI_BurdJournals_PlusTrait = ", +%d trait",
+    UI_BurdJournals_PlusTraits = ", +%d traits",
+    UI_BurdJournals_SkillAlreadyMaxed = "%d compétence déjà au maximum",
+    UI_BurdJournals_SkillsAlreadyMaxed = "%d compétences déjà au maximum",
+    UI_BurdJournals_TraitAlreadyKnown = "%d trait déjà connu",
+    UI_BurdJournals_TraitsAlreadyKnown = "%d traits déjà connus",
+
+    -- Client Messages
+    UI_BurdJournals_SkillsRecorded = "Compétences consignées !",
+    UI_BurdJournals_JournalErased = "Journal effacé",
+    UI_BurdJournals_JournalCleaned = "Journal nettoyé",
+    UI_BurdJournals_JournalRebound = "Journal relié",
+    UI_BurdJournals_ProgressSaved = "Progrès sauvegardés !",
+    UI_BurdJournals_RecordedItem = "Consigné : %s",
+    UI_BurdJournals_RecordedItems = "Consigné : %s",
+    UI_BurdJournals_RecordedItemsMore = "Consigné : %s, %s et %d autres",
+    UI_BurdJournals_ClaimedSkill = "Récupéré : %s (+%s XP)",
+    UI_BurdJournals_LearnedTrait = "Appris : %s",
+    UI_BurdJournals_AlreadyKnowTrait = "Déjà connu : %s",
+    UI_BurdJournals_SkillAlreadyMaxedMsg = "%s est déjà au maximum !",
+    UI_BurdJournals_Unknown = "Inconnu",
+
+    -- Timed Actions
+    UI_BurdJournals_JournalRestored = "Journal restauré !",
+    UI_BurdJournals_JournalBound = "Journal relié !",
+    UI_BurdJournals_Salvaged = "Récupéré : %s",
+    UI_BurdJournals_JournalDisassembled = "Journal démonté.",
+
+    -- Search Bar
+    UI_BurdJournals_SearchPlaceholder = "Rechercher...",
+    UI_BurdJournals_ClearSearch = "Effacer la recherche",
+    UI_BurdJournals_NoSearchResults = "Aucun résultat trouvé",
+
+    -- Recipe Tab
+    UI_BurdJournals_Recipes = "RECETTES",
+    UI_BurdJournals_RecipesAvailable = "(%d disponible)",
+    UI_BurdJournals_RecipesRecordable = "(%d consignable)",
+    UI_BurdJournals_NoRecipesRecorded = "Aucune recette consignée",
+    UI_BurdJournals_NoRecipesToRecord = "Aucune recette de magazine apprise",
+    UI_BurdJournals_NoRecipesAvailable = "Aucune recette disponible",
+    UI_BurdJournals_RecipeAlreadyKnown = "Déjà connu",
+    UI_BurdJournals_RecipeClaimed = "Récupéré",
+    UI_BurdJournals_LearnedRecipe = "Appris : %s",
+    UI_BurdJournals_AlreadyKnowRecipe = "Déjà connu : %s",
+    UI_BurdJournals_RecipeFromMagazine = "Source : %s",
+    UI_BurdJournals_RecipeCount = "%d recette",
+    UI_BurdJournals_RecipesCount = "%d recettes",
+    UI_BurdJournals_PlusRecipe = ", +%d recette",
+    UI_BurdJournals_PlusRecipes = ", +%d recettes",
+    UI_BurdJournals_RecipeAlreadyKnownCount = "%d recette déjà connue",
+    UI_BurdJournals_RecipesAlreadyKnownCount = "%d recettes déjà connues",
+
+    -- Stats Tab (Added for latest update)
+    UI_BurdJournals_Stats = "STATISTIQUES",
+    UI_BurdJournals_StatsAvailable = "(%d disponible)",
+    UI_BurdJournals_StatsRecordable = "(%d consignable)",
+    UI_BurdJournals_StatZombieKills = "Zombies tués",
+    UI_BurdJournals_StatZombieKillsDesc = "Total de zombies éliminés",
+    UI_BurdJournals_StatHoursSurvived = "Heures de survie",
+    UI_BurdJournals_StatHoursSurvivedDesc = "Temps total de survie dans l'apocalypse",
+    UI_BurdJournals_StatDays = "%d jours",
+    UI_BurdJournals_StatHours = "%d heures",
+    UI_BurdJournals_StatDaysHours = "%d jours, %d heures",
+
+    -- Dialog strings
+    UI_BurdJournals_ConfirmCancelLearning = "Annuler la lecture et fermer ?",
+    UI_BurdJournals_RecordedTrait = "Trait consigné",
+    UI_BurdJournals_RecordedRecipe = "Recette consignée",
+}

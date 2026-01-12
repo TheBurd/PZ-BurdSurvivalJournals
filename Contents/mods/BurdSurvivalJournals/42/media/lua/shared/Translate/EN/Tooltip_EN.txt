@@ -87,4 +87,28 @@ Tooltip_EN = {
     -- Illiterate Trait Block
     Tooltip_BurdJournals_IlliterateName = "Illiterate",
     Tooltip_BurdJournals_IlliterateDesc = "You cannot read or write. Journals are useless to you.",
+
+    -- Inventory Tooltip Labels
+    Tooltip_BurdJournals_Owner = "Owner: %s",
+    Tooltip_BurdJournals_OwnerYou = "(You)",
+    Tooltip_BurdJournals_Author = "Author: %s",
+    Tooltip_BurdJournals_Profession = "Profession: %s",
+    Tooltip_BurdJournals_SkillsLine = "Skills: %d/%d",
+    Tooltip_BurdJournals_SkillsLineXP = "Skills: %d/%d (%s XP)",
+    Tooltip_BurdJournals_AllClaimed = "(all claimed)",
+    Tooltip_BurdJournals_TraitsLine = "Traits: %d/%d",
+    Tooltip_BurdJournals_ConditionBloody = "Condition: Bloody",
+    Tooltip_BurdJournals_ConditionWorn = "Condition: Worn",
+    Tooltip_BurdJournals_ConditionRestored = "Condition: Restored",
+    Tooltip_BurdJournals_ConditionClean = "Condition: Clean",
+    Tooltip_BurdJournals_OriginZombie = "Origin: Recovered from zombie",
+    Tooltip_BurdJournals_OriginWorld = "Origin: Found in world",
+    Tooltip_BurdJournals_OriginCrafted = "Origin: Crafted",
+    Tooltip_BurdJournals_OriginFound = "Origin: Found",
+    Tooltip_BurdJournals_OriginPersonal = "Origin: Personal",
+    Tooltip_BurdJournals_Created = "Created: %s",
+    Tooltip_BurdJournals_LastUpdated = "Last Updated: %s",
+    Tooltip_BurdJournals_AgeToday = "Today",
+    Tooltip_BurdJournals_Age1Day = "1 day ago",
+    Tooltip_BurdJournals_AgeDays = "%d days ago",
 }

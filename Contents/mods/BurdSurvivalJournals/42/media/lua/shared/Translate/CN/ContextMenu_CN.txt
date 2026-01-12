@@ -26,6 +26,9 @@ ContextMenu_CN = {
     ContextMenu_BurdJournals_RecordAll = "记录全部进度",
     ContextMenu_BurdJournals_Disassemble = "拆解日志",
 
+    -- Illiterate Trait Block
+    ContextMenu_BurdJournals_CannotRead = "无法阅读（文盲）",
+
     -- Legacy (keeping for compatibility)
     ContextMenu_BurdJournals_CleanRepair = "清洁/修复",
     ContextMenu_BurdJournals_CleanSoap = "用肥皂和布料清洁",

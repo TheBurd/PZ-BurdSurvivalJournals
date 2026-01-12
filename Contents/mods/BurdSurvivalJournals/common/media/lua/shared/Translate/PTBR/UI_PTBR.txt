@@ -1,0 +1,264 @@
+UI_PTBR = {
+    -- Journal Types
+    UI_BurdJournals_BlankJournal = "Diario de Sobrevivencia em Branco",
+    UI_BurdJournals_FilledJournal = "Diario de Sobrevivencia Preenchido",
+    UI_BurdJournals_WornJournal = "Diario de Sobrevivencia Desgastado",
+    UI_BurdJournals_BloodyJournal = "Diario de Sobrevivencia Ensanguentado",
+
+    -- Journal Info
+    UI_BurdJournals_Author = "Autor",
+    UI_BurdJournals_Written = "Escrito em",
+    UI_BurdJournals_TimesRead = "Vezes lido",
+    UI_BurdJournals_Condition = "Estado",
+    UI_BurdJournals_NeedsCleaning = "Necessita Limpeza",
+
+    -- UI Buttons
+    UI_BurdJournals_SelectAll = "Selecionar Tudo",
+    UI_BurdJournals_DeselectAll = "Desmarcar Tudo",
+    UI_BurdJournals_Log = "Registrar Habilidades",
+    UI_BurdJournals_Learn = "Aprender",
+    UI_BurdJournals_Update = "Atualizar",
+    UI_BurdJournals_Erase = "Apagar",
+    UI_BurdJournals_Close = "Fechar",
+    UI_BurdJournals_Absorb = "Absorver",
+    UI_BurdJournals_AbsorbAll = "Absorver Tudo",
+
+    -- Confirmation Dialogs
+    UI_BurdJournals_ConfirmErase = "Tem certeza de que deseja apagar este diario? Todas as habilidades registradas serao perdidas para sempre.",
+    UI_BurdJournals_ConfirmOverwrite = "Isso substituira o conteudo atual do diario pelas suas habilidades atuais. Tem certeza?",
+    UI_BurdJournals_ConfirmConvert = "Isso destruira as recompensas restantes. Tem certeza?",
+    UI_BurdJournals_ConfirmDisassemble = "Desmontar este diario?",
+    UI_BurdJournals_RenamePrompt = "Insira um novo nome para este diario:",
+
+    -- Messages
+    UI_BurdJournals_NoSkillsSelected = "Selecione pelo menos uma habilidade primeiro.",
+    UI_BurdJournals_SkillsLogged = "Habilidades registradas no diario.",
+    UI_BurdJournals_SkillsLearned = "Conhecimento absorvido do diario!",
+    UI_BurdJournals_JournalErased = "Conteudo do diario apagado.",
+    UI_BurdJournals_JournalCleaned = "O diario foi limpo e agora esta legivel.",
+    UI_BurdJournals_JournalUpdated = "Habilidades do diario atualizadas.",
+    UI_BurdJournals_JournalRenamed = "Diario renomeado.",
+    UI_BurdJournals_JournalConverted = "Diario convertido em um diario limpo em branco.",
+    UI_BurdJournals_JournalDissolved = "O diario se desfaz em suas maos...",
+
+    -- Condition States
+    UI_BurdJournals_ConditionPristine = "Impecavel",
+    UI_BurdJournals_ConditionGood = "Bom",
+    UI_BurdJournals_ConditionWorn = "Desgastado",
+    UI_BurdJournals_ConditionDamaged = "Danificado",
+    UI_BurdJournals_ConditionCritical = "Critico",
+
+    -- Inspect Tooltips
+    UI_BurdJournals_InspectBlank = "Um diario em branco em estado %1.",
+    UI_BurdJournals_InspectFilled = "Um diario escrito por %1. Estado: %2",
+    UI_BurdJournals_InspectWorn = "Um diario desgastado de %1. Estado: %2. Necessita limpeza.",
+    UI_BurdJournals_InspectBloody = "Um diario ensanguentado de um cadaver. Contem habilidades e tracos do sobrevivente caido.",
+
+    -- Absorption UI
+    UI_BurdJournals_RewardsRemaining = "recompensas restantes",
+    UI_BurdJournals_SkillClaimed = "REIVINDICADO",
+    UI_BurdJournals_TraitAlreadyKnown = "Ja Conhecido",
+    UI_BurdJournals_ClickToAbsorb = "Clique para absorver",
+
+    -- Journal Type Headers (MainPanel)
+    UI_BurdJournals_BloodyJournalHeader = "DIARIO ENSANGUENTADO",
+    UI_BurdJournals_WornJournalHeader = "DIARIO DESGASTADO",
+    UI_BurdJournals_PersonalJournalHeader = "DIARIO PESSOAL",
+    UI_BurdJournals_RecordProgressHeader = "REGISTRAR PROGRESSO",
+
+    -- Rarity Labels
+    UI_BurdJournals_RarityRare = "RARO",
+    UI_BurdJournals_RarityUncommon = "INCOMUM",
+
+    -- Flavor Text
+    UI_BurdJournals_BloodyFlavor = "Encontrado em um sobrevivente caido...",
+    UI_BurdJournals_WornBloodyFlavor = "Recuperado do deserto...",
+    UI_BurdJournals_WornFlavor = "Anotacoes de um antigo sobrevivente...",
+    UI_BurdJournals_PersonalFlavor = "Seu conhecimento de sobrevivencia documentado...",
+    UI_BurdJournals_RecordFlavor = "Documente suas habilidades de sobrevivencia...",
+
+    -- Tab Labels
+    UI_BurdJournals_TabSkills = "Habilidades",
+    UI_BurdJournals_TabTraits = "Tracos",
+    UI_BurdJournals_TabRecipes = "Receitas",
+    UI_BurdJournals_TabStats = "Estatisticas",
+
+    -- Buttons (MainPanel)
+    UI_BurdJournals_BtnAbsorbAll = "Absorver Tudo",
+    UI_BurdJournals_BtnClaimAll = "Reivindicar Tudo",
+    UI_BurdJournals_BtnRecordAll = "Registrar Tudo",
+    UI_BurdJournals_BtnAbsorbTab = "Absorver %s",
+    UI_BurdJournals_BtnClaimTab = "Reivindicar %s",
+    UI_BurdJournals_BtnRecordTab = "Registrar %s",
+    UI_BurdJournals_BtnClose = "Fechar",
+    UI_BurdJournals_BtnKeepReading = "Continuar Lendo",
+    UI_BurdJournals_BtnCancelClose = "Cancelar e Fechar",
+    UI_BurdJournals_BtnQueue = "FILA",
+    UI_BurdJournals_BtnClaim = "REIVINDICAR",
+    UI_BurdJournals_BtnRecord = "REGISTRAR",
+
+    -- Button States
+    UI_BurdJournals_StateReading = "Lendo...",
+    UI_BurdJournals_StateClaiming = "Reivindicando...",
+    UI_BurdJournals_StateRecording = "Registrando...",
+
+    -- Feedback Messages
+    UI_BurdJournals_AlreadyReading = "Ja esta lendo...",
+    UI_BurdJournals_AlreadyRecording = "Ja esta registrando...",
+    UI_BurdJournals_NoNewRewards = "Nenhuma nova recompensa para reivindicar",
+    UI_BurdJournals_AlreadyQueued = "Ja esta na fila",
+    UI_BurdJournals_AlreadyAtLevel = "Ja esta no nivel ou acima",
+    UI_BurdJournals_CantRecordStartingSkills = "Nao e possivel registrar habilidades iniciais",
+    UI_BurdJournals_CantRecordStartingTraits = "Nao e possivel registrar tracos iniciais",
+    UI_BurdJournals_NothingNewToRecord = "Nada novo para registrar",
+    UI_BurdJournals_SavingProgress = "Salvando progresso...",
+    UI_BurdJournals_Queued = "Na fila: %s",
+    UI_BurdJournals_CannotRecord = "Nao e possivel registrar: %s",
+    UI_BurdJournals_SetSkillToLevel = "Definir %s para o nivel registrado",
+    UI_BurdJournals_SkillMaxed = "%s ja esta no nivel ou acima",
+    UI_BurdJournals_NoPlayer = "Nenhum jogador encontrado",
+    UI_BurdJournals_GainedTrait = "Traco adquirido: %s",
+    UI_BurdJournals_FailedToAddTrait = "Falha ao adicionar traco: %s",
+    UI_BurdJournals_BaselineReset = "Linha de base redefinida!",
+    UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_JournalSyncFailed = "Erro: Sincronizacao do diario falhou",
+
+    -- Empty States
+    UI_BurdJournals_NoRewardsAvailable = "Nenhuma recompensa disponivel",
+    UI_BurdJournals_NoSkillsRecorded = "Nenhuma habilidade registrada",
+    UI_BurdJournals_NoRareTraits = "Nenhum traco raro encontrado",
+    UI_BurdJournals_NoTraitsAvailable = "Nenhum traco disponivel",
+    UI_BurdJournals_NoTraitsRecorded = "Nenhum traco registrado",
+    UI_BurdJournals_NoStatsRecorded = "Nenhuma estatistica registrada",
+    UI_BurdJournals_NothingToRecord = "Nada para registrar",
+    UI_BurdJournals_NoSkillsToRecord = "Nenhuma habilidade para registrar",
+    UI_BurdJournals_NoTraitsToRecord = "Nenhum traco para registrar",
+    UI_BurdJournals_NoStatsEnabled = "Nenhum registro de estatistica habilitado",
+    UI_BurdJournals_NoContent = "Sem conteudo",
+    UI_BurdJournals_TraitAlreadyKnownFeedback = "Voce ja possui este traco",
+
+    -- Status Labels
+    UI_BurdJournals_StatusAlreadyKnown = "Ja conhecido",
+    UI_BurdJournals_StatusAlreadyClaimed = "Ja reivindicado",
+    UI_BurdJournals_StatusAlreadyRecorded = "Ja registrado",
+    UI_BurdJournals_StatusClaimed = "Reivindicado",
+    UI_BurdJournals_RareTraitQueued = "Traco raro - Na fila #%d",
+    UI_BurdJournals_NegativeTraitQueued = "Traco amaldicoado - Na fila #%d",
+    UI_BurdJournals_RareTraitBonus = "Bonus de traco raro!",
+    UI_BurdJournals_RareTraitBonusQueued = "Bonus de traco raro! - Na fila",
+    UI_BurdJournals_NegativeTraitCurse = "Conhecimento amaldicoado...",
+    UI_BurdJournals_NegativeTraitCurseQueued = "Conhecimento amaldicoado... - Na fila",
+
+    -- Author Box
+    UI_BurdJournals_RecordingFor = "Registrando progresso para %s",
+    UI_BurdJournals_FromNotesOf = "Das anotacoes de %s",
+    UI_BurdJournals_UnknownSurvivor = "Sobrevivente Desconhecido",
+    UI_BurdJournals_Unknown = "Desconhecido",
+
+    -- Headers
+    UI_BurdJournals_YourSkills = "SUAS HABILIDADES",
+    UI_BurdJournals_Skills = "HABILIDADES",
+    UI_BurdJournals_Available = "(%d disponiveis)",
+    UI_BurdJournals_Recordable = "(%d registraveis)",
+
+    -- Progress Format
+    UI_BurdJournals_ReadingAllProgress = "Lendo Tudo: %d%% (%s restantes)",
+    UI_BurdJournals_ReadingProgress = "Lendo... %d%%",
+    UI_BurdJournals_RecordingProgress = "Registrando... %d%%",
+    UI_BurdJournals_ItemCount = "%d item",
+    UI_BurdJournals_ItemCountPlural = "%d itens",
+
+    -- Skill/Trait Row Labels
+    UI_BurdJournals_LevelFormat = "Nv %d",
+    UI_BurdJournals_XPFormat = "%d XP",
+    UI_BurdJournals_XPWithBaseline = "%s XP (+%s inicial)",
+    UI_BurdJournals_StartingXP = "Inicial: %s XP",
+    UI_BurdJournals_CurrentLevel = "Atual: Nv %d",
+    UI_BurdJournals_RecordedLevel = "Registrado: Nv %d",
+    UI_BurdJournals_RecordedXP = "Registrado: %s XP",
+    UI_BurdJournals_RecordedWas = "%s XP (era %s)",
+    UI_BurdJournals_SpawnedWith = "Nasceu com",
+    UI_BurdJournals_YourTrait = "Seu traco",
+    UI_BurdJournals_QueuedNumber = "Na fila #%d",
+    UI_BurdJournals_NowWas = "Agora: %s (era %s)",
+    UI_BurdJournals_RecordedValue = "Registrado: %s",
+    UI_BurdJournals_CurrentValue = "Atual: %s",
+    UI_BurdJournals_RecordedAchieved = "Registrado: %s (alcancado!)",
+    UI_BurdJournals_RecordedVsCurrent = "Registrado: %s | Atual: %s",
+    UI_BurdJournals_CurrentQueued = "Atual: %s - Na fila #%d",
+
+    -- Confirmation Dialogs (additional)
+    UI_BurdJournals_ConfirmAbsorbAll = "Absorver todas as recompensas restantes?",
+    UI_BurdJournals_SkillCount = "%d habilidade",
+    UI_BurdJournals_SkillsCount = "%d habilidades",
+    UI_BurdJournals_RareTraitCount = "%d traco raro",
+    UI_BurdJournals_RareTraitsCount = "%d tracos raros",
+    UI_BurdJournals_MaxedSkillsSkipped = "Habilidades maximizadas e tracos conhecidos serao ignorados.",
+
+    -- Feedback (additional)
+    UI_BurdJournals_PlusTrait = ", +%d traco",
+    UI_BurdJournals_PlusTraits = ", +%d tracos",
+    UI_BurdJournals_SkillAlreadyMaxed = "%d habilidade ja maximizada",
+    UI_BurdJournals_SkillsAlreadyMaxed = "%d habilidades ja maximizadas",
+    UI_BurdJournals_TraitAlreadyKnown = "%d traco ja conhecido",
+    UI_BurdJournals_TraitsAlreadyKnown = "%d tracos ja conhecidos",
+
+    -- Client Messages
+    UI_BurdJournals_SkillsRecorded = "Habilidades registradas!",
+    UI_BurdJournals_JournalRebound = "Diario reencadernado",
+    UI_BurdJournals_ProgressSaved = "Progresso salvo!",
+    UI_BurdJournals_RecordedItem = "Registrado %s",
+    UI_BurdJournals_RecordedItems = "Registrado %s",
+    UI_BurdJournals_RecordedItemsMore = "Registrado %s, %s +%d mais",
+    UI_BurdJournals_ClaimedSkill = "Reivindicado: %s (+%s XP)",
+    UI_BurdJournals_LearnedTrait = "Aprendido: %s",
+    UI_BurdJournals_AlreadyKnowTrait = "Ja conhecido: %s",
+    UI_BurdJournals_SkillAlreadyMaxedMsg = "%s ja esta maximizada!",
+
+    -- Timed Actions
+    UI_BurdJournals_JournalRestored = "Diario restaurado!",
+    UI_BurdJournals_JournalBound = "Diario encadernado!",
+    UI_BurdJournals_Salvaged = "Recuperado: %s",
+    UI_BurdJournals_JournalDisassembled = "Diario desmontado.",
+
+    -- Search Bar
+    UI_BurdJournals_SearchPlaceholder = "Pesquisar...",
+    UI_BurdJournals_ClearSearch = "Limpar pesquisa",
+    UI_BurdJournals_NoSearchResults = "Nenhum resultado encontrado",
+
+    -- Recipe Tab
+    UI_BurdJournals_Recipes = "RECEITAS",
+    UI_BurdJournals_RecipesAvailable = "(%d disponiveis)",
+    UI_BurdJournals_RecipesRecordable = "(%d registraveis)",
+    UI_BurdJournals_NoRecipesRecorded = "Nenhuma receita registrada",
+    UI_BurdJournals_NoRecipesToRecord = "Nenhuma receita de revista aprendida",
+    UI_BurdJournals_NoRecipesAvailable = "Nenhuma receita disponivel",
+    UI_BurdJournals_RecipeAlreadyKnown = "Ja conhecida",
+    UI_BurdJournals_RecipeClaimed = "Reivindicada",
+    UI_BurdJournals_LearnedRecipe = "Aprendido: %s",
+    UI_BurdJournals_AlreadyKnowRecipe = "Ja conhecido: %s",
+    UI_BurdJournals_RecipeFromMagazine = "De: %s",
+    UI_BurdJournals_RecipeCount = "%d receita",
+    UI_BurdJournals_RecipesCount = "%d receitas",
+    UI_BurdJournals_PlusRecipe = ", +%d receita",
+    UI_BurdJournals_PlusRecipes = ", +%d receitas",
+    UI_BurdJournals_RecipeAlreadyKnownCount = "%d receita ja conhecida",
+    UI_BurdJournals_RecipesAlreadyKnownCount = "%d receitas ja conhecidas",
+
+    -- Stats Tab
+    UI_BurdJournals_Stats = "ESTATISTICAS",
+    UI_BurdJournals_StatsAvailable = "(%d disponiveis)",
+    UI_BurdJournals_StatsRecordable = "(%d registraveis)",
+    UI_BurdJournals_StatZombieKills = "Mortes de Zumbis",
+    UI_BurdJournals_StatZombieKillsDesc = "Total de zumbis mortos",
+    UI_BurdJournals_StatHoursSurvived = "Horas Sobrevividas",
+    UI_BurdJournals_StatHoursSurvivedDesc = "Total de horas vivo no apocalipse",
+    UI_BurdJournals_StatDays = "%d dias",
+    UI_BurdJournals_StatHours = "%d horas",
+    UI_BurdJournals_StatDaysHours = "%d dias, %d horas",
+
+    -- Dialog strings
+    UI_BurdJournals_ConfirmCancelLearning = "Cancelar leitura e fechar?",
+    UI_BurdJournals_RecordedTrait = "Traco registrado",
+    UI_BurdJournals_RecordedRecipe = "Receita registrada",
+}

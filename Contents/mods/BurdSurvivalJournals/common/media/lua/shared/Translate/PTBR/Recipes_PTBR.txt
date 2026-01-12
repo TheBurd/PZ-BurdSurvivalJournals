@@ -1,0 +1,14 @@
+Recipes_PTBR = {
+    -- Blank Journal Crafting
+    Recipe_ConvertJournalToSurvivalJournal = "Converter em Diário de Sobrevivência",
+    Recipe_ConvertNotebookToSurvivalJournal = "Encadernar Caderno como Diário",
+    Recipe_CraftBlankSurvivalJournal = "Criar Diário de Sobrevivência",
+
+    -- Journal Restoration/Cleaning
+    Recipe_RestoreWornBlankJournal = "Restaurar Diário Desgastado",
+    Recipe_CleanBloodyBlankJournal = "Limpar Diário em Branco Ensanguentado",
+    Recipe_CleanBloodyFilledToClean = "Limpar e Converter Diário Ensanguentado",
+
+    -- Disassembly
+    Recipe_DisassembleBlankJournal = "Desmontar Diário em Branco",
+}

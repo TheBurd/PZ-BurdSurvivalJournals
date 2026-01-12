@@ -1,0 +1,145 @@
+Sandbox_PTBR = {
+    -- TAB NAMES
+    Sandbox_BurdJournals_Player = "Diarios - Jogador",
+    Sandbox_BurdJournals_Loot = "Diarios - Loot",
+
+    -- ============================================================
+    -- TAB 1: PLAYER SETTINGS
+    -- ============================================================
+
+    -- Master Toggle
+    Sandbox_BurdJournals_EnableJournals = "Habilitar Diarios de Sobrevivencia",
+    Sandbox_BurdJournals_EnableJournals_tooltip = "Habilita todo o sistema de diarios de sobrevivencia.",
+
+    -- XP Recovery (Clean Journals)
+    Sandbox_BurdJournals_XPRecoveryMode = "Modo de XP do Diario Limpo",
+    Sandbox_BurdJournals_XPRecoveryMode_tooltip = "Quanto de XP e recuperado ao ler um diario LIMPO. Nao afeta diarios desgastados/ensanguentados.",
+    Sandbox_BurdJournals_XPRecoveryMode_option1 = "Recuperacao Total (100%)",
+    Sandbox_BurdJournals_XPRecoveryMode_option2 = "Retornos Decrescentes",
+
+    Sandbox_BurdJournals_DiminishingFirstRead = "XP da Primeira Leitura %",
+    Sandbox_BurdJournals_DiminishingFirstRead_tooltip = "Porcentagem de XP na primeira leitura (50-100%). So se aplica com Retornos Decrescentes.",
+
+    Sandbox_BurdJournals_DiminishingDecayRate = "Taxa de Perda por Leitura %",
+    Sandbox_BurdJournals_DiminishingDecayRate_tooltip = "Reducao de XP para cada leitura subsequente (5-50%).",
+
+    Sandbox_BurdJournals_DiminishingMinimum = "XP Minimo %",
+    Sandbox_BurdJournals_DiminishingMinimum_tooltip = "Porcentagem minima que a recuperacao nao pode ultrapassar (0-50%).",
+
+    -- XP Multiplier
+    Sandbox_BurdJournals_JournalXPMultiplier = "Multiplicador de XP do Diario",
+    Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "Multiplicador de XP ganho nos diarios (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). Aplica-se a diarios desgastados e ensanguentados.",
+
+    -- Writing Requirements
+    Sandbox_BurdJournals_RequirePenToWrite = "Requer Caneta para Escrever",
+    Sandbox_BurdJournals_RequirePenToWrite_tooltip = "Exige uma caneta ou lapis para registrar habilidades em um diario limpo.",
+
+    Sandbox_BurdJournals_PenUsesPerLog = "Usos da Caneta por Registro",
+    Sandbox_BurdJournals_PenUsesPerLog_tooltip = "Durabilidade da caneta consumida ao registrar habilidades (1-10).",
+
+    Sandbox_BurdJournals_RequireEraserToErase = "Requer Borracha para Apagar",
+    Sandbox_BurdJournals_RequireEraserToErase_tooltip = "Exige uma borracha para limpar o conteudo de um diario.",
+
+    -- Learning Time Settings
+    Sandbox_BurdJournals_LearningTimePerSkill = "Tempo de Aprendizado por Habilidade (seg)",
+    Sandbox_BurdJournals_LearningTimePerSkill_tooltip = "Tempo base em segundos para aprender cada habilidade. Simula leitura/estudo.",
+
+    Sandbox_BurdJournals_LearningTimePerTrait = "Tempo de Aprendizado por Traco (seg)",
+    Sandbox_BurdJournals_LearningTimePerTrait_tooltip = "Tempo base em segundos para absorver cada traco de um diario.",
+
+    Sandbox_BurdJournals_LearningTimeMultiplier = "Multiplicador de Tempo de Aprendizado",
+    Sandbox_BurdJournals_LearningTimeMultiplier_tooltip = "Multiplicador global para tempos de aprendizado. 0.5 = duas vezes mais rapido, 2.0 = duas vezes mais lento.",
+
+    -- Player Stats Recording
+    Sandbox_BurdJournals_EnableStatRecording = "Habilitar Registro de Estatisticas",
+    Sandbox_BurdJournals_EnableStatRecording_tooltip = "Permite gravar estatisticas (mortes, tempo de sobrevivencia, etc.) em diarios pessoais.",
+
+    Sandbox_BurdJournals_RecordZombieKills = "Registrar Mortes de Zumbis",
+    Sandbox_BurdJournals_RecordZombieKills_tooltip = "Permite que jogadores registrem sua contagem de zumbis mortos nos diarios.",
+
+    Sandbox_BurdJournals_RecordHoursSurvived = "Registrar Horas Sobrevividas",
+    Sandbox_BurdJournals_RecordHoursSurvived_tooltip = "Permite que jogadores registrem seu tempo de sobrevivencia nos diarios.",
+
+    -- Baseline Restriction (Anti-Exploit)
+    Sandbox_BurdJournals_EnableBaselineRestriction = "Registrar Apenas Progresso Adquirido",
+    Sandbox_BurdJournals_EnableBaselineRestriction_tooltip = "Se ativado, os diarios gravarao apenas o XP ganho jogando - ignorando bonus iniciais de profissao ou tracos. Isso evita o 'farm' de habilidades criando varios personagens. Recomendado ativar para servidores multiplayer.",
+
+    -- ============================================================
+    -- TAB 2: LOOT SETTINGS
+    -- ============================================================
+
+    -- Worn Journals (World Containers)
+    Sandbox_BurdJournals_EnableWornJournalSpawns = "Habilitar Aparecimento de Diarios Desgastados",
+    Sandbox_BurdJournals_EnableWornJournalSpawns_tooltip = "Permite que diarios desgastados aparecam em recipientes do mundo (prateleiras, mesas, armarios). Oferecem recompensas leves de XP.",
+
+    Sandbox_BurdJournals_WornJournalSpawnChance = "Chance de Diario Desgastado %",
+    Sandbox_BurdJournals_WornJournalSpawnChance_tooltip = "Chance de diarios desgastados aparecerem em recipientes (0.1-100%).",
+
+    Sandbox_BurdJournals_WornJournalMinSkills = "Min. de Habilidades (Desgastado)",
+    Sandbox_BurdJournals_WornJournalMinSkills_tooltip = "Minimo de habilidades em diarios desgastados encontrados no mundo.",
+
+    Sandbox_BurdJournals_WornJournalMaxSkills = "Max. de Habilidades (Desgastado)",
+    Sandbox_BurdJournals_WornJournalMaxSkills_tooltip = "Maximo de habilidades em diarios desgastados encontrados no mundo.",
+
+    Sandbox_BurdJournals_WornJournalMinXP = "Min. de XP por Habilidade (Desgastado)",
+    Sandbox_BurdJournals_WornJournalMinXP_tooltip = "Minimo de XP por habilidade em diarios desgastados.",
+
+    Sandbox_BurdJournals_WornJournalMaxXP = "Max. de XP por Habilidade (Desgastado)",
+    Sandbox_BurdJournals_WornJournalMaxXP_tooltip = "Maximo de XP por habilidade em diarios desgastados.",
+
+    -- Bloody Journals (Zombie Corpses)
+    Sandbox_BurdJournals_EnableBloodyJournalSpawns = "Habilitar Diarios Ensanguentados em Zumbis",
+    Sandbox_BurdJournals_EnableBloodyJournalSpawns_tooltip = "Permite que zumbis deixem cair diarios ensanguentados. Oferecem melhores recompensas e tracos raros.",
+
+    Sandbox_BurdJournals_BloodyJournalSpawnChance = "Chance de Diario em Zumbis %",
+    Sandbox_BurdJournals_BloodyJournalSpawnChance_tooltip = "Chance de um zumbi dropar um diario ensanguentado (0.1-100%).",
+
+    Sandbox_BurdJournals_BloodyJournalMinSkills = "Min. de Habilidades (Ensanguentado)",
+    Sandbox_BurdJournals_BloodyJournalMinSkills_tooltip = "Minimo de habilidades em diarios ensanguentados de zumbis.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxSkills = "Max. de Habilidades (Ensanguentado)",
+    Sandbox_BurdJournals_BloodyJournalMaxSkills_tooltip = "Maximo de habilidades em diarios ensanguentados de zumbis.",
+
+    Sandbox_BurdJournals_BloodyJournalMinXP = "Min. de XP por Habilidade (Ensanguentado)",
+    Sandbox_BurdJournals_BloodyJournalMinXP_tooltip = "Minimo de XP por habilidade em diarios ensanguentados.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxXP = "Max. de XP por Habilidade (Ensanguentado)",
+    Sandbox_BurdJournals_BloodyJournalMaxXP_tooltip = "Maximo de XP por habilidade em diarios ensanguentados.",
+
+    Sandbox_BurdJournals_BloodyJournalTraitChance = "Chance de Traco Raro %",
+    Sandbox_BurdJournals_BloodyJournalTraitChance_tooltip = "Chance de diarios ensanguentados incluirem um traco concedivel (Corajoso, Organizado, etc.).",
+
+    Sandbox_BurdJournals_BloodyJournalMaxTraits = "Max. de Tracos por Diario Ensanguentado",
+    Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip = "Numero maximo de tracos que podem aparecer em um unico diario ensanguentado (0-5).",
+
+    -- ============================================================
+    -- TAB 3: ADVANCED SETTINGS
+    -- ============================================================
+
+    Sandbox_BurdJournals_Advanced = "Diarios - Avancado",
+
+    -- Feature Toggles
+    Sandbox_BurdJournals_EnablePlayerJournals = "Habilitar Diarios de Jogadores",
+    Sandbox_BurdJournals_EnablePlayerJournals_tooltip = "Permite que os jogadores fabriquem e usem diarios pessoais para gravar/recuperar habilidades. Desative para permitir apenas diarios encontrados como loot.",
+
+    -- Reading Skill Integration
+    Sandbox_BurdJournals_ReadingSkillAffectsSpeed = "Habilidade de Leitura Afeta Velocidade",
+    Sandbox_BurdJournals_ReadingSkillAffectsSpeed_tooltip = "Niveis mais altos na habilidade de leitura reduzem o tempo necessario para absorver conhecimento dos diarios.",
+
+    Sandbox_BurdJournals_ReadingSpeedBonus = "Bonus de Velocidade de Leitura",
+    Sandbox_BurdJournals_ReadingSpeedBonus_tooltip = "Bonus de velocidade por nivel de habilidade de leitura (0.1 = 10% mais rapido por nivel, max. 100% no nivel 10).",
+
+    -- Erase/Convert Times
+    Sandbox_BurdJournals_EraseTime = "Tempo para Apagar (segundos)",
+    Sandbox_BurdJournals_EraseTime_tooltip = "Tempo em segundos para apagar o conteudo de um diario.",
+
+    Sandbox_BurdJournals_ConvertTime = "Tempo para Converter (segundos)",
+    Sandbox_BurdJournals_ConvertTime_tooltip = "Tempo em segundos para converter um diario desgastado em um diario limpo.",
+
+    -- Multiplayer Sharing Settings
+    Sandbox_BurdJournals_AllowOthersToOpenJournals = "Permitir que Outros Abram Diarios Pessoais",
+    Sandbox_BurdJournals_AllowOthersToOpenJournals_tooltip = "Se ativado, outros jogadores podem abrir e visualizar diarios pessoais que nao criaram. Se desativado, apenas o autor do diario pode abri-lo.",
+
+    Sandbox_BurdJournals_AllowOthersToClaimFromJournals = "Permitir que Outros Reivindiquem de Diarios Pessoais",
+    Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip = "Se ativado, outros jogadores podem reivindicar habilidades/tracos de diarios pessoais que nao criaram. Requer que 'Permitir que Outros Abram' esteja ativado. Se desativado, apenas o autor pode reivindicar de seus proprios diarios.",
+}

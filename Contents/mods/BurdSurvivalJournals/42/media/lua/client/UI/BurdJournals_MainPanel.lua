@@ -853,16 +853,46 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self.feedbackLabel:setVisible(false)
     self.feedbackTicks = 0
 
-    -- Footer buttons
-    local btnWidth = 110
+    -- Footer buttons - calculate dynamic width based on text
+    local tabName = self:getTabDisplayName(self.currentTab or "skills")
+    local absorbTabText = string.format(getText("UI_BurdJournals_BtnAbsorbTab") or "Absorb %s", tabName)
+    local absorbAllText = getText("UI_BurdJournals_BtnAbsorbAll") or "Absorb All"
+    local closeText = getText("UI_BurdJournals_BtnClose") or "Close"
+
+    -- Helper to calculate button width with CJK fallback
+    local function calcBtnWidth(text)
+        local measured = getTextManager():MeasureStringX(UIFont.Small, text) + 30
+        -- CJK fallback: if measurement seems too small, estimate based on character count
+        -- CJK characters are roughly 14px wide at Small font size
+        local charWidth = 14
+        local estimatedWidth = string.len(text) * charWidth / 2 + 30  -- UTF-8 chars are multi-byte
+        return math.max(measured, estimatedWidth, 100)
+    end
+
+    -- Measure text widths for ALL tabs to ensure buttons fit any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+    local btnPrefix = getText("UI_BurdJournals_BtnAbsorbTab") or "Absorb %s"
+    local maxAbsorbTabW = 100
+    for _, name in ipairs(allTabNames) do
+        local text = string.format(btnPrefix, name)
+        local w = calcBtnWidth(text)
+        maxAbsorbTabW = math.max(maxAbsorbTabW, w)
+    end
+    local absorbAllW = calcBtnWidth(absorbAllText)
+    local closeW = calcBtnWidth(closeText)
+    local btnWidth = math.max(100, maxAbsorbTabW, absorbAllW, closeW)
+
     local btnSpacing = 8
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
     local btnStartX = (self.width - totalBtnWidth) / 2
     local btnY = self.footerY + 32
 
     -- Absorb Tab button (tab-specific)
-    local tabName = self:getTabDisplayName(self.currentTab or "skills")
-    local absorbTabText = string.format(getText("UI_BurdJournals_BtnAbsorbTab") or "Absorb %s", tabName)
     self.absorbTabBtn = ISButton:new(btnStartX, btnY, btnWidth, btnHeight, absorbTabText, self, BurdJournals.UI.MainPanel.onAbsorbTab)
     self.absorbTabBtn:initialise()
     self.absorbTabBtn:instantiate()
@@ -877,7 +907,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self:addChild(self.absorbTabBtn)
 
     -- Absorb All button
-    self.absorbAllBtn = ISButton:new(btnStartX + btnWidth + btnSpacing, btnY, btnWidth, btnHeight, getText("UI_BurdJournals_BtnAbsorbAll"), self, BurdJournals.UI.MainPanel.onAbsorbAll)
+    self.absorbAllBtn = ISButton:new(btnStartX + btnWidth + btnSpacing, btnY, btnWidth, btnHeight, absorbAllText, self, BurdJournals.UI.MainPanel.onAbsorbAll)
     self.absorbAllBtn:initialise()
     self.absorbAllBtn:instantiate()
     if isBloody then
@@ -891,7 +921,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self:addChild(self.absorbAllBtn)
 
     -- Close button
-    self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 2, btnY, btnWidth, btnHeight, getText("UI_BurdJournals_BtnClose"), self, BurdJournals.UI.MainPanel.onClose)
+    self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 2, btnY, btnWidth, btnHeight, closeText, self, BurdJournals.UI.MainPanel.onClose)
     self.closeBottomBtn:initialise()
     self.closeBottomBtn:instantiate()
     self.closeBottomBtn.borderColor = {r=0.4, g=0.35, b=0.3, a=1}
@@ -1011,9 +1041,14 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             self.recordTabBtn:setEnable(not isRecording)
             local tabName = self:getTabDisplayName(self.currentTab or "skills")
             if isRecording then
-                self.recordTabBtn.title = getText("UI_BurdJournals_StateRecording")
+                self.recordTabBtn.title = getText("UI_BurdJournals_StateRecording") or "Recording..."
             else
-                self.recordTabBtn.title = string.format(getText("UI_BurdJournals_BtnRecordTab") or "Record %s", tabName)
+                local recordTabFormat = getText("UI_BurdJournals_BtnRecordTab")
+                if recordTabFormat and recordTabFormat ~= "" then
+                    self.recordTabBtn.title = string.format(recordTabFormat, tabName)
+                else
+                    self.recordTabBtn.title = "Record " .. tabName
+                end
             end
         end
 
@@ -1021,9 +1056,9 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
         if self.recordAllBtn then
             self.recordAllBtn:setEnable(not isRecording)
             if isRecording then
-                self.recordAllBtn.title = getText("UI_BurdJournals_StateRecording")
+                self.recordAllBtn.title = getText("UI_BurdJournals_StateRecording") or "Recording..."
             else
-                self.recordAllBtn.title = getText("UI_BurdJournals_BtnRecordAll")
+                self.recordAllBtn.title = getText("UI_BurdJournals_BtnRecordAll") or "Record All"
             end
         end
     end
@@ -1108,12 +1143,13 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
                 self:drawRect(barX, barY, barW * progress, barH, 0.85, 0.25, 0.55, 0.45)
                 self:drawRectBorder(barX, barY, barW, barH, 0.8, 0.4, 0.6, 0.7)
                 
-                local progressText = string.format("Recording All: %d%% (%s remaining)", 
-                                                  math.floor(progress * 100), remainingText)
+                local progressFormat = getText("UI_BurdJournals_RecordingAllProgress") or "Recording All: %d%% (%s remaining)"
+                local progressText = string.format(progressFormat, math.floor(progress * 100), remainingText)
                 local textWidth = getTextManager():MeasureStringX(UIFont.Small, progressText)
                 self:drawText(progressText, (self.width - textWidth) / 2, barY + 1, 1, 1, 1, 1, UIFont.Small)
-                
-                local countText = string.format("%d item%s", totalRecords, totalRecords > 1 and "s" or "")
+
+                local countFormat = totalRecords > 1 and (getText("UI_BurdJournals_ItemCountPlural") or "%d items") or (getText("UI_BurdJournals_ItemCount") or "%d item")
+                local countText = string.format(countFormat, totalRecords)
                 local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
                 self:drawText(countText, (self.width - countWidth) / 2, barY + barH + 4, 0.6, 0.7, 0.75, 1, UIFont.Small)
             end
@@ -1141,13 +1177,18 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             end
             self:drawRectBorder(barX, barY, barW, barH, 0.8, 0.5, 0.5, 0.5)
             
-            local actionText = (self.mode == "view") and "Claiming All" or "Absorbing All"
-            local progressText = string.format("%s: %d%% (%s remaining)", actionText,
-                                              math.floor(progress * 100), remainingText)
+            local progressFormat
+            if self.mode == "view" then
+                progressFormat = getText("UI_BurdJournals_ClaimingAllProgress") or "Claiming All: %d%% (%s remaining)"
+            else
+                progressFormat = getText("UI_BurdJournals_AbsorbingAllProgress") or "Absorbing All: %d%% (%s remaining)"
+            end
+            local progressText = string.format(progressFormat, math.floor(progress * 100), remainingText)
             local textWidth = getTextManager():MeasureStringX(UIFont.Small, progressText)
             self:drawText(progressText, (self.width - textWidth) / 2, barY + 1, 1, 1, 1, 1, UIFont.Small)
             
-            local countText = string.format("%d reward%s queued", totalRewards, totalRewards > 1 and "s" or "")
+            local countFormat = totalRewards > 1 and (getText("UI_BurdJournals_RewardsQueued") or "%d rewards queued") or (getText("UI_BurdJournals_RewardQueued") or "%d reward queued")
+            local countText = string.format(countFormat, totalRewards)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, (self.width - countWidth) / 2, barY + barH + 4, 0.6, 0.6, 0.55, 1, UIFont.Small)
         else
@@ -1155,11 +1196,15 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             if self.mode == "absorb" or self.mode == "view" then
         local summaryText = ""
         if self.totalXP and self.totalXP > 0 then
-            summaryText = "Total: +" .. BurdJournals.formatXP(self.totalXP) .. " XP"
+            local xpFormat = getText("UI_BurdJournals_SummaryTotalXP") or "Total: +%s XP"
+            summaryText = string.format(xpFormat, BurdJournals.formatXP(self.totalXP))
         end
         if self.traitCount and self.traitCount > 0 then
-            if summaryText ~= "" then summaryText = summaryText .. "  |  " end
-            summaryText = summaryText .. self.traitCount .. " trait" .. (self.traitCount > 1 and "s" or "")
+            if summaryText ~= "" then
+                summaryText = summaryText .. (getText("UI_BurdJournals_SummarySeparator") or "  |  ")
+            end
+            local traitFormat = self.traitCount > 1 and (getText("UI_BurdJournals_SummaryTraits") or "%d traits") or (getText("UI_BurdJournals_SummaryTrait") or "%d trait")
+            summaryText = summaryText .. string.format(traitFormat, self.traitCount)
         end
         if summaryText ~= "" then
             local textWidth = getTextManager():MeasureStringX(UIFont.Small, summaryText)
@@ -1202,9 +1247,9 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     -- ============ HEADER ROW ============
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.15, 0.14, 0.12)
-        self:drawText(data.text or "SKILLS", x + padding, y + (h - 18) / 2, 0.9, 0.8, 0.6, 1, UIFont.Medium)
+        self:drawText(data.text or getText("UI_BurdJournals_Skills") or "SKILLS", x + padding, y + (h - 18) / 2, 0.9, 0.8, 0.6, 1, UIFont.Medium)
         if data.count then
-            local countText = "(" .. data.count .. " available)"
+            local countText = string.format(getText("UI_BurdJournals_Available") or "(%d available)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.5, 0.5, 0.45, 1, UIFont.Small)
         end
@@ -1213,7 +1258,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
     -- ============ EMPTY ROW ============
     if data.isEmpty then
-        self:drawText(data.text or "No rewards available", x + padding, y + (h - 14) / 2, 0.4, 0.4, 0.4, 1, UIFont.Small)
+        self:drawText(data.text or getText("UI_BurdJournals_NoRewardsAvailable") or "No rewards available", x + padding, y + (h - 14) / 2, 0.4, 0.4, 0.4, 1, UIFont.Small)
         return y + h
     end
 
@@ -1278,7 +1323,8 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
         -- Line 2: Level squares + XP info OR learning progress
         if isLearningThis then
             -- Show learning progress bar
-            local progressText = string.format("Reading... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, textX, cardY + 24, 0.9, 0.8, 0.3, 1, UIFont.Small)
 
             local barX = textX + 90
@@ -1437,7 +1483,8 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
         -- Show learning progress bar if this trait is being learned
         if isLearningThis then
-            local progressText = string.format("Absorbing... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_AbsorbingProgress") or "Absorbing... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, traitTextX, cardY + 22, 0.9, 0.7, 0.3, 1, UIFont.Small)
 
             -- Learning progress bar (shorter width to account for icon offset)
@@ -1549,7 +1596,8 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
         -- Show learning progress bar if this recipe is being learned
         if isLearningThis then
-            local progressText = string.format("Learning... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_LearningProgress") or "Learning... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, recipeTextX, cardY + 22, 0.5, 0.8, 0.9, 1, UIFont.Small)
 
             -- Learning progress bar
@@ -3003,7 +3051,7 @@ function BurdJournals.UI.MainPanel:recordStat(statId, value)
     if self.recordingState and self.recordingState.active and not self.recordingState.isRecordAll then
         if self:addToRecordQueue("stat", statId, value) then
             local stat = BurdJournals.getStatById(statId)
-            local statName = stat and stat.name or statId
+            local statName = stat and BurdJournals.getStatName(stat) or statId
             self:showFeedback(string.format(getText("UI_BurdJournals_Queued") or "Queued: %s", statName), {r=0.5, g=0.7, b=0.8})
         else
             self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
@@ -3805,24 +3853,30 @@ function BurdJournals.UI.MainPanel:showCloseConfirmDialog()
     self.confirmDialog = dialog
     
     -- Warning text
-    local warningLabel = ISLabel:new(dialogW/2, 20, 20, "You are still reading!", 1, 0.9, 0.7, 1, UIFont.Medium, true)
+    local warningText = getText("UI_BurdJournals_StateReading") or "You are still reading!"
+    local warningLabel = ISLabel:new(dialogW/2, 20, 20, warningText, 1, 0.9, 0.7, 1, UIFont.Medium, true)
     dialog:addChild(warningLabel)
-    
-    local subLabel = ISLabel:new(dialogW/2, 44, 16, "Cancel learning and close?", 0.8, 0.75, 0.65, 1, UIFont.Small, true)
+
+    local subText = getText("UI_BurdJournals_ConfirmCancelLearning") or "Cancel learning and close?"
+    local subLabel = ISLabel:new(dialogW/2, 44, 16, subText, 0.8, 0.75, 0.65, 1, UIFont.Small, true)
     dialog:addChild(subLabel)
-    
-    -- Keep Reading button
-    local btnW = 100
+
+    -- Keep Reading button - dynamic width based on text
+    local keepText = getText("UI_BurdJournals_BtnKeepReading") or "Keep Reading"
+    local closeText = getText("UI_BurdJournals_BtnCancelClose") or "Cancel & Close"
+    local keepTextW = getTextManager():MeasureStringX(UIFont.Small, keepText) + 20
+    local closeTextW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
+    local btnW = math.max(100, keepTextW, closeTextW)
     local btnH = 28
     local btnSpacing = 20
     local btnStartX = (dialogW - btnW * 2 - btnSpacing) / 2
     local btnY = 75
-    
+
     -- Store references for button callbacks
     local dialogRef = dialog
     local mainPanelRef = self
-    
-    local keepBtn = ISButton:new(btnStartX, btnY, btnW, btnH, "Keep Reading", dialog, function(btn)
+
+    local keepBtn = ISButton:new(btnStartX, btnY, btnW, btnH, keepText, dialog, function(btn)
         -- Close the dialog, keep reading
         if mainPanelRef then
             mainPanelRef.confirmDialog = nil
@@ -3840,7 +3894,7 @@ function BurdJournals.UI.MainPanel:showCloseConfirmDialog()
     dialog:addChild(keepBtn)
     
     -- Cancel & Close button
-    local closeBtn = ISButton:new(btnStartX + btnW + btnSpacing, btnY, btnW, btnH, "Cancel & Close", dialog, function(btn)
+    local closeBtn = ISButton:new(btnStartX + btnW + btnSpacing, btnY, btnW, btnH, closeText, dialog, function(btn)
         -- Clear reference first
         if mainPanelRef then
             mainPanelRef.confirmDialog = nil
@@ -3873,7 +3927,54 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode)
         BurdJournals.UI.MainPanel.instance:onClose()
     end
 
-    local width = 410  -- Extended from 360 to prevent progress bars from squishing content
+    -- Calculate dynamic width based on button text lengths
+    local baseWidth = 410
+    local btnPadding = 30  -- Increased padding for better CJK fit
+    local btnSpacing = 8
+    local minBtnWidth = 100
+
+    -- Helper to calculate width with CJK fallback
+    local function calcTextWidth(text)
+        local measured = getTextManager():MeasureStringX(UIFont.Small, text) + btnPadding
+        -- CJK fallback: estimate based on UTF-8 byte length (CJK chars are 3 bytes each, ~14px wide)
+        local charWidth = 14
+        local estimatedWidth = string.len(text) * charWidth / 2 + btnPadding
+        return math.max(measured, estimatedWidth, minBtnWidth)
+    end
+
+    -- Measure button text widths for ALL tabs to ensure panel fits any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+
+    local maxBtn1W = minBtnWidth
+    local btn2Text, btn3Text
+    local btnPrefix
+    if mode == "log" then
+        btnPrefix = getText("UI_BurdJournals_BtnRecordTab") or "Record %s"
+        btn2Text = getText("UI_BurdJournals_BtnRecordAll") or "Record All"
+    else
+        btnPrefix = getText("UI_BurdJournals_BtnAbsorbTab") or "Absorb %s"
+        btn2Text = getText("UI_BurdJournals_BtnAbsorbAll") or "Absorb All"
+    end
+    btn3Text = getText("UI_BurdJournals_BtnClose") or "Close"
+
+    -- Find the widest button text across all possible tab names
+    for _, tabName in ipairs(allTabNames) do
+        local btn1Text = string.format(btnPrefix, tabName)
+        local btn1W = calcTextWidth(btn1Text)
+        maxBtn1W = math.max(maxBtn1W, btn1W)
+    end
+
+    local btn2W = calcTextWidth(btn2Text)
+    local btn3W = calcTextWidth(btn3Text)
+    local maxBtnW = math.max(maxBtn1W, btn2W, btn3W)
+    local totalBtnWidth = maxBtnW * 3 + btnSpacing * 2 + 48  -- 48 for side margins (24 each)
+
+    local width = math.max(baseWidth, totalBtnWidth)
 
     -- Calculate dynamic height based on content
     local baseHeight = 180  -- Header + author + footer
@@ -4106,16 +4207,56 @@ function BurdJournals.UI.MainPanel:createLogUI()
     self.feedbackLabel:setVisible(false)
     self.feedbackTicks = 0
     
-    -- Footer buttons (3 buttons: Record Tab, Record All, Close)
-    local btnWidth = 100
+    -- Footer buttons (3 buttons: Record Tab, Record All, Close) - dynamic width
+    local tabName = self:getTabDisplayName(self.currentTab or "skills")
+    local recordTabFormat = getText("UI_BurdJournals_BtnRecordTab")
+    local recordTabText
+    if recordTabFormat and recordTabFormat ~= "" then
+        recordTabText = string.format(recordTabFormat, tabName)
+    else
+        recordTabText = "Record " .. tabName
+    end
+    local recordAllText = getText("UI_BurdJournals_BtnRecordAll") or "Record All"
+    local closeText = getText("UI_BurdJournals_BtnClose") or "Close"
+    -- Ensure texts are not empty
+    if not recordTabText or recordTabText == "" then recordTabText = "Record" end
+    if not recordAllText or recordAllText == "" then recordAllText = "Record All" end
+    if not closeText or closeText == "" then closeText = "Close" end
+
+    -- Helper to calculate button width with CJK fallback
+    local function calcBtnWidth(text)
+        local measured = getTextManager():MeasureStringX(UIFont.Small, text) + 30
+        -- CJK fallback: if measurement seems too small, estimate based on character count
+        -- CJK characters are roughly 14px wide at Small font size
+        local charWidth = 14
+        local estimatedWidth = string.len(text) * charWidth / 2 + 30  -- UTF-8 chars are multi-byte
+        return math.max(measured, estimatedWidth, 100)
+    end
+
+    -- Measure text widths for ALL tabs to ensure buttons fit any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+    local btnPrefix = getText("UI_BurdJournals_BtnRecordTab") or "Record %s"
+    local maxRecordTabW = 100
+    for _, name in ipairs(allTabNames) do
+        local text = string.format(btnPrefix, name)
+        local w = calcBtnWidth(text)
+        maxRecordTabW = math.max(maxRecordTabW, w)
+    end
+    local recordAllW = calcBtnWidth(recordAllText)
+    local closeW = calcBtnWidth(closeText)
+    local btnWidth = math.max(100, maxRecordTabW, recordAllW, closeW)
+
     local btnSpacing = 8
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
     local btnStartX = (self.width - totalBtnWidth) / 2
     local btnY = self.footerY + 32
 
     -- Record Tab button (tab-specific)
-    local tabName = self:getTabDisplayName(self.currentTab or "skills")
-    local recordTabText = string.format(getText("UI_BurdJournals_BtnRecordTab") or "Record %s", tabName)
     self.recordTabBtn = ISButton:new(btnStartX, btnY, btnWidth, btnHeight, recordTabText, self, BurdJournals.UI.MainPanel.onRecordTab)
     self.recordTabBtn:initialise()
     self.recordTabBtn:instantiate()
@@ -4125,7 +4266,7 @@ function BurdJournals.UI.MainPanel:createLogUI()
     self:addChild(self.recordTabBtn)
 
     -- Record All button
-    self.recordAllBtn = ISButton:new(btnStartX + btnWidth + btnSpacing, btnY, btnWidth, btnHeight, getText("UI_BurdJournals_BtnRecordAll"), self, BurdJournals.UI.MainPanel.onRecordAll)
+    self.recordAllBtn = ISButton:new(btnStartX + btnWidth + btnSpacing, btnY, btnWidth, btnHeight, recordAllText, self, BurdJournals.UI.MainPanel.onRecordAll)
     self.recordAllBtn:initialise()
     self.recordAllBtn:instantiate()
     self.recordAllBtn.borderColor = {r=0.3, g=0.5, b=0.6, a=1}
@@ -4134,7 +4275,7 @@ function BurdJournals.UI.MainPanel:createLogUI()
     self:addChild(self.recordAllBtn)
 
     -- Close button
-    self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 2, btnY, btnWidth, btnHeight, getText("UI_BurdJournals_BtnClose"), self, BurdJournals.UI.MainPanel.onClose)
+    self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 2, btnY, btnWidth, btnHeight, closeText, self, BurdJournals.UI.MainPanel.onClose)
     self.closeBottomBtn:initialise()
     self.closeBottomBtn:instantiate()
     self.closeBottomBtn.borderColor = {r=0.4, g=0.35, b=0.3, a=1}
@@ -4360,9 +4501,11 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
             for _, stat in ipairs(BurdJournals.RECORDABLE_STATS) do
                 if BurdJournals.isStatEnabled(stat.id) then
                     totalStats = totalStats + 1
+                    local localizedName = BurdJournals.getStatName(stat)
+                    local localizedDesc = BurdJournals.getStatDescription(stat)
 
                     -- Apply search filter
-                    if self:matchesSearch(stat.name) then
+                    if self:matchesSearch(localizedName) then
                         matchCount = matchCount + 1
                         local currentValue = BurdJournals.getStatValue(self.player, stat.id)
                         local recorded = recordedStats[stat.id]
@@ -4375,9 +4518,9 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                         self.skillList:addItem(stat.id, {
                             isStat = true,
                             statId = stat.id,
-                            statName = stat.name,
+                            statName = localizedName,
                             statCategory = stat.category,
-                            statDescription = stat.description,
+                            statDescription = localizedDesc,
                             currentValue = currentValue,
                             currentFormatted = currentFormatted,
                             recordedValue = recordedValue,
@@ -4465,18 +4608,18 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
     -- ============ HEADER ROW ============
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.12, 0.18, 0.22)
-        self:drawText(data.text or "YOUR SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
+        self:drawText(data.text or getText("UI_BurdJournals_YourSkills") or "YOUR SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
         if data.count then
-            local countText = "(" .. data.count .. " recordable)"
+            local countText = string.format(getText("UI_BurdJournals_Recordable") or "(%d recordable)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.4, 0.6, 0.7, 1, UIFont.Small)
         end
         return y + h
     end
-    
+
     -- ============ EMPTY ROW ============
     if data.isEmpty then
-        self:drawText(data.text or "Nothing to record", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
+        self:drawText(data.text or getText("UI_BurdJournals_NothingToRecord") or "Nothing to record", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
         return y + h
     end
     
@@ -4544,7 +4687,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         -- Line 2: Level squares + XP info OR recording progress
         if isRecordingThis then
             -- Show recording progress bar
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, textX, cardY + 24, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             local barX = textX + 100
@@ -4706,7 +4850,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         
         -- Status text
         if isRecordingThis then
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, traitTextX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             -- Progress bar for traits (shorter width to account for icon offset)
@@ -4781,7 +4926,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         -- Value display
         if isRecordingThis then
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, textX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             -- Progress bar for stats (shorter width to fit within card)
@@ -4889,7 +5035,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         -- Source/status line
         if isRecordingThis then
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, recipeTextX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             -- Progress bar
@@ -5148,16 +5295,46 @@ function BurdJournals.UI.MainPanel:createViewUI()
     self.feedbackLabel:setVisible(false)
     self.feedbackTicks = 0
     
-    -- Footer buttons (3 buttons: Claim Tab, Claim All, Close)
-    local btnWidth = 100
+    -- Footer buttons (3 buttons: Claim Tab, Claim All, Close) - dynamic width
+    local tabName = self:getTabDisplayName(self.currentTab or "skills")
+    local claimTabText = string.format(getText("UI_BurdJournals_BtnClaimTab") or "Claim %s", tabName)
+    local claimAllText = getText("UI_BurdJournals_BtnClaimAll") or "Claim All"
+    local closeText = getText("UI_BurdJournals_BtnClose") or "Close"
+
+    -- Helper to calculate button width with CJK fallback
+    local function calcBtnWidth(text)
+        local measured = getTextManager():MeasureStringX(UIFont.Small, text) + 30
+        -- CJK fallback: if measurement seems too small, estimate based on character count
+        -- CJK characters are roughly 14px wide at Small font size
+        local charWidth = 14
+        local estimatedWidth = string.len(text) * charWidth / 2 + 30  -- UTF-8 chars are multi-byte
+        return math.max(measured, estimatedWidth, 100)
+    end
+
+    -- Measure text widths for ALL tabs to ensure buttons fit any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+    local btnPrefix = getText("UI_BurdJournals_BtnClaimTab") or "Claim %s"
+    local maxClaimTabW = 100
+    for _, name in ipairs(allTabNames) do
+        local text = string.format(btnPrefix, name)
+        local w = calcBtnWidth(text)
+        maxClaimTabW = math.max(maxClaimTabW, w)
+    end
+    local claimAllW = calcBtnWidth(claimAllText)
+    local closeW = calcBtnWidth(closeText)
+    local btnWidth = math.max(100, maxClaimTabW, claimAllW, closeW)
+
     local btnSpacing = 8
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
     local btnStartX = (self.width - totalBtnWidth) / 2
     local btnY = self.footerY + 32
 
     -- Claim Tab button (tab-specific)
-    local tabName = self:getTabDisplayName(self.currentTab or "skills")
-    local claimTabText = string.format(getText("UI_BurdJournals_BtnClaimTab") or "Claim %s", tabName)
     self.absorbTabBtn = ISButton:new(btnStartX, btnY, btnWidth, btnHeight, claimTabText, self, BurdJournals.UI.MainPanel.onClaimTab)
     self.absorbTabBtn:initialise()
     self.absorbTabBtn:instantiate()
@@ -5167,7 +5344,7 @@ function BurdJournals.UI.MainPanel:createViewUI()
     self:addChild(self.absorbTabBtn)
 
     -- Claim All button
-    self.absorbAllBtn = ISButton:new(btnStartX + btnWidth + btnSpacing, btnY, btnWidth, btnHeight, getText("UI_BurdJournals_BtnClaimAll"), self, BurdJournals.UI.MainPanel.onClaimAll)
+    self.absorbAllBtn = ISButton:new(btnStartX + btnWidth + btnSpacing, btnY, btnWidth, btnHeight, claimAllText, self, BurdJournals.UI.MainPanel.onClaimAll)
     self.absorbAllBtn:initialise()
     self.absorbAllBtn:instantiate()
     self.absorbAllBtn.borderColor = {r=0.3, g=0.5, b=0.6, a=1}
@@ -5176,7 +5353,7 @@ function BurdJournals.UI.MainPanel:createViewUI()
     self:addChild(self.absorbAllBtn)
 
     -- Close button
-    self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 2, btnY, btnWidth, btnHeight, getText("UI_BurdJournals_BtnClose"), self, BurdJournals.UI.MainPanel.onClose)
+    self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 2, btnY, btnWidth, btnHeight, closeText, self, BurdJournals.UI.MainPanel.onClose)
     self.closeBottomBtn:initialise()
     self.closeBottomBtn:instantiate()
     self.closeBottomBtn.borderColor = {r=0.4, g=0.35, b=0.3, a=1}
@@ -5351,7 +5528,7 @@ function BurdJournals.UI.MainPanel:populateViewList()
             for statId, statData in pairs(journalData.stats) do
                 hasStats = true
                 local stat = BurdJournals.getStatById(statId)
-                local statName = stat and stat.name or statId
+                local statName = stat and BurdJournals.getStatName(stat) or statId
 
                 -- Apply search filter
                 if self:matchesSearch(statName) then
@@ -5378,10 +5555,10 @@ function BurdJournals.UI.MainPanel:populateViewList()
                 end
             end
             if not hasStats then
-                self.skillList:addItem("empty", {isEmpty = true, text = "No stats recorded"})
+                self.skillList:addItem("empty", {isEmpty = true, text = getText("UI_BurdJournals_NoStatsRecorded") or "No stats recorded"})
             end
         else
-            self.skillList:addItem("empty", {isEmpty = true, text = "No stats recorded"})
+            self.skillList:addItem("empty", {isEmpty = true, text = getText("UI_BurdJournals_NoStatsRecorded") or "No stats recorded"})
         end
     end
 end
@@ -5407,18 +5584,18 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
     -- ============ HEADER ROW ============
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.12, 0.18, 0.22)
-        self:drawText(data.text or "SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
+        self:drawText(data.text or getText("UI_BurdJournals_Skills") or "SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
         if data.count then
-            local countText = "(" .. data.count .. " claimable)"
+            local countText = string.format(getText("UI_BurdJournals_Claimable") or "(%d claimable)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.4, 0.6, 0.7, 1, UIFont.Small)
         end
         return y + h
     end
-    
+
     -- ============ EMPTY ROW ============
     if data.isEmpty then
-        self:drawText(data.text or "No content", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
+        self:drawText(data.text or getText("UI_BurdJournals_NoContent") or "No content", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
         return y + h
     end
     
@@ -5489,7 +5666,8 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
         -- Line 2: Level squares + XP info OR learning progress
         if isLearningThis then
             -- Show learning progress bar
-            local progressText = string.format("Reading... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, textX, cardY + 24, 0.3, 0.7, 0.9, 1, UIFont.Small)
 
             local barX = textX + 90
@@ -5512,7 +5690,8 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 {r=0.25, g=0.3, b=0.4}     -- Dimmer blue for progress
             )
             local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            self:drawText("Queued #" .. queuePosition, squaresX + squaresWidth + 8, squaresY, 0.6, 0.75, 0.9, 1, UIFont.Small)
+            local queuedText = string.format(getText("UI_BurdJournals_QueuedNumber") or "Queued #%d", queuePosition)
+            self:drawText(queuedText, squaresX + squaresWidth + 8, squaresY, 0.6, 0.75, 0.9, 1, UIFont.Small)
         elseif data.canClaim then
             -- Show level squares + XP
             local squaresX = textX
@@ -5540,7 +5719,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 {r=0.18, g=0.22, b=0.22}   -- Dimmer for progress
             )
             local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            self:drawText("Already claimed", squaresX + squaresWidth + 8, squaresY, 0.4, 0.45, 0.45, 1, UIFont.Small)
+            self:drawText(getText("UI_BurdJournals_StatusAlreadyClaimed") or "Already claimed", squaresX + squaresWidth + 8, squaresY, 0.4, 0.45, 0.45, 1, UIFont.Small)
         end
         
         -- CLAIM/QUEUE button
@@ -5612,7 +5791,8 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
         
         -- Status text
         if isLearningThis then
-            local progressText = string.format("Learning... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_LearningProgress") or "Learning... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, traitTextX, cardY + 22, 0.3, 0.7, 0.9, 1, UIFont.Small)
 
             -- Progress bar for traits (shorter width to account for icon offset)
@@ -5628,11 +5808,12 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             -- Bar border
             self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.35, 0.6, 0.8)
         elseif isQueued then
-            self:drawText("Queued #" .. queuePosition, traitTextX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
+            local queuedText = string.format(getText("UI_BurdJournals_QueuedNumber") or "Queued #%d", queuePosition)
+            self:drawText(queuedText, traitTextX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
         elseif data.alreadyKnown then
-            self:drawText("Already known", traitTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
+            self:drawText(getText("UI_BurdJournals_StatusAlreadyKnown") or "Already known", traitTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
         else
-            self:drawText("Recorded trait", traitTextX, cardY + 22, 0.5, 0.7, 0.8, 1, UIFont.Small)
+            self:drawText(getText("UI_BurdJournals_RecordedTrait") or "Recorded trait", traitTextX, cardY + 22, 0.5, 0.7, 0.8, 1, UIFont.Small)
         end
 
         -- CLAIM/QUEUE button
@@ -5714,7 +5895,8 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
 
         -- Status text
         if isLearningThis then
-            local progressText = string.format("Learning... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_LearningProgress") or "Learning... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, recipeTextX, cardY + 22, 0.3, 0.8, 0.85, 1, UIFont.Small)
 
             -- Progress bar for recipes
@@ -5730,12 +5912,13 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             -- Bar border
             self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.35, 0.75, 0.85)
         elseif isQueued then
-            self:drawText("Queued #" .. queuePosition, recipeTextX, cardY + 22, 0.5, 0.8, 0.9, 1, UIFont.Small)
+            local queuedText = string.format(getText("UI_BurdJournals_QueuedNumber") or "Queued #%d", queuePosition)
+            self:drawText(queuedText, recipeTextX, cardY + 22, 0.5, 0.8, 0.9, 1, UIFont.Small)
         elseif data.alreadyKnown then
             self:drawText(getText("UI_BurdJournals_RecipeAlreadyKnown") or "Already known", recipeTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
         else
             -- Show magazine source if available
-            local sourceText = "Recorded recipe"
+            local sourceText = getText("UI_BurdJournals_RecordedRecipe") or "Recorded recipe"
             if data.magazineSource then
                 local magazineName = BurdJournals.getMagazineDisplayName(data.magazineSource)
                 sourceText = string.format(getText("UI_BurdJournals_RecipeFromMagazine") or "From: %s", magazineName)

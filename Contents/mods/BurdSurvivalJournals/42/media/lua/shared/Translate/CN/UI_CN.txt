@@ -5,6 +5,11 @@ UI_CN = {
     UI_BurdJournals_WornJournal = "破旧生存日志",
     UI_BurdJournals_BloodyJournal = "沾血生存日志",
 
+    -- Journal Name States (for dynamic item names)
+    UI_BurdJournals_StateWorn = "破旧",
+    UI_BurdJournals_StateBloody = "沾血",
+    UI_BurdJournals_PreviousProfession = "前%s",
+
     -- Journal Info
     UI_BurdJournals_Author = "作者",
     UI_BurdJournals_Written = "撰写时间",
@@ -80,12 +85,16 @@ UI_CN = {
     -- Tab Labels
     UI_BurdJournals_TabSkills = "技能",
     UI_BurdJournals_TabTraits = "特质",
+    UI_BurdJournals_TabRecipes = "配方",
     UI_BurdJournals_TabStats = "统计",
 
     -- Buttons (MainPanel)
     UI_BurdJournals_BtnAbsorbAll = "全部领悟",
     UI_BurdJournals_BtnClaimAll = "全部领取",
     UI_BurdJournals_BtnRecordAll = "全部记录",
+    UI_BurdJournals_BtnAbsorbTab = "领悟%s",
+    UI_BurdJournals_BtnClaimTab = "领取%s",
+    UI_BurdJournals_BtnRecordTab = "记录%s",
     UI_BurdJournals_BtnClose = "关闭",
     UI_BurdJournals_BtnKeepReading = "继续阅读",
     UI_BurdJournals_BtnCancelClose = "取消并关闭",
@@ -106,6 +115,18 @@ UI_CN = {
     UI_BurdJournals_AlreadyAtLevel = "已达到或超过此等级",
     UI_BurdJournals_CantRecordStartingSkills = "无法记录初始技能",
     UI_BurdJournals_CantRecordStartingTraits = "无法记录初始特质",
+    UI_BurdJournals_NothingNewToRecord = "没有新内容可记录",
+    UI_BurdJournals_SavingProgress = "正在保存进度...",
+    UI_BurdJournals_Queued = "已排队：%s",
+    UI_BurdJournals_CannotRecord = "无法记录：%s",
+    UI_BurdJournals_SetSkillToLevel = "将%s设置为记录的等级",
+    UI_BurdJournals_SkillMaxed = "%s已达到或超过此等级",
+    UI_BurdJournals_NoPlayer = "未找到玩家",
+    UI_BurdJournals_GainedTrait = "获得特质：%s",
+    UI_BurdJournals_FailedToAddTrait = "添加特质失败：%s",
+    UI_BurdJournals_BaselineReset = "基准已重置！",
+    UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_JournalSyncFailed = "错误：日志同步失败",
 
     -- Empty States
     UI_BurdJournals_NoRewardsAvailable = "没有可用奖励",
@@ -115,6 +136,11 @@ UI_CN = {
     UI_BurdJournals_NoTraitsRecorded = "未记录任何特质",
     UI_BurdJournals_NoStatsRecorded = "未记录任何统计",
     UI_BurdJournals_NothingToRecord = "没有可记录的内容",
+    UI_BurdJournals_NoSkillsToRecord = "没有可记录的技能",
+    UI_BurdJournals_NoTraitsToRecord = "没有可记录的特质",
+    UI_BurdJournals_NoStatsEnabled = "未启用统计记录",
+    UI_BurdJournals_NoContent = "无内容",
+    UI_BurdJournals_TraitAlreadyKnownFeedback = "你已拥有此特质",
 
     -- Status Labels
     UI_BurdJournals_StatusAlreadyKnown = "已掌握",
@@ -122,8 +148,11 @@ UI_CN = {
     UI_BurdJournals_StatusAlreadyRecorded = "已记录",
     UI_BurdJournals_StatusClaimed = "已领取",
     UI_BurdJournals_RareTraitQueued = "稀有特质 - 排队 #%d",
+    UI_BurdJournals_NegativeTraitQueued = "诅咒特质 - 排队 #%d",
     UI_BurdJournals_RareTraitBonus = "稀有特质加成！",
     UI_BurdJournals_RareTraitBonusQueued = "稀有特质加成！- 已排队",
+    UI_BurdJournals_NegativeTraitCurse = "诅咒知识...",
+    UI_BurdJournals_NegativeTraitCurseQueued = "诅咒知识... - 已排队",
 
     -- Author Box
     UI_BurdJournals_RecordingFor = "正在为 %s 记录进度",
@@ -134,19 +163,123 @@ UI_CN = {
     -- Headers
     UI_BurdJournals_YourSkills = "你的技能",
     UI_BurdJournals_Skills = "技能",
+    UI_BurdJournals_Traits = "特性",
     UI_BurdJournals_Available = "（%d 可用）",
     UI_BurdJournals_Recordable = "（%d 可记录）",
+    UI_BurdJournals_Claimable = "（%d 可获取）",
 
     -- Progress Format
     UI_BurdJournals_ReadingAllProgress = "阅读进度：%d%%（剩余 %s）",
     UI_BurdJournals_ReadingProgress = "阅读中... %d%%",
     UI_BurdJournals_RecordingProgress = "记录中... %d%%",
+    UI_BurdJournals_AbsorbingProgress = "吸收中... %d%%",
+    UI_BurdJournals_LearningProgress = "学习中... %d%%",
+    UI_BurdJournals_RecordingAllProgress = "记录进度：%d%%（剩余 %s）",
+    UI_BurdJournals_ClaimingAllProgress = "领取进度：%d%%（剩余 %s）",
+    UI_BurdJournals_AbsorbingAllProgress = "领悟进度：%d%%（剩余 %s）",
     UI_BurdJournals_ItemCount = "%d 项",
     UI_BurdJournals_ItemCountPlural = "%d 项",
+    UI_BurdJournals_RewardQueued = "%d 项奖励已排队",
+    UI_BurdJournals_RewardsQueued = "%d 项奖励已排队",
+    UI_BurdJournals_SummaryTotalXP = "总计：+%s 经验",
+    UI_BurdJournals_SummaryTrait = "%d 个特质",
+    UI_BurdJournals_SummaryTraits = "%d 个特质",
+    UI_BurdJournals_SummarySeparator = "  |  ",
 
     -- Skill/Trait Row Labels
     UI_BurdJournals_LevelFormat = "%d 级",
     UI_BurdJournals_XPFormat = "%d 经验",
+    UI_BurdJournals_XPWithBaseline = "%s 经验（+%s 起始）",
+    UI_BurdJournals_StartingXP = "起始：%s 经验",
     UI_BurdJournals_CurrentLevel = "当前：%d 级",
     UI_BurdJournals_RecordedLevel = "已记录：%d 级",
+    UI_BurdJournals_RecordedXP = "已记录：%s 经验",
+    UI_BurdJournals_RecordedWas = "%s 经验（原为 %s）",
+    UI_BurdJournals_SpawnedWith = "初始携带",
+    UI_BurdJournals_YourTrait = "你的特质",
+    UI_BurdJournals_QueuedNumber = "排队 #%d",
+    UI_BurdJournals_NowWas = "现在：%s（原为 %s）",
+    UI_BurdJournals_RecordedValue = "已记录：%s",
+    UI_BurdJournals_CurrentValue = "当前：%s",
+    UI_BurdJournals_RecordedAchieved = "已记录：%s（已达成！）",
+    UI_BurdJournals_RecordedVsCurrent = "已记录：%s | 当前：%s",
+    UI_BurdJournals_CurrentQueued = "当前：%s - 排队 #%d",
+
+    -- Confirmation Dialogs (additional)
+    UI_BurdJournals_ConfirmAbsorbAll = "领悟所有剩余奖励？",
+    UI_BurdJournals_SkillCount = "%d 项技能",
+    UI_BurdJournals_SkillsCount = "%d 项技能",
+    UI_BurdJournals_RareTraitCount = "%d 项稀有特质",
+    UI_BurdJournals_RareTraitsCount = "%d 项稀有特质",
+    UI_BurdJournals_MaxedSkillsSkipped = "已满级的技能和已知特质将被跳过。",
+
+    -- Feedback (additional)
+    UI_BurdJournals_PlusTrait = "，+%d 项特质",
+    UI_BurdJournals_PlusTraits = "，+%d 项特质",
+    UI_BurdJournals_SkillAlreadyMaxed = "%d 项技能已满级",
+    UI_BurdJournals_SkillsAlreadyMaxed = "%d 项技能已满级",
+    UI_BurdJournals_TraitAlreadyKnown = "%d 项特质已掌握",
+    UI_BurdJournals_TraitsAlreadyKnown = "%d 项特质已掌握",
+
+    -- Client Messages
+    UI_BurdJournals_SkillsRecorded = "技能已记录！",
+    UI_BurdJournals_JournalErased = "日志已擦除",
+    UI_BurdJournals_JournalCleaned = "日志已清洁",
+    UI_BurdJournals_JournalRebound = "日志已重新装订",
+    UI_BurdJournals_ProgressSaved = "进度已保存！",
+    UI_BurdJournals_RecordedItem = "已记录 %s",
+    UI_BurdJournals_RecordedItems = "已记录 %s",
+    UI_BurdJournals_RecordedItemsMore = "已记录 %s、%s 等%d项",
+    UI_BurdJournals_ClaimedSkill = "已领取：%s（+%s 经验）",
+    UI_BurdJournals_LearnedTrait = "已学习：%s",
+    UI_BurdJournals_AlreadyKnowTrait = "已掌握：%s",
+    UI_BurdJournals_SkillAlreadyMaxedMsg = "%s 已满级！",
+    UI_BurdJournals_Unknown = "未知",
+
+    -- Timed Actions
+    UI_BurdJournals_JournalRestored = "日志已修复！",
+    UI_BurdJournals_JournalBound = "日志已装订！",
+    UI_BurdJournals_Salvaged = "回收：%s",
+    UI_BurdJournals_JournalDisassembled = "日志已拆解。",
+
+    -- Search Bar
+    UI_BurdJournals_SearchPlaceholder = "搜索...",
+    UI_BurdJournals_ClearSearch = "清除搜索",
+    UI_BurdJournals_NoSearchResults = "未找到结果",
+
+    -- Recipe Tab
+    UI_BurdJournals_Recipes = "配方",
+    UI_BurdJournals_RecipesAvailable = "（%d 可用）",
+    UI_BurdJournals_RecipesRecordable = "（%d 可记录）",
+    UI_BurdJournals_NoRecipesRecorded = "未记录任何配方",
+    UI_BurdJournals_NoRecipesToRecord = "未学习任何杂志配方",
+    UI_BurdJournals_NoRecipesAvailable = "没有可用配方",
+    UI_BurdJournals_RecipeAlreadyKnown = "已掌握",
+    UI_BurdJournals_RecipeClaimed = "已领取",
+    UI_BurdJournals_LearnedRecipe = "已学习：%s",
+    UI_BurdJournals_AlreadyKnowRecipe = "已掌握：%s",
+    UI_BurdJournals_RecipeFromMagazine = "来源：%s",
+    UI_BurdJournals_RecipeCount = "%d 项配方",
+    UI_BurdJournals_RecipesCount = "%d 项配方",
+    UI_BurdJournals_PlusRecipe = "，+%d 项配方",
+    UI_BurdJournals_PlusRecipes = "，+%d 项配方",
+    UI_BurdJournals_RecipeAlreadyKnownCount = "%d 项配方已掌握",
+    UI_BurdJournals_RecipesAlreadyKnownCount = "%d 项配方已掌握",
+
+    -- Stats Tab
+    UI_BurdJournals_Stats = "统计",
+    UI_BurdJournals_StatsAvailable = "（%d 可用）",
+    UI_BurdJournals_StatsRecordable = "（%d 可记录）",
+    UI_BurdJournals_StatZombieKills = "丧尸击杀数",
+    UI_BurdJournals_StatZombieKillsDesc = "总共击杀的丧尸数量",
+    UI_BurdJournals_StatHoursSurvived = "生存时长",
+    UI_BurdJournals_StatHoursSurvivedDesc = "在末日中存活的总时长",
+    UI_BurdJournals_StatDays = "%d 天",
+    UI_BurdJournals_StatHours = "%d 小时",
+    UI_BurdJournals_StatDaysHours = "%d 天，%d 小时",
+
+    -- Dialog strings
+    UI_BurdJournals_ConfirmCancelLearning = "取消阅读并关闭？",
+    UI_BurdJournals_RecordedTrait = "已记录的特质",
+    UI_BurdJournals_RecordedRecipe = "已记录的配方",
 }

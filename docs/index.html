@@ -1,0 +1,1934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Burd's Survival Journals - Translation Generator</title>
+    <style>
+        :root {
+            --bg-dark: #0a0a0a;
+            --bg-panel: #141414;
+            --bg-input: #1a1a1a;
+            --border-color: #3a3530;
+            --border-highlight: #5a5040;
+            --text-primary: #d4cfc4;
+            --text-secondary: #8a8478;
+            --text-muted: #555;
+            --accent-bloody: #8b2020;
+            --accent-bloody-light: #a83232;
+            --accent-bloody-dark: #5a1515;
+            --accent-teal: #2a6a7a;
+            --accent-teal-light: #3a8a9a;
+            --accent-worn: #5a5040;
+            --accent-gold: #c9a227;
+            --accent-paper: #c4b89a;
+            --success: #4a7a3a;
+            --warning: #a87a32;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* Fixed background layer */
+        .bg-layer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url('../assets/BSJ-HeroSplashBG1.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            filter: blur(4px) brightness(0.3);
+            z-index: -1;
+        }
+
+        /* Header */
+        .header {
+            background: linear-gradient(180deg, rgba(10,8,6,0.95) 0%, rgba(20,16,12,0.9) 100%);
+            border-bottom: 3px solid var(--accent-bloody);
+            padding: 15px 20px;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+        }
+
+        .header-content {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            flex-wrap: nowrap;
+            position: relative;
+        }
+
+        .header-icon {
+            width: 120px;
+            height: 120px;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.8));
+            margin-right: -30px;
+            margin-top: -20px;
+            margin-bottom: -20px;
+            margin-left: -10px;
+            transform: scale(1.2);
+            z-index: 1;
+        }
+
+        .header-titles {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+            z-index: 2;
+        }
+
+        .title-img {
+            height: 38px;
+            width: auto;
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.8));
+        }
+
+        .title-img-stacked {
+            display: none;
+            height: 60px;
+            width: auto;
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.8));
+        }
+
+        .subtitle-img {
+            height: 16px;
+            width: auto;
+            opacity: 0.85;
+            filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.8));
+            margin-left: 2px;
+        }
+
+        /* Responsive title switching */
+        @media (max-width: 600px) {
+            .header-content {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            .title-img { display: none; }
+            .title-img-stacked { display: block; }
+            .header-icon {
+                width: 100px;
+                height: 100px;
+                margin-right: -25px;
+                margin-left: 0;
+                margin-top: -15px;
+                margin-bottom: -15px;
+                transform: scale(1.15);
+            }
+            .header-titles {
+                align-items: flex-start;
+            }
+            .subtitle-img {
+                margin-left: 1px;
+            }
+        }
+
+        /* Even smaller screens */
+        @media (max-width: 400px) {
+            .header-icon {
+                width: 85px;
+                height: 85px;
+                margin-right: -20px;
+                transform: scale(1.1);
+            }
+            .title-img-stacked {
+                height: 50px;
+            }
+            .subtitle-img {
+                height: 14px;
+            }
+        }
+
+        /* Main container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            position: relative;
+        }
+
+        /* Floating Table of Contents */
+        .toc {
+            display: none;
+            position: fixed;
+            right: 20px;
+            top: 120px;
+            width: 200px;
+            background: linear-gradient(180deg, rgba(20,18,14,0.98) 0%, rgba(14,12,10,0.98) 100%);
+            border: 2px solid var(--border-color);
+            border-top-color: var(--border-highlight);
+            border-left-color: var(--border-highlight);
+            z-index: 90;
+            max-height: calc(100vh - 140px);
+            overflow-y: auto;
+        }
+
+        .toc-header {
+            background: linear-gradient(180deg, rgba(30,28,24,0.9) 0%, rgba(20,18,14,0.9) 100%);
+            padding: 10px 12px;
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--accent-paper);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .toc-list {
+            list-style: none;
+            padding: 8px 0;
+            margin: 0;
+        }
+
+        .toc-list li {
+            padding: 0;
+        }
+
+        .toc-list a {
+            display: block;
+            padding: 8px 14px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.8em;
+            transition: all 0.15s;
+            border-left: 2px solid transparent;
+        }
+
+        .toc-list a:hover {
+            color: var(--accent-paper);
+            background: rgba(42,106,122,0.15);
+            border-left-color: var(--accent-teal);
+        }
+
+        .toc-list a.active {
+            color: var(--accent-teal-light);
+            border-left-color: var(--accent-teal);
+            background: rgba(42,106,122,0.1);
+        }
+
+        .toc-count {
+            float: right;
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+
+        /* Show TOC on wide screens, adjust container */
+        @media (min-width: 1600px) {
+            .toc {
+                display: block;
+            }
+            .container {
+                max-width: 1300px;
+                margin-right: 240px;
+            }
+        }
+
+        /* Info box - Zomboid panel style */
+        .info-box {
+            background: linear-gradient(180deg, rgba(20,18,14,0.95) 0%, rgba(14,12,10,0.95) 100%);
+            border: 2px solid var(--border-color);
+            border-top-color: var(--border-highlight);
+            border-left-color: var(--border-highlight);
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .info-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent-bloody) 0%, transparent 50%);
+        }
+
+        .info-box-icon {
+            display: none;
+            width: 80px;
+            height: 80px;
+            object-fit: contain;
+            image-rendering: pixelated;
+            flex-shrink: 0;
+            filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.5));
+        }
+
+        /* Show icon on tablet+ */
+        @media (min-width: 768px) {
+            .info-box-icon {
+                display: block;
+            }
+        }
+
+        .info-box-content {
+            flex: 1;
+        }
+
+        .info-box-title {
+            color: var(--accent-bloody-light);
+            font-size: 1.4em;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+            font-weight: 700;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .info-box h3 {
+            color: var(--accent-paper);
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-box h3::before {
+            content: '';
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: var(--accent-bloody);
+            transform: rotate(45deg);
+        }
+
+        .info-box ul {
+            list-style: none;
+            padding-left: 16px;
+        }
+
+        .info-box li {
+            color: var(--text-secondary);
+            font-size: 0.9em;
+            padding: 4px 0;
+            position: relative;
+        }
+
+        .info-box li::before {
+            content: '>';
+            position: absolute;
+            left: -16px;
+            color: var(--accent-worn);
+        }
+
+        .info-box code {
+            background: rgba(0,0,0,0.4);
+            color: var(--accent-gold);
+            padding: 2px 6px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.9em;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Controls bar - Zomboid toolbar style */
+        .controls {
+            background: linear-gradient(180deg, rgba(24,22,18,0.95) 0%, rgba(18,16,12,0.95) 100%);
+            border: 2px solid var(--border-color);
+            border-top-color: var(--border-highlight);
+            border-left-color: var(--border-highlight);
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: flex-end;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .control-group label {
+            font-size: 0.75em;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .control-group input,
+        .control-group select {
+            background: rgba(10,8,6,0.9);
+            border: 2px solid var(--border-color);
+            border-bottom-color: var(--border-highlight);
+            border-right-color: var(--border-highlight);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 0.95em;
+            min-width: 140px;
+        }
+
+        .control-group input:focus,
+        .control-group select:focus {
+            outline: none;
+            border-color: var(--accent-teal);
+            box-shadow: 0 0 8px rgba(42,106,122,0.3);
+        }
+
+        .control-group select {
+            cursor: pointer;
+        }
+
+        /* Zomboid-style buttons */
+        .btn {
+            padding: 10px 20px;
+            border: 2px solid;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: all 0.15s;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            position: relative;
+        }
+
+        .btn:active {
+            transform: translateY(1px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(180deg, var(--accent-teal-light) 0%, var(--accent-teal) 100%);
+            border-color: var(--accent-teal-light);
+            border-bottom-color: #1a4a5a;
+            border-right-color: #1a4a5a;
+            color: #fff;
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(180deg, #4a9aaa 0%, var(--accent-teal-light) 100%);
+        }
+
+        .btn-export {
+            background: linear-gradient(180deg, var(--accent-bloody-light) 0%, var(--accent-bloody) 100%);
+            border-color: var(--accent-bloody-light);
+            border-bottom-color: var(--accent-bloody-dark);
+            border-right-color: var(--accent-bloody-dark);
+            color: #fff;
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+        }
+
+        .btn-export:hover {
+            background: linear-gradient(180deg, #c84040 0%, var(--accent-bloody-light) 100%);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(180deg, #2a2622 0%, #1a1816 100%);
+            border-color: var(--border-highlight);
+            border-bottom-color: #1a1614;
+            border-right-color: #1a1614;
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: linear-gradient(180deg, #3a3632 0%, #2a2622 100%);
+        }
+
+        /* Progress bar - Zomboid XP bar style */
+        .progress-container {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .progress-bar {
+            background: rgba(10,8,6,0.9);
+            height: 26px;
+            border: 2px solid var(--border-color);
+            border-bottom-color: var(--border-highlight);
+            border-right-color: var(--border-highlight);
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(180deg, var(--success) 0%, #3a6a2a 50%, var(--success) 100%);
+            transition: width 0.3s;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: var(--accent-paper);
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.9);
+            pointer-events: none;
+            letter-spacing: 0.5px;
+        }
+
+        /* Category sections - Zomboid collapsible panel style */
+        .category {
+            background: linear-gradient(180deg, rgba(20,18,14,0.95) 0%, rgba(14,12,10,0.95) 100%);
+            border: 2px solid var(--border-color);
+            border-top-color: var(--border-highlight);
+            border-left-color: var(--border-highlight);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .category-header {
+            background: linear-gradient(180deg, rgba(30,28,24,0.9) 0%, rgba(20,18,14,0.9) 100%);
+            padding: 12px 16px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            user-select: none;
+        }
+
+        .category-header:hover {
+            background: linear-gradient(180deg, rgba(40,38,34,0.9) 0%, rgba(30,28,24,0.9) 100%);
+        }
+
+        .category-header h2 {
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: var(--accent-paper);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .category-icon {
+            width: 32px;
+            height: 32px;
+            object-fit: contain;
+            image-rendering: pixelated;
+        }
+
+        .category-header .file-badge {
+            background: linear-gradient(180deg, var(--accent-worn) 0%, #4a4030 100%);
+            border: 1px solid #6a6050;
+            padding: 3px 10px;
+            font-size: 0.7em;
+            font-weight: 600;
+            color: var(--accent-paper);
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .category-header .count {
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            font-weight: normal;
+            text-transform: none;
+            letter-spacing: 0;
+        }
+
+        .category-header .toggle {
+            font-size: 1em;
+            color: var(--text-secondary);
+            transition: transform 0.3s ease;
+            width: 20px;
+            text-align: center;
+            display: inline-block;
+            transform: rotate(0deg);
+        }
+
+        .category.collapsed .toggle {
+            transform: rotate(-90deg);
+        }
+
+        .category.collapsed .category-content {
+            display: none;
+        }
+
+        .category-content {
+            padding: 12px;
+            background: rgba(10,8,6,0.5);
+        }
+
+        /* Subsection headers */
+        .subsection {
+            margin-bottom: 16px;
+        }
+
+        .subsection-header {
+            color: var(--accent-gold);
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.3);
+            border-left: 3px solid var(--accent-gold);
+            margin-bottom: 8px;
+        }
+
+        /* Translation rows */
+        .translation-row {
+            display: grid;
+            grid-template-columns: 280px 1fr 1fr;
+            gap: 12px;
+            padding: 10px 12px;
+            border-bottom: 1px solid rgba(60,55,45,0.5);
+            align-items: start;
+        }
+
+        .translation-row:hover {
+            background: rgba(42, 106, 122, 0.08);
+        }
+
+        .translation-row:last-child {
+            border-bottom: none;
+        }
+
+        .key-cell {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.8em;
+            color: var(--accent-teal-light);
+            word-break: break-all;
+            padding-top: 10px;
+        }
+
+        .english-cell {
+            background: rgba(0,0,0,0.4);
+            padding: 10px 12px;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            border-left: 3px solid var(--accent-worn);
+            border: 1px solid var(--border-color);
+            border-left: 3px solid var(--accent-worn);
+        }
+
+        .translation-cell textarea {
+            width: 100%;
+            background: rgba(10,8,6,0.9);
+            border: 2px solid var(--border-color);
+            border-bottom-color: var(--border-highlight);
+            border-right-color: var(--border-highlight);
+            color: var(--text-primary);
+            padding: 10px 12px;
+            font-size: 0.9em;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 42px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .translation-cell textarea:focus {
+            outline: none;
+            border-color: var(--accent-teal);
+            box-shadow: 0 0 8px rgba(42,106,122,0.3);
+        }
+
+        .translation-cell textarea.filled {
+            border-color: var(--success);
+            border-bottom-color: #2a4a2a;
+            border-right-color: #2a4a2a;
+        }
+
+        .translation-cell textarea::placeholder {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        /* Tooltip indicators */
+        .has-placeholder {
+            position: relative;
+        }
+
+        .placeholder-hint {
+            font-size: 0.7em;
+            color: var(--warning);
+            margin-top: 4px;
+            font-style: italic;
+        }
+
+        /* Export modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: linear-gradient(180deg, rgba(24,22,18,0.98) 0%, rgba(14,12,10,0.98) 100%);
+            border: 2px solid var(--border-color);
+            border-top-color: var(--border-highlight);
+            border-left-color: var(--border-highlight);
+            max-width: 850px;
+            width: 90%;
+            max-height: 85vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+        }
+
+        .modal-header {
+            padding: 16px 20px;
+            background: linear-gradient(180deg, rgba(30,28,24,0.9) 0%, rgba(20,18,14,0.9) 100%);
+            border-bottom: 2px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h3 {
+            color: var(--accent-paper);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .modal-header h3::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: var(--accent-bloody);
+            transform: rotate(45deg);
+        }
+
+        .modal-close {
+            background: linear-gradient(180deg, #3a3632 0%, #2a2622 100%);
+            border: 2px solid var(--border-highlight);
+            border-bottom-color: #1a1614;
+            border-right-color: #1a1614;
+            color: var(--text-secondary);
+            font-size: 1.2em;
+            cursor: pointer;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.15s;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+            background: linear-gradient(180deg, #4a4642 0%, #3a3632 100%);
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+            background: rgba(10,8,6,0.5);
+        }
+
+        .export-tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .export-tab {
+            padding: 8px 16px;
+            background: linear-gradient(180deg, #2a2622 0%, #1a1816 100%);
+            border: 2px solid var(--border-color);
+            border-bottom-color: #1a1614;
+            border-right-color: #1a1614;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.15s;
+        }
+
+        .export-tab:hover {
+            background: linear-gradient(180deg, #3a3632 0%, #2a2622 100%);
+        }
+
+        .export-tab.active {
+            background: linear-gradient(180deg, var(--accent-teal-light) 0%, var(--accent-teal) 100%);
+            color: #fff;
+            border-color: var(--accent-teal-light);
+            border-bottom-color: #1a4a5a;
+            border-right-color: #1a4a5a;
+        }
+
+        .export-content {
+            background: rgba(6,5,4,0.9);
+            border: 2px solid var(--border-color);
+            border-bottom-color: var(--border-highlight);
+            border-right-color: var(--border-highlight);
+            padding: 15px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85em;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 350px;
+            overflow-y: auto;
+            color: var(--text-secondary);
+        }
+
+        .modal-footer {
+            padding: 16px 20px;
+            background: linear-gradient(180deg, rgba(20,18,14,0.9) 0%, rgba(14,12,10,0.9) 100%);
+            border-top: 2px solid var(--border-color);
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+
+        /* Responsive */
+        @media (max-width: 1000px) {
+            .translation-row {
+                grid-template-columns: 1fr;
+            }
+
+            .key-cell {
+                padding-top: 0;
+                padding-bottom: 5px;
+            }
+        }
+
+        /* Loading state */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        /* File selector in export modal */
+        .file-selector {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .file-selector label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            background: linear-gradient(180deg, #2a2622 0%, #1a1816 100%);
+            border: 2px solid var(--border-color);
+            border-bottom-color: #1a1614;
+            border-right-color: #1a1614;
+            cursor: pointer;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            transition: all 0.15s;
+        }
+
+        .file-selector label:hover {
+            background: linear-gradient(180deg, #3a3632 0%, #2a2622 100%);
+            color: var(--text-primary);
+        }
+
+        .file-selector input[type="checkbox"] {
+            accent-color: var(--accent-teal);
+        }
+
+        .file-selector input[type="checkbox"]:checked + span {
+            color: var(--accent-teal-light);
+        }
+
+        /* Template button styling */
+        .btn-template {
+            background: linear-gradient(180deg, var(--accent-worn) 0%, #4a4030 100%);
+            border-color: #6a6050;
+            border-bottom-color: #3a3020;
+            border-right-color: #3a3020;
+            color: var(--accent-paper);
+            text-shadow: 1px 1px 1px rgba(0,0,0,0.5);
+        }
+
+        .btn-template:hover {
+            background: linear-gradient(180deg, #6a6050 0%, var(--accent-worn) 100%);
+        }
+
+        /* Loading state */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-layer"></div>
+    <div class="header">
+        <div class="header-content">
+            <img src="../assets/BSJ-BloodSplashIcon1.png" alt="BSJ" class="header-icon">
+            <div class="header-titles">
+                <img src="../assets/BSJ-Title-Inline.png" alt="Burd's Survival Journals" class="title-img">
+                <img src="../assets/BSJ-Title-Stacked.png" alt="Burd's Survival Journals" class="title-img-stacked">
+                <img src="../assets/BSJ-Subtitle-Inline.png" alt="Translation Generator" class="subtitle-img">
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Table of Contents (wide screens) -->
+    <nav class="toc" id="toc">
+        <div class="toc-header">Sections</div>
+        <ul class="toc-list" id="tocList">
+            <!-- Populated by JavaScript -->
+        </ul>
+    </nav>
+
+    <div class="container">
+        <div class="info-box">
+            <img src="../assets/BurdJournal-FilledBloody-Icon-Med.png" alt="Bloody Journal" class="info-box-icon">
+            <div class="info-box-content">
+                <h2 class="info-box-title">Localization Tool</h2>
+                <h3>How to Use</h3>
+                <ul>
+                    <li>Enter your <strong>language code</strong> (e.g., ES, DE, RU, JP, KR)</li>
+                    <li>Fill in translations for each key - English text is shown as reference</li>
+                    <li>Keep placeholders like <code>%s</code>, <code>%d</code>, <code>%1</code> in your translations</li>
+                    <li>Click <strong>Export</strong> to download your translation files</li>
+                    <li>Send the files to the mod author or submit a pull request on GitHub</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label>Language Code</label>
+                <input type="text" id="langCode" placeholder="e.g., ES, DE, RU" maxlength="4" value="">
+            </div>
+            <div class="control-group">
+                <label>Language Name</label>
+                <input type="text" id="langName" placeholder="e.g., Spanish, German">
+            </div>
+            <div class="control-group">
+                <label>Filter</label>
+                <select id="filterCategory">
+                    <option value="all">All Categories</option>
+                    <option value="sandbox">Sandbox Options</option>
+                    <option value="ui">UI Strings</option>
+                    <option value="contextmenu">Context Menu</option>
+                    <option value="tooltip">Tooltips</option>
+                    <option value="items">Items</option>
+                    <option value="recipes">Recipes</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Show</label>
+                <select id="filterStatus">
+                    <option value="all">All</option>
+                    <option value="empty">Untranslated</option>
+                    <option value="filled">Translated</option>
+                </select>
+            </div>
+            <div class="progress-container">
+                <label style="font-size: 0.85em; color: var(--text-secondary); text-transform: uppercase;">Progress</label>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    <div class="progress-text" id="progressText">0/0 (0%)</div>
+                </div>
+            </div>
+            <button class="btn btn-secondary" onclick="clearAll()">Clear All</button>
+            <button class="btn btn-secondary" onclick="loadFromFile()">Import</button>
+            <button class="btn btn-template" onclick="exportTemplate()">Export Template</button>
+            <button class="btn btn-export" onclick="showExportModal()">Export Files</button>
+        </div>
+
+        <div id="translationContent">
+            <div class="loading">Loading translation keys...</div>
+        </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="exportModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>Export Translation Files</h3>
+                <button class="modal-close" onclick="closeExportModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 15px; color: var(--text-secondary);">Select which files to export:</p>
+                <div class="file-selector" id="fileSelector"></div>
+                <div class="export-tabs" id="exportTabs"></div>
+                <div class="export-content" id="exportContent">Select a file above to preview</div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="copyToClipboard()">Copy Current</button>
+                <button class="btn btn-primary" onclick="downloadSelected()">Download Selected</button>
+                <button class="btn btn-export" onclick="downloadAll()">Download All (.zip)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input for import -->
+    <input type="file" id="fileInput" style="display: none" accept=".txt,.lua,.json" multiple onchange="handleFileImport(event)">
+
+    <script>
+        // Translation data structure
+        const translationData = {
+            sandbox: {
+                name: "Sandbox Options",
+                file: "Sandbox",
+                keys: {}
+            },
+            ui: {
+                name: "UI Strings",
+                file: "UI",
+                keys: {}
+            },
+            contextmenu: {
+                name: "Context Menu",
+                file: "ContextMenu",
+                keys: {}
+            },
+            tooltip: {
+                name: "Tooltips",
+                file: "Tooltip",
+                keys: {}
+            },
+            items: {
+                name: "Item Names",
+                file: "Items",
+                keys: {}
+            },
+            recipes: {
+                name: "Recipe Names",
+                file: "Recipes",
+                keys: {}
+            }
+        };
+
+        // English reference values (will be populated from embedded data)
+        const englishData = {
+            // Sandbox Options
+            "Sandbox_BurdJournals_Player": "Journals - Player",
+            "Sandbox_BurdJournals_Loot": "Journals - Loot",
+            "Sandbox_BurdJournals_Advanced": "Journals - Advanced",
+            "Sandbox_BurdJournals_EnableJournals": "Enable Survival Journals",
+            "Sandbox_BurdJournals_EnableJournals_tooltip": "Master toggle for the entire survival journals system.",
+            "Sandbox_BurdJournals_XPRecoveryMode": "Clean Journal XP Mode",
+            "Sandbox_BurdJournals_XPRecoveryMode_tooltip": "How much XP is recovered when reading a CLEAN journal (SET mode). Does not affect worn/bloody journals.",
+            "Sandbox_BurdJournals_XPRecoveryMode_option1": "Full Recovery (100%)",
+            "Sandbox_BurdJournals_XPRecoveryMode_option2": "Diminishing Returns",
+            "Sandbox_BurdJournals_DiminishingFirstRead": "First Read XP %",
+            "Sandbox_BurdJournals_DiminishingFirstRead_tooltip": "XP percentage on first read (50-100%). Only applies with Diminishing Returns.",
+            "Sandbox_BurdJournals_DiminishingDecayRate": "Decay Per Read %",
+            "Sandbox_BurdJournals_DiminishingDecayRate_tooltip": "XP reduction for each subsequent read (5-50%).",
+            "Sandbox_BurdJournals_DiminishingMinimum": "Minimum XP %",
+            "Sandbox_BurdJournals_DiminishingMinimum_tooltip": "Floor percentage that recovery cannot go below (0-50%).",
+            "Sandbox_BurdJournals_JournalXPMultiplier": "Journal XP Multiplier",
+            "Sandbox_BurdJournals_JournalXPMultiplier_tooltip": "Multiplier for XP gained from journals (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). Applies to both worn and bloody journals.",
+            "Sandbox_BurdJournals_RequirePenToWrite": "Require Pen to Write",
+            "Sandbox_BurdJournals_RequirePenToWrite_tooltip": "Require a pen or pencil to log skills in a clean journal.",
+            "Sandbox_BurdJournals_PenUsesPerLog": "Pen Uses Per Log",
+            "Sandbox_BurdJournals_PenUsesPerLog_tooltip": "Pen durability consumed when logging skills (1-10).",
+            "Sandbox_BurdJournals_RequireEraserToErase": "Require Eraser to Erase",
+            "Sandbox_BurdJournals_RequireEraserToErase_tooltip": "Require an eraser to wipe clean journal contents.",
+            "Sandbox_BurdJournals_LearningTimePerSkill": "Learning Time Per Skill (sec)",
+            "Sandbox_BurdJournals_LearningTimePerSkill_tooltip": "Base time in seconds to learn each skill from a journal. Simulates reading/studying.",
+            "Sandbox_BurdJournals_LearningTimePerTrait": "Learning Time Per Trait (sec)",
+            "Sandbox_BurdJournals_LearningTimePerTrait_tooltip": "Base time in seconds to absorb each trait from a journal.",
+            "Sandbox_BurdJournals_LearningTimeMultiplier": "Learning Time Multiplier",
+            "Sandbox_BurdJournals_LearningTimeMultiplier_tooltip": "Global multiplier for all learning times. 0.5 = twice as fast, 2.0 = twice as slow.",
+            "Sandbox_BurdJournals_EnableStatRecording": "Enable Stat Recording",
+            "Sandbox_BurdJournals_EnableStatRecording_tooltip": "Master toggle for recording player stats (kills, survival time, etc.) in personal journals.",
+            "Sandbox_BurdJournals_RecordZombieKills": "Record Zombie Kills",
+            "Sandbox_BurdJournals_RecordZombieKills_tooltip": "Allow players to record their zombie kill count in journals.",
+            "Sandbox_BurdJournals_RecordHoursSurvived": "Record Hours Survived",
+            "Sandbox_BurdJournals_RecordHoursSurvived_tooltip": "Allow players to record their survival time in journals.",
+            "Sandbox_BurdJournals_EnableBaselineRestriction": "Only Record Earned Progress",
+            "Sandbox_BurdJournals_EnableBaselineRestriction_tooltip": "When enabled, journals only record XP earned through gameplay - not profession starting bonuses or trait skill boosts. This prevents exploits where players farm profession skills by creating multiple characters. Recommended ON for multiplayer servers.",
+            "Sandbox_BurdJournals_EnableRecipeRecording": "Enable Recipe Recording",
+            "Sandbox_BurdJournals_EnableRecipeRecording_tooltip": "Allow players to record magazine-learned recipes in journals. Recipes learned from magazines can be shared with others.",
+            "Sandbox_BurdJournals_LearningTimePerRecipe": "Learning Time Per Recipe (sec)",
+            "Sandbox_BurdJournals_LearningTimePerRecipe_tooltip": "Base time in seconds to learn each recipe from a journal.",
+            "Sandbox_BurdJournals_EnableWornJournalSpawns": "Enable Worn Journal Spawns",
+            "Sandbox_BurdJournals_EnableWornJournalSpawns_tooltip": "Allow worn journals to spawn in world containers (shelves, desks, cabinets). These offer light XP rewards.",
+            "Sandbox_BurdJournals_WornJournalSpawnChance": "Worn Spawn Chance %",
+            "Sandbox_BurdJournals_WornJournalSpawnChance_tooltip": "Chance for worn journals to appear in world containers (0.1-100%).",
+            "Sandbox_BurdJournals_WornJournalMinSkills": "Worn Min Skills",
+            "Sandbox_BurdJournals_WornJournalMinSkills_tooltip": "Minimum skills in world-found worn journals.",
+            "Sandbox_BurdJournals_WornJournalMaxSkills": "Worn Max Skills",
+            "Sandbox_BurdJournals_WornJournalMaxSkills_tooltip": "Maximum skills in world-found worn journals.",
+            "Sandbox_BurdJournals_WornJournalMinXP": "Worn Min XP/Skill",
+            "Sandbox_BurdJournals_WornJournalMinXP_tooltip": "Minimum XP per skill in worn journals.",
+            "Sandbox_BurdJournals_WornJournalMaxXP": "Worn Max XP/Skill",
+            "Sandbox_BurdJournals_WornJournalMaxXP_tooltip": "Maximum XP per skill in worn journals.",
+            "Sandbox_BurdJournals_EnableBloodyJournalSpawns": "Enable Bloody Journal Drops",
+            "Sandbox_BurdJournals_EnableBloodyJournalSpawns_tooltip": "Allow zombies to drop bloody journals. These offer better rewards and rare traits.",
+            "Sandbox_BurdJournals_BloodyJournalSpawnChance": "Bloody Drop Chance %",
+            "Sandbox_BurdJournals_BloodyJournalSpawnChance_tooltip": "Chance for a zombie to drop a bloody journal (0.1-100%).",
+            "Sandbox_BurdJournals_BloodyJournalMinSkills": "Bloody Min Skills",
+            "Sandbox_BurdJournals_BloodyJournalMinSkills_tooltip": "Minimum skills in zombie-dropped bloody journals.",
+            "Sandbox_BurdJournals_BloodyJournalMaxSkills": "Bloody Max Skills",
+            "Sandbox_BurdJournals_BloodyJournalMaxSkills_tooltip": "Maximum skills in zombie-dropped bloody journals.",
+            "Sandbox_BurdJournals_BloodyJournalMinXP": "Bloody Min XP/Skill",
+            "Sandbox_BurdJournals_BloodyJournalMinXP_tooltip": "Minimum XP per skill in bloody journals.",
+            "Sandbox_BurdJournals_BloodyJournalMaxXP": "Bloody Max XP/Skill",
+            "Sandbox_BurdJournals_BloodyJournalMaxXP_tooltip": "Maximum XP per skill in bloody journals.",
+            "Sandbox_BurdJournals_BloodyJournalTraitChance": "Rare Trait Chance %",
+            "Sandbox_BurdJournals_BloodyJournalTraitChance_tooltip": "Chance for bloody journals to include a grantable trait (Brave, Organized, etc.).",
+            "Sandbox_BurdJournals_BloodyJournalMaxTraits": "Max Traits Per Bloody",
+            "Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip": "Maximum number of traits that can spawn on a single bloody journal (0-5).",
+            "Sandbox_BurdJournals_EnablePlayerJournals": "Enable Player Journals",
+            "Sandbox_BurdJournals_EnablePlayerJournals_tooltip": "Allow players to craft and use personal journals for recording/recovering skills.",
+            "Sandbox_BurdJournals_ReadingSkillAffectsSpeed": "Reading Skill Affects Speed",
+            "Sandbox_BurdJournals_ReadingSkillAffectsSpeed_tooltip": "Higher reading skill levels reduce learning time when absorbing from journals.",
+            "Sandbox_BurdJournals_ReadingSpeedBonus": "Reading Speed Bonus",
+            "Sandbox_BurdJournals_ReadingSpeedBonus_tooltip": "Speed bonus per reading skill level (0.1 = 10% faster per level, max 100% at level 10).",
+            "Sandbox_BurdJournals_EraseTime": "Erase Time (seconds)",
+            "Sandbox_BurdJournals_EraseTime_tooltip": "Time in seconds to erase a journal's contents.",
+            "Sandbox_BurdJournals_ConvertTime": "Convert Time (seconds)",
+            "Sandbox_BurdJournals_ConvertTime_tooltip": "Time in seconds to convert a worn journal to a clean journal.",
+            "Sandbox_BurdJournals_AllowOthersToOpenJournals": "Allow Others to Open Personal Journals",
+            "Sandbox_BurdJournals_AllowOthersToOpenJournals_tooltip": "If enabled, other players can open and view personal journals they didn't create.",
+            "Sandbox_BurdJournals_AllowOthersToClaimFromJournals": "Allow Others to Claim from Personal Journals",
+            "Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip": "If enabled, other players can claim skills/traits from personal journals they didn't create.",
+            "Sandbox_BurdJournals_AllowNegativeTraits": "Allow Negative Traits",
+            "Sandbox_BurdJournals_AllowNegativeTraits_tooltip": "If enabled, negative traits can appear in journals and be recorded.",
+
+            // UI Strings
+            "UI_BurdJournals_BlankJournal": "Blank Survival Journal",
+            "UI_BurdJournals_FilledJournal": "Filled Survival Journal",
+            "UI_BurdJournals_WornJournal": "Worn Survival Journal",
+            "UI_BurdJournals_BloodyJournal": "Bloody Survival Journal",
+            "UI_BurdJournals_StateWorn": "Worn",
+            "UI_BurdJournals_StateBloody": "Bloody",
+            "UI_BurdJournals_PreviousProfession": "Previous %s",
+            "UI_BurdJournals_Author": "Author",
+            "UI_BurdJournals_Written": "Written",
+            "UI_BurdJournals_TimesRead": "Times Read",
+            "UI_BurdJournals_Condition": "Condition",
+            "UI_BurdJournals_NeedsCleaning": "Needs Cleaning",
+            "UI_BurdJournals_SelectAll": "Select All",
+            "UI_BurdJournals_DeselectAll": "Deselect All",
+            "UI_BurdJournals_Log": "Log Skills",
+            "UI_BurdJournals_Learn": "Learn",
+            "UI_BurdJournals_Update": "Update",
+            "UI_BurdJournals_Erase": "Erase",
+            "UI_BurdJournals_Close": "Close",
+            "UI_BurdJournals_Absorb": "Absorb",
+            "UI_BurdJournals_AbsorbAll": "Absorb All",
+            "UI_BurdJournals_ConfirmErase": "Are you sure you want to erase this journal? All recorded skills will be lost forever.",
+            "UI_BurdJournals_ConfirmOverwrite": "This will overwrite the existing journal contents with your current skills. Are you sure?",
+            "UI_BurdJournals_ConfirmConvert": "This will destroy the remaining rewards. Are you sure?",
+            "UI_BurdJournals_ConfirmDisassemble": "Disassemble this journal?",
+            "UI_BurdJournals_RenamePrompt": "Enter a new name for this journal:",
+            "UI_BurdJournals_ConfirmAbsorbAll": "Absorb all remaining rewards?",
+            "UI_BurdJournals_SkillCount": "%d skill",
+            "UI_BurdJournals_SkillsCount": "%d skills",
+            "UI_BurdJournals_RareTraitCount": "%d rare trait",
+            "UI_BurdJournals_RareTraitsCount": "%d rare traits",
+            "UI_BurdJournals_MaxedSkillsSkipped": "Maxed skills and known traits will be skipped.",
+            "UI_BurdJournals_NoSkillsSelected": "Select at least one skill first.",
+            "UI_BurdJournals_SkillsLogged": "Skills recorded in journal.",
+            "UI_BurdJournals_SkillsLearned": "Knowledge absorbed from the journal!",
+            "UI_BurdJournals_JournalErased": "Journal contents erased.",
+            "UI_BurdJournals_JournalCleaned": "The journal has been cleaned and is now readable.",
+            "UI_BurdJournals_JournalUpdated": "Journal skills updated.",
+            "UI_BurdJournals_JournalRenamed": "Journal renamed.",
+            "UI_BurdJournals_JournalConverted": "Journal converted to a clean blank journal.",
+            "UI_BurdJournals_JournalDissolved": "The journal crumbles in your hands...",
+            "UI_BurdJournals_ConditionPristine": "Pristine",
+            "UI_BurdJournals_ConditionGood": "Good",
+            "UI_BurdJournals_ConditionWorn": "Worn",
+            "UI_BurdJournals_ConditionDamaged": "Damaged",
+            "UI_BurdJournals_ConditionCritical": "Critical",
+            "UI_BurdJournals_RewardsRemaining": "rewards remaining",
+            "UI_BurdJournals_SkillClaimed": "CLAIMED",
+            "UI_BurdJournals_TraitAlreadyKnown": "Already Known",
+            "UI_BurdJournals_ClickToAbsorb": "Click to absorb",
+            "UI_BurdJournals_BloodyJournalHeader": "BLOODY JOURNAL",
+            "UI_BurdJournals_WornJournalHeader": "WORN JOURNAL",
+            "UI_BurdJournals_PersonalJournalHeader": "PERSONAL JOURNAL",
+            "UI_BurdJournals_RecordProgressHeader": "RECORD PROGRESS",
+            "UI_BurdJournals_RarityRare": "RARE",
+            "UI_BurdJournals_RarityUncommon": "UNCOMMON",
+            "UI_BurdJournals_BloodyFlavor": "Found on a fallen survivor...",
+            "UI_BurdJournals_WornBloodyFlavor": "Recovered from the wasteland...",
+            "UI_BurdJournals_WornFlavor": "An old survivor's notes...",
+            "UI_BurdJournals_PersonalFlavor": "Your documented survival knowledge...",
+            "UI_BurdJournals_RecordFlavor": "Document your survival skills...",
+            "UI_BurdJournals_TabSkills": "Skills",
+            "UI_BurdJournals_TabTraits": "Traits",
+            "UI_BurdJournals_TabStats": "Stats",
+            "UI_BurdJournals_TabRecipes": "Recipes",
+            "UI_BurdJournals_SearchPlaceholder": "Search...",
+            "UI_BurdJournals_ClearSearch": "Clear search",
+            "UI_BurdJournals_NoSearchResults": "No results found",
+            "UI_BurdJournals_Recipes": "RECIPES",
+            "UI_BurdJournals_RecipesAvailable": "(%d available)",
+            "UI_BurdJournals_RecipesRecordable": "(%d recordable)",
+            "UI_BurdJournals_NoRecipesRecorded": "No recipes recorded",
+            "UI_BurdJournals_NoRecipesToRecord": "No magazine recipes learned",
+            "UI_BurdJournals_NoRecipesAvailable": "No recipes available",
+            "UI_BurdJournals_RecipeAlreadyKnown": "Already known",
+            "UI_BurdJournals_RecipeClaimed": "Claimed",
+            "UI_BurdJournals_LearnedRecipe": "Learned: %s",
+            "UI_BurdJournals_AlreadyKnowRecipe": "Already know: %s",
+            "UI_BurdJournals_RecipeFromMagazine": "From: %s",
+            "UI_BurdJournals_RecipeCount": "%d recipe",
+            "UI_BurdJournals_RecipesCount": "%d recipes",
+            "UI_BurdJournals_PlusRecipe": ", +%d recipe",
+            "UI_BurdJournals_PlusRecipes": ", +%d recipes",
+            "UI_BurdJournals_RecipeAlreadyKnownCount": "%d recipe already known",
+            "UI_BurdJournals_RecipesAlreadyKnownCount": "%d recipes already known",
+            "UI_BurdJournals_Stats": "STATS",
+            "UI_BurdJournals_StatsAvailable": "(%d available)",
+            "UI_BurdJournals_StatsRecordable": "(%d recordable)",
+            "UI_BurdJournals_StatZombieKills": "Zombie Kills",
+            "UI_BurdJournals_StatZombieKillsDesc": "Total zombies killed",
+            "UI_BurdJournals_StatHoursSurvived": "Hours Survived",
+            "UI_BurdJournals_StatHoursSurvivedDesc": "Total hours alive in the apocalypse",
+            "UI_BurdJournals_StatDays": "%d days",
+            "UI_BurdJournals_StatHours": "%d hours",
+            "UI_BurdJournals_StatDaysHours": "%d days, %d hours",
+            "UI_BurdJournals_BtnAbsorbAll": "Absorb All",
+            "UI_BurdJournals_BtnClaimAll": "Claim All",
+            "UI_BurdJournals_BtnRecordAll": "Record All",
+            "UI_BurdJournals_BtnAbsorbTab": "Absorb %s",
+            "UI_BurdJournals_BtnClaimTab": "Claim %s",
+            "UI_BurdJournals_BtnRecordTab": "Record %s",
+            "UI_BurdJournals_BtnClose": "Close",
+            "UI_BurdJournals_BtnKeepReading": "Keep Reading",
+            "UI_BurdJournals_BtnCancelClose": "Cancel & Close",
+            "UI_BurdJournals_BtnQueue": "QUEUE",
+            "UI_BurdJournals_BtnClaim": "CLAIM",
+            "UI_BurdJournals_BtnRecord": "RECORD",
+            "UI_BurdJournals_StateReading": "Reading...",
+            "UI_BurdJournals_StateClaiming": "Claiming...",
+            "UI_BurdJournals_StateRecording": "Recording...",
+            "UI_BurdJournals_AlreadyReading": "Already reading...",
+            "UI_BurdJournals_AlreadyRecording": "Already recording...",
+            "UI_BurdJournals_NoNewRewards": "No new rewards to claim",
+            "UI_BurdJournals_AlreadyQueued": "Already queued",
+            "UI_BurdJournals_AlreadyAtLevel": "Already at or above this level",
+            "UI_BurdJournals_CantRecordStartingSkills": "Can't record starting skills",
+            "UI_BurdJournals_CantRecordStartingTraits": "Can't record starting traits",
+            "UI_BurdJournals_NothingNewToRecord": "Nothing new to record",
+            "UI_BurdJournals_SavingProgress": "Saving progress...",
+            "UI_BurdJournals_Queued": "Queued: %s",
+            "UI_BurdJournals_CannotRecord": "Cannot record: %s",
+            "UI_BurdJournals_SetSkillToLevel": "Set %s to recorded level",
+            "UI_BurdJournals_SkillMaxed": "%s already at or above this level",
+            "UI_BurdJournals_NoPlayer": "No player found",
+            "UI_BurdJournals_GainedTrait": "Gained trait: %s",
+            "UI_BurdJournals_FailedToAddTrait": "Failed to add trait: %s",
+            "UI_BurdJournals_BaselineReset": "Baseline reset!",
+            "UI_BurdJournals_GainedXP": "+%s %s",
+            "UI_BurdJournals_JournalSyncFailed": "Error: Journal sync failed",
+            "UI_BurdJournals_PlusTrait": ", +%d trait",
+            "UI_BurdJournals_PlusTraits": ", +%d traits",
+            "UI_BurdJournals_SkillAlreadyMaxed": "%d skill already maxed",
+            "UI_BurdJournals_SkillsAlreadyMaxed": "%d skills already maxed",
+            "UI_BurdJournals_TraitsAlreadyKnown": "%d traits already known",
+            "UI_BurdJournals_NoRewardsAvailable": "No rewards available",
+            "UI_BurdJournals_NoSkillsRecorded": "No skills recorded",
+            "UI_BurdJournals_NoRareTraits": "No rare traits found",
+            "UI_BurdJournals_NoTraitsAvailable": "No traits available",
+            "UI_BurdJournals_NoTraitsRecorded": "No traits recorded",
+            "UI_BurdJournals_NoStatsRecorded": "No stats recorded",
+            "UI_BurdJournals_NothingToRecord": "Nothing to record",
+            "UI_BurdJournals_NoSkillsToRecord": "No skills to record",
+            "UI_BurdJournals_NoTraitsToRecord": "No traits to record",
+            "UI_BurdJournals_NoStatsEnabled": "No stat recording enabled",
+            "UI_BurdJournals_NoContent": "No content",
+            "UI_BurdJournals_TraitAlreadyKnownFeedback": "You already have this trait",
+            "UI_BurdJournals_StatusAlreadyKnown": "Already known",
+            "UI_BurdJournals_StatusAlreadyClaimed": "Already claimed",
+            "UI_BurdJournals_StatusAlreadyRecorded": "Already recorded",
+            "UI_BurdJournals_StatusClaimed": "Claimed",
+            "UI_BurdJournals_RareTraitQueued": "Rare trait - Queued #%d",
+            "UI_BurdJournals_NegativeTraitQueued": "Cursed trait - Queued #%d",
+            "UI_BurdJournals_RareTraitBonus": "Rare trait bonus!",
+            "UI_BurdJournals_RareTraitBonusQueued": "Rare trait bonus! - Queued",
+            "UI_BurdJournals_NegativeTraitCurse": "Cursed knowledge...",
+            "UI_BurdJournals_NegativeTraitCurseQueued": "Cursed knowledge... - Queued",
+            "UI_BurdJournals_RecordingFor": "Recording progress for %s",
+            "UI_BurdJournals_FromNotesOf": "From the notes of %s",
+            "UI_BurdJournals_UnknownSurvivor": "Unknown Survivor",
+            "UI_BurdJournals_Unknown": "Unknown",
+            "UI_BurdJournals_YourSkills": "YOUR SKILLS",
+            "UI_BurdJournals_Skills": "SKILLS",
+            "UI_BurdJournals_Traits": "TRAITS",
+            "UI_BurdJournals_Available": "(%d available)",
+            "UI_BurdJournals_Recordable": "(%d recordable)",
+            "UI_BurdJournals_Claimable": "(%d claimable)",
+            "UI_BurdJournals_ReadingAllProgress": "Reading All: %d%% (%s remaining)",
+            "UI_BurdJournals_ReadingProgress": "Reading... %d%%",
+            "UI_BurdJournals_RecordingProgress": "Recording... %d%%",
+            "UI_BurdJournals_AbsorbingProgress": "Absorbing... %d%%",
+            "UI_BurdJournals_LearningProgress": "Learning... %d%%",
+            "UI_BurdJournals_RecordingAllProgress": "Recording All: %d%% (%s remaining)",
+            "UI_BurdJournals_ClaimingAllProgress": "Claiming All: %d%% (%s remaining)",
+            "UI_BurdJournals_AbsorbingAllProgress": "Absorbing All: %d%% (%s remaining)",
+            "UI_BurdJournals_ItemCount": "%d item",
+            "UI_BurdJournals_ItemCountPlural": "%d items",
+            "UI_BurdJournals_RewardQueued": "%d reward queued",
+            "UI_BurdJournals_RewardsQueued": "%d rewards queued",
+            "UI_BurdJournals_SummaryTotalXP": "Total: +%s XP",
+            "UI_BurdJournals_SummaryTrait": "%d trait",
+            "UI_BurdJournals_SummaryTraits": "%d traits",
+            "UI_BurdJournals_SummarySeparator": "|",
+            "UI_BurdJournals_LevelFormat": "Lv %d",
+            "UI_BurdJournals_XPFormat": "%d XP",
+            "UI_BurdJournals_XPWithBaseline": "%s XP (+%s starting)",
+            "UI_BurdJournals_StartingXP": "Starting: %s XP",
+            "UI_BurdJournals_CurrentLevel": "Current: Lv %d",
+            "UI_BurdJournals_RecordedLevel": "Recorded: Lv %d",
+            "UI_BurdJournals_RecordedXP": "Recorded: %s XP",
+            "UI_BurdJournals_RecordedWas": "%s XP (was %s)",
+            "UI_BurdJournals_SpawnedWith": "Spawned with",
+            "UI_BurdJournals_YourTrait": "Your trait",
+            "UI_BurdJournals_QueuedNumber": "Queued #%d",
+            "UI_BurdJournals_NowWas": "Now: %s (was %s)",
+            "UI_BurdJournals_RecordedValue": "Recorded: %s",
+            "UI_BurdJournals_CurrentValue": "Current: %s",
+            "UI_BurdJournals_RecordedAchieved": "Recorded: %s (achieved!)",
+            "UI_BurdJournals_RecordedVsCurrent": "Recorded: %s | Current: %s",
+            "UI_BurdJournals_CurrentQueued": "Current: %s - Queued #%d",
+            "UI_BurdJournals_SkillsRecorded": "Skills recorded!",
+            "UI_BurdJournals_JournalRebound": "Journal rebound",
+            "UI_BurdJournals_ProgressSaved": "Progress saved!",
+            "UI_BurdJournals_RecordedItem": "Recorded %s",
+            "UI_BurdJournals_RecordedItems": "Recorded %s",
+            "UI_BurdJournals_RecordedItemsMore": "Recorded %s, %s +%d more",
+            "UI_BurdJournals_ClaimedSkill": "Claimed: %s (+%s XP)",
+            "UI_BurdJournals_LearnedTrait": "Learned: %s",
+            "UI_BurdJournals_AlreadyKnowTrait": "Already know: %s",
+            "UI_BurdJournals_SkillAlreadyMaxedMsg": "%s is already maxed!",
+            "UI_BurdJournals_JournalRestored": "Journal restored!",
+            "UI_BurdJournals_JournalBound": "Journal bound!",
+            "UI_BurdJournals_Salvaged": "Salvaged: %s",
+            "UI_BurdJournals_JournalDisassembled": "Journal disassembled.",
+            "UI_BurdJournals_ConfirmCancelLearning": "Cancel learning and close?",
+            "UI_BurdJournals_RecordedTrait": "Recorded trait",
+            "UI_BurdJournals_RecordedRecipe": "Recorded recipe",
+            "UI_BurdJournals_InspectBlank": "A blank journal in %1 condition.",
+            "UI_BurdJournals_InspectFilled": "A journal written by %1. Condition: %2",
+            "UI_BurdJournals_InspectWorn": "A worn journal from %1. Condition: %2. Needs cleaning.",
+            "UI_BurdJournals_InspectBloody": "A bloody journal from a corpse. Contains skills and traits from the fallen survivor.",
+
+            // Context Menu
+            "ContextMenu_BurdJournals_OpenJournal": "Open Journal...",
+            "ContextMenu_BurdJournals_Read": "Read Journal",
+            "ContextMenu_BurdJournals_Rename": "Rename",
+            "ContextMenu_BurdJournals_EraseJournal": "Erase Journal",
+            "ContextMenu_BurdJournals_RecordProgress": "Record Progress",
+            "ContextMenu_BurdJournals_UpdateRecords": "Update Records",
+            "ContextMenu_BurdJournals_ClaimAll": "Claim All Skills",
+            "ContextMenu_BurdJournals_BindAsSurvivalJournal": "Bind as Survival Journal",
+            "ContextMenu_BurdJournals_BindAsSurvivalJournal_Missing": "Bind as Survival Journal (Missing Materials)",
+            "ContextMenu_BurdJournals_BindAsSurvivalJournal_NoTailoring": "Bind as Survival Journal (Requires Tailoring 1)",
+            "ContextMenu_BurdJournals_BloodyBlank": "Bloody Blank Journal",
+            "ContextMenu_BurdJournals_ConvertViaCrafting": "Convert to Personal Journal (Crafting)",
+            "ContextMenu_BurdJournals_WornBlank": "Worn Blank Journal",
+            "ContextMenu_BurdJournals_AbsorbAll": "Absorb All Rewards",
+            "ContextMenu_BurdJournals_ConvertToClean": "Rebind as Personal Journal",
+            "ContextMenu_BurdJournals_RecordAll": "Record All Progress",
+            "ContextMenu_BurdJournals_Disassemble": "Disassemble Journal",
+            "ContextMenu_BurdJournals_CleanRepair": "Clean/Repair",
+            "ContextMenu_BurdJournals_CleanSoap": "Clean with Soap & Cloth",
+            "ContextMenu_BurdJournals_RepairTape": "Patch with Duct Tape",
+            "ContextMenu_BurdJournals_RepairLeather": "Rebind with Leather",
+            "ContextMenu_BurdJournals_RepairGlue": "Glue Pages Together",
+            "ContextMenu_BurdJournals_CannotRead": "Cannot Read (Illiterate)",
+
+            // Tooltips
+            "Tooltip_BlankSurvivalJournal": "A blank journal ready to record your survival knowledge.",
+            "Tooltip_FilledSurvivalJournal": "A journal containing recorded survival skills. Right-click to read.",
+            "Tooltip_BurdJournals_ContainsSkills": "Contains %d skill(s) recorded",
+            "Tooltip_BurdJournals_RewardsRemaining": "rewards remaining",
+            "Tooltip_BurdJournals_SetModeDesc": "Reading will SET your XP to match recorded levels (if higher).",
+            "Tooltip_BurdJournals_NeedPen": "Requires a pen or pencil to write.",
+            "Tooltip_BurdJournals_NeedEraser": "Requires an eraser to wipe the contents.",
+            "Tooltip_BurdJournals_BloodyJournal": "Bloody Journal",
+            "Tooltip_BurdJournals_BloodyJournalDesc": "A journal from a fallen survivor. Contains skills and traits that can be absorbed.",
+            "Tooltip_BurdJournals_BloodyDesc": "Rare find! May contain valuable traits.",
+            "Tooltip_BurdJournals_ConvertBloodyToClean": "Convert to Clean Journal",
+            "Tooltip_BurdJournals_ConvertBloodyToCleanDesc": "Use crafting to convert this bloody journal to a clean personal journal.",
+            "Tooltip_BurdJournals_ConvertBloodyDesc": "Open the crafting menu (B) to find 'Clean and Convert Bloody Journal'.",
+            "Tooltip_BurdJournals_CraftingRequired": "Crafting Required",
+            "Tooltip_BurdJournals_WornJournal": "Worn Journal",
+            "Tooltip_BurdJournals_NeedsCleaning": "This journal is too worn to read.",
+            "Tooltip_BurdJournals_NeedsCleaningDesc": "Use soap and cloth to clean it, duct tape to patch it, or leather strips to rebind it.",
+            "Tooltip_BurdJournals_AbsorbAll": "Absorb All",
+            "Tooltip_BurdJournals_AbsorbAllDesc": "Claim all remaining skills and traits at once. Journal will dissolve.",
+            "Tooltip_BurdJournals_AbsorbAllRewards": "Absorb All Rewards",
+            "Tooltip_BurdJournals_AbsorbAllSkillsTraits": "Absorb All (%d skills, %d traits)",
+            "Tooltip_BurdJournals_AbsorbAllSkills": "Absorb All (%d skills)",
+            "Tooltip_BurdJournals_PersonalJournal": "Personal Survival Journal",
+            "Tooltip_BurdJournals_BlankJournal": "Blank Survival Journal",
+            "Tooltip_BurdJournals_BlankJournalDesc": "Opens the journal to record your survival progress.",
+            "Tooltip_BurdJournals_RecordProgress": "Record Your Progress",
+            "Tooltip_BurdJournals_RecordProgressDesc": "Opens journal to record your current skills and traits.",
+            "Tooltip_BurdJournals_ClaimAll": "Claim All Skills",
+            "Tooltip_BurdJournals_ClaimAllDesc": "Opens journal and claims all available skills.",
+            "Tooltip_BurdJournals_UpdateRecords": "Update Journal Records",
+            "Tooltip_BurdJournals_UpdateRecordsDesc": "Opens journal to update your recorded skills.",
+            "Tooltip_BurdJournals_Disassemble": "Disassemble Journal",
+            "Tooltip_BurdJournals_DisassembleDesc": "Tear apart this journal for materials.",
+            "Tooltip_BurdJournals_EraseContents": "Erase All Contents",
+            "Tooltip_BurdJournals_EraseContentsDesc": "Erases all recorded data, returning the journal to a blank state.",
+            "Tooltip_BurdJournals_SkillsAvailable": "Skills: %d/%d available",
+            "Tooltip_BurdJournals_TraitsAvailable": "Traits: %d/%d available",
+            "Tooltip_BurdJournals_NoRewardsFound": "No rewards found",
+            "Tooltip_BurdJournals_WrittenBy": "Written by: %s",
+            "Tooltip_BurdJournals_RecordedItem": "Contains %d recorded item",
+            "Tooltip_BurdJournals_RecordedItems": "Contains %d recorded items",
+            "Tooltip_BurdJournals_ClaimableRewards": "Claimable rewards:",
+            "Tooltip_BurdJournals_SkillCount": "- %d skill",
+            "Tooltip_BurdJournals_SkillsCount": "- %d skills",
+            "Tooltip_BurdJournals_TraitCount": "- %d trait",
+            "Tooltip_BurdJournals_TraitsCount": "- %d traits",
+            "Tooltip_BurdJournals_AvailableSkill": "Available: %d skill",
+            "Tooltip_BurdJournals_AvailableSkills": "Available: %d skills",
+            "Tooltip_BurdJournals_AndTrait": ", %d trait",
+            "Tooltip_BurdJournals_AndTraits": ", %d traits",
+            "Tooltip_BurdJournals_ReadingSpeedNote": "This will take time based on your reading speed.",
+            "Tooltip_BurdJournals_NoNewRewards": "No new rewards available.",
+            "Tooltip_BurdJournals_ClaimingInfo": "Claiming sets your XP to the recorded level (if higher).",
+            "Tooltip_BurdJournals_ViewOnly": "View only",
+            "Tooltip_BurdJournals_CannotClaimDefault": "Cannot claim from this journal.",
+            "Tooltip_BurdJournals_CannotClaim": "Cannot Claim",
+            "Tooltip_BurdJournals_NoPermissionClaim": "You don't have permission to claim from this journal.",
+            "Tooltip_BurdJournals_CannotOpen": "Cannot Open",
+            "Tooltip_BurdJournals_ConvertToClean": "Rebind as Personal Survival Journal",
+            "Tooltip_BurdJournals_ConvertToCleanDesc": "Rebind this worn journal into a clean blank survival journal for personal use.",
+            "Tooltip_BurdJournals_CannotConvert": "Cannot Convert",
+            "Tooltip_BurdJournals_NeedsConvertMaterials": "Requires: Leather Strips + Thread + Needle + Tailoring Lv1",
+            "Tooltip_BurdJournals_MissingMaterials": "Missing Materials",
+            "Tooltip_BurdJournals_NeedsSoapCloth": "Requires: Soap + Ripped Sheets or Dish Cloth",
+            "Tooltip_BurdJournals_NeedsTape": "Requires: Duct Tape",
+            "Tooltip_BurdJournals_NeedsLeatherBinding": "Requires: Leather Strips + Thread + Needle",
+            "Tooltip_BurdJournals_NeedsGluePaper": "Requires: Glue + Sheet of Paper",
+            "Tooltip_BurdJournals_IlliterateName": "Illiterate",
+            "Tooltip_BurdJournals_IlliterateDesc": "You cannot read or write. Journals are useless to you.",
+            "Tooltip_BurdJournals_Owner": "Owner: %s",
+            "Tooltip_BurdJournals_OwnerYou": "(You)",
+            "Tooltip_BurdJournals_Author": "Author: %s",
+            "Tooltip_BurdJournals_Profession": "Profession: %s",
+            "Tooltip_BurdJournals_SkillsLine": "Skills: %d/%d",
+            "Tooltip_BurdJournals_SkillsLineXP": "Skills: %d/%d (%s XP)",
+            "Tooltip_BurdJournals_AllClaimed": "(all claimed)",
+            "Tooltip_BurdJournals_TraitsLine": "Traits: %d/%d",
+            "Tooltip_BurdJournals_ConditionBloody": "Condition: Bloody",
+            "Tooltip_BurdJournals_ConditionWorn": "Condition: Worn",
+            "Tooltip_BurdJournals_ConditionRestored": "Condition: Restored",
+            "Tooltip_BurdJournals_ConditionClean": "Condition: Clean",
+            "Tooltip_BurdJournals_OriginZombie": "Origin: Recovered from zombie",
+            "Tooltip_BurdJournals_OriginWorld": "Origin: Found in world",
+            "Tooltip_BurdJournals_OriginCrafted": "Origin: Crafted",
+            "Tooltip_BurdJournals_OriginFound": "Origin: Found",
+            "Tooltip_BurdJournals_OriginPersonal": "Origin: Personal",
+            "Tooltip_BurdJournals_Created": "Created: %s",
+            "Tooltip_BurdJournals_LastUpdated": "Last Updated: %s",
+            "Tooltip_BurdJournals_AgeToday": "Today",
+            "Tooltip_BurdJournals_Age1Day": "1 day ago",
+            "Tooltip_BurdJournals_AgeDays": "%d days ago",
+
+            // Items
+            "DisplayName_BlankSurvivalJournal": "Blank Survival Journal",
+            "DisplayName_BlankSurvivalJournal_Worn": "Worn Blank Journal",
+            "DisplayName_BlankSurvivalJournal_Bloody": "Bloody Blank Journal",
+            "DisplayName_FilledSurvivalJournal": "Filled Survival Journal",
+            "DisplayName_FilledSurvivalJournal_Worn": "Worn Survival Journal",
+            "DisplayName_FilledSurvivalJournal_Bloody": "Bloody Survival Journal",
+
+            // Recipes
+            "Recipe_ConvertJournalToSurvivalJournal": "Convert to Survival Journal",
+            "Recipe_ConvertNotebookToSurvivalJournal": "Bind Notebook as Journal",
+            "Recipe_CraftBlankSurvivalJournal": "Craft Survival Journal",
+            "Recipe_RestoreWornBlankJournal": "Restore Worn Journal",
+            "Recipe_CleanBloodyBlankJournal": "Clean Bloody Blank Journal",
+            "Recipe_CleanBloodyFilledToClean": "Clean and Convert Bloody Journal",
+            "Recipe_DisassembleBlankJournal": "Disassemble Blank Journal"
+        };
+
+        // User translations storage
+        let userTranslations = {};
+
+        // Initialize the app
+        function init() {
+            // Categorize keys
+            for (const [key, value] of Object.entries(englishData)) {
+                let category = 'ui';
+                if (key.startsWith('Sandbox_')) category = 'sandbox';
+                else if (key.startsWith('ContextMenu_')) category = 'contextmenu';
+                else if (key.startsWith('Tooltip_')) category = 'tooltip';
+                else if (key.startsWith('DisplayName_')) category = 'items';
+                else if (key.startsWith('Recipe_')) category = 'recipes';
+
+                translationData[category].keys[key] = value;
+            }
+
+            // Load saved translations from localStorage
+            const saved = localStorage.getItem('bsjTranslations');
+            if (saved) {
+                userTranslations = JSON.parse(saved);
+            }
+
+            const savedLang = localStorage.getItem('bsjLangCode');
+            if (savedLang) {
+                document.getElementById('langCode').value = savedLang;
+            }
+
+            const savedLangName = localStorage.getItem('bsjLangName');
+            if (savedLangName) {
+                document.getElementById('langName').value = savedLangName;
+            }
+
+            renderTranslations();
+            setupEventListeners();
+            updateProgress();
+            buildTOC();
+        }
+
+        // Render translation interface
+        function renderTranslations() {
+            const container = document.getElementById('translationContent');
+            const filterCategory = document.getElementById('filterCategory').value;
+            const filterStatus = document.getElementById('filterStatus').value;
+
+            let html = '';
+
+            for (const [catId, catData] of Object.entries(translationData)) {
+                if (filterCategory !== 'all' && filterCategory !== catId) continue;
+
+                const keys = Object.entries(catData.keys);
+                if (keys.length === 0) continue;
+
+                const filledCount = keys.filter(([k]) => userTranslations[k] && userTranslations[k].trim()).length;
+
+                html += `
+                    <div class="category" data-category="${catId}">
+                        <div class="category-header" onclick="toggleCategory('${catId}')">
+                            <h2>
+                                ${catData.name}
+                                <span class="file-badge">${catData.file}_XX.txt</span>
+                            </h2>
+                            <div>
+                                <span class="count">${filledCount}/${keys.length} translated</span>
+                                <span class="toggle">&#9660;</span>
+                            </div>
+                        </div>
+                        <div class="category-content">
+                `;
+
+                for (const [key, englishValue] of keys) {
+                    const hasTranslation = userTranslations[key] && userTranslations[key].trim();
+
+                    if (filterStatus === 'empty' && hasTranslation) continue;
+                    if (filterStatus === 'filled' && !hasTranslation) continue;
+
+                    const hasPlaceholder = /%[sd1-9]/.test(englishValue);
+                    const placeholderHint = hasPlaceholder ?
+                        `<div class="placeholder-hint">Keep placeholders: ${englishValue.match(/%[sd1-9]+/g)?.join(', ') || ''}</div>` : '';
+
+                    html += `
+                        <div class="translation-row">
+                            <div class="key-cell">${key}</div>
+                            <div class="english-cell">${escapeHtml(englishValue)}</div>
+                            <div class="translation-cell ${hasPlaceholder ? 'has-placeholder' : ''}">
+                                <textarea
+                                    data-key="${key}"
+                                    class="${hasTranslation ? 'filled' : ''}"
+                                    placeholder="Enter translation..."
+                                    oninput="updateTranslation(this)"
+                                >${escapeHtml(userTranslations[key] || '')}</textarea>
+                                ${placeholderHint}
+                            </div>
+                        </div>
+                    `;
+                }
+
+                html += `
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        // Toggle category collapse
+        function toggleCategory(catId) {
+            const cat = document.querySelector(`.category[data-category="${catId}"]`);
+            cat.classList.toggle('collapsed');
+        }
+
+        // Update translation
+        function updateTranslation(textarea) {
+            const key = textarea.dataset.key;
+            userTranslations[key] = textarea.value;
+            textarea.classList.toggle('filled', textarea.value.trim() !== '');
+
+            // Save to localStorage
+            localStorage.setItem('bsjTranslations', JSON.stringify(userTranslations));
+
+            // Save language code
+            const langCode = document.getElementById('langCode').value;
+            localStorage.setItem('bsjLangCode', langCode);
+            localStorage.setItem('bsjLangName', document.getElementById('langName').value);
+
+            updateProgress();
+        }
+
+        // Update progress bar
+        function updateProgress() {
+            const total = Object.keys(englishData).length;
+            const filled = Object.values(userTranslations).filter(v => v && v.trim()).length;
+            const percent = Math.round((filled / total) * 100);
+
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            progressFill.style.width = percent + '%';
+            progressText.textContent = `${filled}/${total} (${percent}%)`;
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            document.getElementById('filterCategory').addEventListener('change', renderTranslations);
+            document.getElementById('filterStatus').addEventListener('change', renderTranslations);
+            document.getElementById('langCode').addEventListener('input', () => {
+                localStorage.setItem('bsjLangCode', document.getElementById('langCode').value);
+            });
+            document.getElementById('langName').addEventListener('input', () => {
+                localStorage.setItem('bsjLangName', document.getElementById('langName').value);
+            });
+
+            // Scroll spy for TOC
+            window.addEventListener('scroll', updateTOCHighlight);
+        }
+
+        // Build Table of Contents
+        function buildTOC() {
+            const tocList = document.getElementById('tocList');
+            let html = '';
+
+            for (const [catId, catData] of Object.entries(translationData)) {
+                const keyCount = Object.keys(catData.keys).length;
+                if (keyCount === 0) continue;
+
+                html += `
+                    <li>
+                        <a href="#" data-cat="${catId}" onclick="scrollToCategory('${catId}'); return false;">
+                            ${catData.name}
+                            <span class="toc-count">${keyCount}</span>
+                        </a>
+                    </li>
+                `;
+            }
+
+            tocList.innerHTML = html;
+        }
+
+        // Scroll to category
+        function scrollToCategory(catId) {
+            const category = document.querySelector(`.category[data-category="${catId}"]`);
+            if (category) {
+                // Expand if collapsed
+                if (category.classList.contains('collapsed')) {
+                    category.classList.remove('collapsed');
+                }
+                // Scroll to it
+                const headerOffset = 100;
+                const elementPosition = category.getBoundingClientRect().top;
+                const offsetPosition = elementPosition + window.pageYOffset - headerOffset;
+
+                window.scrollTo({
+                    top: offsetPosition,
+                    behavior: 'smooth'
+                });
+            }
+        }
+
+        // Update TOC highlight based on scroll position
+        function updateTOCHighlight() {
+            const categories = document.querySelectorAll('.category');
+            const tocLinks = document.querySelectorAll('.toc-list a');
+            const scrollPos = window.scrollY + 150;
+
+            let currentCat = null;
+
+            categories.forEach(cat => {
+                const top = cat.offsetTop;
+                const bottom = top + cat.offsetHeight;
+
+                if (scrollPos >= top && scrollPos < bottom) {
+                    currentCat = cat.dataset.category;
+                }
+            });
+
+            tocLinks.forEach(link => {
+                link.classList.toggle('active', link.dataset.cat === currentCat);
+            });
+        }
+
+        // Clear all translations
+        function clearAll() {
+            if (confirm('Are you sure you want to clear all translations? This cannot be undone.')) {
+                userTranslations = {};
+                localStorage.removeItem('bsjTranslations');
+                renderTranslations();
+                updateProgress();
+            }
+        }
+
+        // Load from file
+        function loadFromFile() {
+            document.getElementById('fileInput').click();
+        }
+
+        // Handle file import
+        function handleFileImport(event) {
+            const files = event.target.files;
+            for (const file of files) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const content = e.target.result;
+                    parseTranslationFile(content);
+                };
+                reader.readAsText(file);
+            }
+            event.target.value = '';
+        }
+
+        // Parse translation file (supports both Lua and JSON template formats)
+        function parseTranslationFile(content) {
+            // Try JSON template format first
+            try {
+                const json = JSON.parse(content);
+                if (json.translations) {
+                    // JSON template format from Export Template
+                    for (const [key, value] of Object.entries(json.translations)) {
+                        if (englishData.hasOwnProperty(key)) {
+                            userTranslations[key] = value;
+                        }
+                    }
+                    // Also restore langCode/langName if present
+                    if (json._meta && json._meta.langCode && json._meta.langCode !== 'XX') {
+                        document.getElementById('langCode').value = json._meta.langCode;
+                        localStorage.setItem('bsjLangCode', json._meta.langCode);
+                    }
+                    if (json._meta && json._meta.langName) {
+                        document.getElementById('langName').value = json._meta.langName;
+                        localStorage.setItem('bsjLangName', json._meta.langName);
+                    }
+                    localStorage.setItem('bsjTranslations', JSON.stringify(userTranslations));
+                    renderTranslations();
+                    updateProgress();
+                    return;
+                }
+            } catch (e) {
+                // Not JSON, try Lua format
+            }
+
+            // Lua format: Match key = "value" patterns
+            const regex = /(\w+)\s*=\s*"([^"]*)"/g;
+            let match;
+            while ((match = regex.exec(content)) !== null) {
+                const key = match[1];
+                const value = match[2];
+                if (englishData.hasOwnProperty(key)) {
+                    userTranslations[key] = value;
+                }
+            }
+            localStorage.setItem('bsjTranslations', JSON.stringify(userTranslations));
+            renderTranslations();
+            updateProgress();
+        }
+
+        // Show export modal
+        function showExportModal() {
+            const langCode = document.getElementById('langCode').value.toUpperCase() || 'XX';
+            const modal = document.getElementById('exportModal');
+            const fileSelector = document.getElementById('fileSelector');
+            const tabs = document.getElementById('exportTabs');
+
+            // Build file selector
+            let selectorHtml = '';
+            let tabsHtml = '';
+            let first = true;
+
+            for (const [catId, catData] of Object.entries(translationData)) {
+                const keys = Object.keys(catData.keys);
+                const filledCount = keys.filter(k => userTranslations[k] && userTranslations[k].trim()).length;
+                if (filledCount === 0) continue;
+
+                selectorHtml += `
+                    <label>
+                        <input type="checkbox" value="${catId}" checked>
+                        ${catData.file}_${langCode}.txt (${filledCount})
+                    </label>
+                `;
+
+                tabsHtml += `
+                    <button class="export-tab ${first ? 'active' : ''}" onclick="showExportFile('${catId}')" data-cat="${catId}">
+                        ${catData.file}
+                    </button>
+                `;
+
+                first = false;
+            }
+
+            fileSelector.innerHTML = selectorHtml;
+            tabs.innerHTML = tabsHtml;
+
+            // Show first file
+            const firstCat = Object.keys(translationData).find(catId => {
+                const keys = Object.keys(translationData[catId].keys);
+                return keys.some(k => userTranslations[k] && userTranslations[k].trim());
+            });
+            if (firstCat) showExportFile(firstCat);
+
+            modal.classList.add('active');
+        }
+
+        // Show export file content
+        function showExportFile(catId) {
+            const tabs = document.querySelectorAll('.export-tab');
+            tabs.forEach(t => t.classList.toggle('active', t.dataset.cat === catId));
+
+            const content = document.getElementById('exportContent');
+            content.textContent = generateFileContent(catId);
+        }
+
+        // Generate file content
+        function generateFileContent(catId) {
+            const langCode = document.getElementById('langCode').value.toUpperCase() || 'XX';
+            const catData = translationData[catId];
+            const tableName = `${catData.file}_${langCode}`;
+
+            let lines = [`${tableName} = {`];
+
+            for (const [key, englishValue] of Object.entries(catData.keys)) {
+                const translation = userTranslations[key];
+                if (translation && translation.trim()) {
+                    // Escape quotes in translation
+                    const escaped = translation.replace(/"/g, '\\"');
+                    lines.push(`    ${key} = "${escaped}",`);
+                }
+            }
+
+            lines.push('}');
+            return lines.join('\n');
+        }
+
+        // Close export modal
+        function closeExportModal() {
+            document.getElementById('exportModal').classList.remove('active');
+        }
+
+        // Copy to clipboard
+        function copyToClipboard() {
+            const content = document.getElementById('exportContent').textContent;
+            navigator.clipboard.writeText(content).then(() => {
+                alert('Copied to clipboard!');
+            });
+        }
+
+        // Download selected files
+        function downloadSelected() {
+            const langCode = document.getElementById('langCode').value.toUpperCase() || 'XX';
+            const checkboxes = document.querySelectorAll('#fileSelector input:checked');
+
+            checkboxes.forEach(cb => {
+                const catId = cb.value;
+                const catData = translationData[catId];
+                const filename = `${catData.file}_${langCode}.txt`;
+                const content = generateFileContent(catId);
+
+                downloadFile(filename, content);
+            });
+        }
+
+        // Download all as zip (simplified - just downloads individual files)
+        function downloadAll() {
+            downloadSelected();
+        }
+
+        // Export English template for translation
+        function exportTemplate() {
+            // Generate a JSON file with all English strings that can be imported later
+            const template = {
+                _meta: {
+                    name: "Burd's Survival Journals Translation Template",
+                    version: "2.1",
+                    instructions: "Fill in translations and import back into the tool, or use as reference",
+                    langCode: "XX",
+                    langName: "Your Language Name"
+                },
+                translations: {}
+            };
+
+            // Add all English values as starting point
+            for (const [key, value] of Object.entries(englishData)) {
+                template.translations[key] = value;
+            }
+
+            const content = JSON.stringify(template, null, 2);
+            downloadFile('BSJ_Translation_Template.json', content);
+        }
+
+        // Download helper
+        function downloadFile(filename, content) {
+            const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

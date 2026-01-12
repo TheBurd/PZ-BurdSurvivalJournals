@@ -4,6 +4,11 @@ UI_EN = {
     UI_BurdJournals_FilledJournal = "Filled Survival Journal",
     UI_BurdJournals_WornJournal = "Worn Survival Journal",
     UI_BurdJournals_BloodyJournal = "Bloody Survival Journal",
+
+    -- Journal Name States (for dynamic item names)
+    UI_BurdJournals_StateWorn = "Worn",
+    UI_BurdJournals_StateBloody = "Bloody",
+    UI_BurdJournals_PreviousProfession = "Previous %s",
     
     -- Journal Info
     UI_BurdJournals_Author = "Author",
@@ -158,15 +163,28 @@ UI_EN = {
     -- Headers
     UI_BurdJournals_YourSkills = "YOUR SKILLS",
     UI_BurdJournals_Skills = "SKILLS",
+    UI_BurdJournals_Traits = "TRAITS",
     UI_BurdJournals_Available = "(%d available)",
     UI_BurdJournals_Recordable = "(%d recordable)",
+    UI_BurdJournals_Claimable = "(%d claimable)",
 
     -- Progress Format
     UI_BurdJournals_ReadingAllProgress = "Reading All: %d%% (%s remaining)",
     UI_BurdJournals_ReadingProgress = "Reading... %d%%",
     UI_BurdJournals_RecordingProgress = "Recording... %d%%",
+    UI_BurdJournals_AbsorbingProgress = "Absorbing... %d%%",
+    UI_BurdJournals_LearningProgress = "Learning... %d%%",
+    UI_BurdJournals_RecordingAllProgress = "Recording All: %d%% (%s remaining)",
+    UI_BurdJournals_ClaimingAllProgress = "Claiming All: %d%% (%s remaining)",
+    UI_BurdJournals_AbsorbingAllProgress = "Absorbing All: %d%% (%s remaining)",
     UI_BurdJournals_ItemCount = "%d item",
     UI_BurdJournals_ItemCountPlural = "%d items",
+    UI_BurdJournals_RewardQueued = "%d reward queued",
+    UI_BurdJournals_RewardsQueued = "%d rewards queued",
+    UI_BurdJournals_SummaryTotalXP = "Total: +%s XP",
+    UI_BurdJournals_SummaryTrait = "%d trait",
+    UI_BurdJournals_SummaryTraits = "%d traits",
+    UI_BurdJournals_SummarySeparator = "  |  ",
 
     -- Skill/Trait Row Labels
     UI_BurdJournals_LevelFormat = "Lv %d",
@@ -247,4 +265,21 @@ UI_EN = {
     UI_BurdJournals_PlusRecipes = ", +%d recipes",
     UI_BurdJournals_RecipeAlreadyKnownCount = "%d recipe already known",
     UI_BurdJournals_RecipesAlreadyKnownCount = "%d recipes already known",
+
+    -- Stats Tab
+    UI_BurdJournals_Stats = "STATS",
+    UI_BurdJournals_StatsAvailable = "(%d available)",
+    UI_BurdJournals_StatsRecordable = "(%d recordable)",
+    UI_BurdJournals_StatZombieKills = "Zombie Kills",
+    UI_BurdJournals_StatZombieKillsDesc = "Total zombies killed",
+    UI_BurdJournals_StatHoursSurvived = "Hours Survived",
+    UI_BurdJournals_StatHoursSurvivedDesc = "Total hours alive in the apocalypse",
+    UI_BurdJournals_StatDays = "%d days",
+    UI_BurdJournals_StatHours = "%d hours",
+    UI_BurdJournals_StatDaysHours = "%d days, %d hours",
+
+    -- Dialog strings
+    UI_BurdJournals_ConfirmCancelLearning = "Cancel learning and close?",
+    UI_BurdJournals_RecordedTrait = "Recorded trait",
+    UI_BurdJournals_RecordedRecipe = "Recorded recipe",
 }
