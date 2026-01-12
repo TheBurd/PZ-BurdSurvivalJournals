@@ -65,6 +65,13 @@ Sandbox_CN = {
     Sandbox_BurdJournals_EnableBaselineRestriction = "仅记录游戏获得的进度",
     Sandbox_BurdJournals_EnableBaselineRestriction_tooltip = "启用后，日志仅记录通过游戏玩法获得的经验值——不包括职业初始加成或特质带来的技能提升。该设置可防止玩家通过创建多个角色刷取职业技能的漏洞，推荐在多人服务器中开启。",
 
+    -- Recipe Recording
+    Sandbox_BurdJournals_EnableRecipeRecording = "启用配方记录功能",
+    Sandbox_BurdJournals_EnableRecipeRecording_tooltip = "允许玩家在日志中记录从杂志学会的配方。杂志配方可与他人分享。",
+
+    Sandbox_BurdJournals_LearningTimePerRecipe = "单个配方学习耗时（秒）",
+    Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "从日志中学习每个配方的基础耗时（秒）。",
+
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
     -- ============================================================
