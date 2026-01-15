@@ -31,11 +31,11 @@ local function formatAge(timestamp)
     local ageDays = math.floor(ageHours / 24)
 
     if ageDays == 0 then
-        return "Today"
+        return getText("Tooltip_BurdJournals_AgeToday") or "Today"
     elseif ageDays == 1 then
-        return "1 day ago"
+        return getText("Tooltip_BurdJournals_Age1Day") or "1 day ago"
     else
-        return ageDays .. " days ago"
+        return string.format(getText("Tooltip_BurdJournals_AgeDays") or "%d days ago", ageDays)
     end
 end
 
@@ -91,10 +91,12 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     if journalData.ownerUsername then
         local ownerText = journalData.ownerUsername
         if isCurrentPlayerOwner(journalData) then
-            ownerText = ownerText .. " (You)"
-            table.insert(lines, {text = "Owner: " .. ownerText, color = {r=0.4, g=0.8, b=1.0}})
+            ownerText = ownerText .. " " .. (getText("Tooltip_BurdJournals_OwnerYou") or "(You)")
+            local ownerLine = string.format(getText("Tooltip_BurdJournals_Owner") or "Owner: %s", ownerText)
+            table.insert(lines, {text = ownerLine, color = {r=0.4, g=0.8, b=1.0}})
         else
-            table.insert(lines, {text = "Owner: " .. ownerText, color = {r=0.7, g=0.7, b=0.9}})
+            local ownerLine = string.format(getText("Tooltip_BurdJournals_Owner") or "Owner: %s", ownerText)
+            table.insert(lines, {text = ownerLine, color = {r=0.7, g=0.7, b=0.9}})
         end
     end
 
@@ -106,13 +108,15 @@ function BurdJournals.Tooltips.getExtraInfo(item)
             showAuthor = false  -- Don't duplicate if same
         end
         if showAuthor then
-            table.insert(lines, {text = "Author: " .. journalData.author, color = {r=0.8, g=0.8, b=0.6}})
+            local authorLine = string.format(getText("Tooltip_BurdJournals_Author") or "Author: %s", journalData.author)
+            table.insert(lines, {text = authorLine, color = {r=0.8, g=0.8, b=0.6}})
         end
     end
 
     -- Profession info (for found journals)
     if journalData.professionName then
-        table.insert(lines, {text = "Profession: " .. journalData.professionName, color = {r=0.7, g=0.7, b=0.7}})
+        local profLine = string.format(getText("Tooltip_BurdJournals_Profession") or "Profession: %s", journalData.professionName)
+        table.insert(lines, {text = profLine, color = {r=0.7, g=0.7, b=0.7}})
     end
 
     -- ==================== CONTENTS INFO ====================
@@ -145,24 +149,51 @@ function BurdJournals.Tooltips.getExtraInfo(item)
 
     -- Skills line
     if skillCount > 0 then
-        local skillText = "Skills: " .. unclaimedSkills .. "/" .. skillCount
+        local skillText
         if unclaimedSkills > 0 and BurdJournals.formatXP then
-            skillText = skillText .. " (" .. BurdJournals.formatXP(totalXP) .. " XP)"
+            skillText = string.format(getText("Tooltip_BurdJournals_SkillsLineXP") or "Skills: %d/%d (%s XP)", unclaimedSkills, skillCount, BurdJournals.formatXP(totalXP))
             table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
         elseif unclaimedSkills > 0 then
+            skillText = string.format(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
             table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
         else
-            table.insert(lines, {text = skillText .. " (all claimed)", color = {r=0.5, g=0.5, b=0.5}})
+            skillText = string.format(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
+            skillText = skillText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+            table.insert(lines, {text = skillText, color = {r=0.5, g=0.5, b=0.5}})
         end
     end
 
     -- Traits line
     if traitCount > 0 then
-        local traitText = "Traits: " .. unclaimedTraits .. "/" .. traitCount
+        local traitText = string.format(getText("Tooltip_BurdJournals_TraitsLine") or "Traits: %d/%d", unclaimedTraits, traitCount)
         if unclaimedTraits > 0 then
             table.insert(lines, {text = traitText, color = {r=0.9, g=0.7, b=0.3}})
         else
-            table.insert(lines, {text = traitText .. " (all claimed)", color = {r=0.5, g=0.5, b=0.5}})
+            traitText = traitText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+            table.insert(lines, {text = traitText, color = {r=0.5, g=0.5, b=0.5}})
+        end
+    end
+
+    -- Count recipes
+    local recipeCount = 0
+    local unclaimedRecipes = 0
+    if journalData.recipes then
+        for recipeName, _ in pairs(journalData.recipes) do
+            recipeCount = recipeCount + 1
+            if not journalData.claimedRecipes or not journalData.claimedRecipes[recipeName] then
+                unclaimedRecipes = unclaimedRecipes + 1
+            end
+        end
+    end
+
+    -- Recipes line
+    if recipeCount > 0 then
+        local recipeText = string.format(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
+        if unclaimedRecipes > 0 then
+            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})  -- Teal/cyan for recipes
+        else
+            recipeText = recipeText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.5, b=0.5}})
         end
     end
 
@@ -173,16 +204,16 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     local conditionColor = nil
 
     if journalData.isBloody then
-        conditionText = "Condition: Bloody"
+        conditionText = getText("Tooltip_BurdJournals_ConditionBloody") or "Condition: Bloody"
         conditionColor = {r=0.8, g=0.2, b=0.2}
     elseif journalData.isWorn then
-        conditionText = "Condition: Worn"
+        conditionText = getText("Tooltip_BurdJournals_ConditionWorn") or "Condition: Worn"
         conditionColor = {r=0.7, g=0.5, b=0.3}
     elseif journalData.wasRestored then
-        conditionText = "Condition: Restored"
+        conditionText = getText("Tooltip_BurdJournals_ConditionRestored") or "Condition: Restored"
         conditionColor = {r=0.6, g=0.7, b=0.5}
     else
-        conditionText = "Condition: Clean"
+        conditionText = getText("Tooltip_BurdJournals_ConditionClean") or "Condition: Clean"
         conditionColor = {r=0.5, g=0.8, b=0.5}
     end
 
@@ -195,20 +226,20 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     local originColor = {r=0.6, g=0.6, b=0.6}
 
     if journalData.wasFromBloody or journalData.sourceType == "zombie" then
-        originText = "Origin: Recovered from zombie"
+        originText = getText("Tooltip_BurdJournals_OriginZombie") or "Origin: Recovered from zombie"
         originColor = {r=0.6, g=0.4, b=0.3}
     elseif journalData.sourceType == "world" then
-        originText = "Origin: Found in world"
+        originText = getText("Tooltip_BurdJournals_OriginWorld") or "Origin: Found in world"
         originColor = {r=0.5, g=0.5, b=0.6}
     elseif journalData.sourceType == "crafted" then
-        originText = "Origin: Crafted"
+        originText = getText("Tooltip_BurdJournals_OriginCrafted") or "Origin: Crafted"
         originColor = {r=0.5, g=0.6, b=0.5}
     elseif not journalData.ownerUsername and journalData.author then
         -- Legacy journal or found journal
-        originText = "Origin: Found"
+        originText = getText("Tooltip_BurdJournals_OriginFound") or "Origin: Found"
         originColor = {r=0.5, g=0.5, b=0.6}
     elseif isCurrentPlayerOwner(journalData) then
-        originText = "Origin: Personal"
+        originText = getText("Tooltip_BurdJournals_OriginPersonal") or "Origin: Personal"
         originColor = {r=0.3, g=0.6, b=0.8}
     end
 
@@ -222,12 +253,14 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     if journalData.timestamp then
         local ageText = formatAge(journalData.timestamp)
         if ageText then
-            table.insert(lines, {text = "Created: " .. ageText, color = {r=0.6, g=0.6, b=0.6}})
+            local createdLine = string.format(getText("Tooltip_BurdJournals_Created") or "Created: %s", ageText)
+            table.insert(lines, {text = createdLine, color = {r=0.6, g=0.6, b=0.6}})
         end
     elseif journalData.lastUpdated then
         local ageText = formatAge(journalData.lastUpdated)
         if ageText then
-            table.insert(lines, {text = "Last Updated: " .. ageText, color = {r=0.6, g=0.6, b=0.6}})
+            local updatedLine = string.format(getText("Tooltip_BurdJournals_LastUpdated") or "Last Updated: %s", ageText)
+            table.insert(lines, {text = updatedLine, color = {r=0.6, g=0.6, b=0.6}})
         end
     end
 
@@ -236,17 +269,17 @@ end
 
 -- ==================== TOOLTIP HOOK ====================
 -- Hook into ISToolTipInv to add extra lines for journal items
--- ISToolTipInv.render() sets self.height from ObjectTooltip dimensions THEN draws background.
--- We need to draw our own background extension after the original render completes.
+-- Note: ISToolTipInv uses self:drawRect/self:drawText, not self.tooltip
 
 local originalRender = ISToolTipInv.render
 
 ISToolTipInv.render = function(self)
-    -- Call original render first (this draws the base tooltip)
+    -- Call original render first
     originalRender(self)
 
-    -- Check if we have a journal item
+    -- Check if we have a valid journal item
     if not self.item then return end
+    if not self.item.getFullType then return end  -- Ensure method exists
 
     local fullType = self.item:getFullType()
     if not fullType or not string.find(fullType, "BurdJournals") then
@@ -263,34 +296,11 @@ ISToolTipInv.render = function(self)
     local font = UIFont.Small
     local lineHeight = getTextManager():getFontHeight(font) + 2
 
-    -- Calculate extra height needed
-    local extraHeight = (#extraLines * lineHeight) + 12
+    -- Calculate starting Y position (after the existing tooltip content)
+    local startY = self:getHeight() + 5
 
-    -- The original tooltip height (what was just rendered)
-    local originalHeight = self:getHeight()
-
-    -- Draw background extension for our extra content
-    -- Use same colors as the original tooltip background
-    local bgColor = self.backgroundColor
-    local borderColor = self.borderColor
-
-    -- Draw background extension (starting where original ended)
-    self:drawRect(0, originalHeight, self:getWidth(), extraHeight, bgColor.a, bgColor.r, bgColor.g, bgColor.b)
-
-    -- Draw border on the sides and bottom of our extension
-    -- Left border
-    self:drawRect(0, originalHeight, 1, extraHeight, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
-    -- Right border
-    self:drawRect(self:getWidth() - 1, originalHeight, 1, extraHeight, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
-    -- Bottom border
-    self:drawRect(0, originalHeight + extraHeight - 1, self:getWidth(), 1, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
-
-    -- Remove the original bottom border (draw over it with background color)
-    self:drawRect(1, originalHeight - 1, self:getWidth() - 2, 1, bgColor.a, bgColor.r, bgColor.g, bgColor.b)
-
-    -- Draw separator line
-    local startY = originalHeight + 5
-    self:drawRect(10, startY - 3, self:getWidth() - 20, 1, 0.5, 0.6, 0.6, 0.6)
+    -- Draw a separator line
+    self:drawRect(10, startY - 3, self:getWidth() - 20, 1, 0.3, 0.6, 0.6, 0.6)
 
     -- Draw each extra line
     for i, lineData in ipairs(extraLines) do
@@ -298,8 +308,9 @@ ISToolTipInv.render = function(self)
         self:drawText(lineData.text, 12, y, lineData.color.r, lineData.color.g, lineData.color.b, 1.0, font)
     end
 
-    -- Update the panel height so mouse detection works correctly
-    self:setHeight(originalHeight + extraHeight)
+    -- Expand tooltip height to fit new content
+    local extraHeight = (#extraLines * lineHeight) + 10
+    self:setHeight(self:getHeight() + extraHeight)
 end
 
 print("[BurdJournals] Tooltip hook installed")

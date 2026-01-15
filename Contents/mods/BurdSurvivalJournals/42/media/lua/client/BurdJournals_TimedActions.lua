@@ -356,9 +356,13 @@ function BurdJournals.BindJournalAction:perform()
         BurdJournals.updateJournalIcon(newJournal)
     end
 
-    -- Award Tailoring XP (if enabled in sandbox)
+    -- Award Tailoring XP (if enabled in sandbox) - use MP-safe method
     if config.xpAward and config.xpAward > 0 then
-        player:getXp():AddXP(Perks.Tailoring, config.xpAward)
+        if sendAddXp then
+            sendAddXp(player, Perks.Tailoring, config.xpAward, true, true)
+        else
+            player:getXp():AddXP(Perks.Tailoring, config.xpAward)
+        end
     end
 
     -- Feedback
@@ -498,6 +502,8 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
             totalTime = totalTime + (mainPanel and mainPanel:getSkillLearningTime() or 3.0)
         elseif reward.type == "trait" then
             totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
+        elseif reward.type == "recipe" then
+            totalTime = totalTime + (mainPanel and mainPanel:getRecipeLearningTime() or 0.7)
         end
     end
 
@@ -787,6 +793,8 @@ function BurdJournals.RecordToJournalAction:new(character, journal, records, isR
             totalTime = totalTime + (mainPanel and mainPanel:getTraitRecordingTime() or 5.0)
         elseif record.type == "stat" then
             totalTime = totalTime + (mainPanel and mainPanel:getStatRecordingTime() or 2.0)
+        elseif record.type == "recipe" then
+            totalTime = totalTime + (mainPanel and mainPanel:getRecipeRecordingTime() or 0.8)
         end
     end
 
@@ -800,14 +808,21 @@ end
 
 function BurdJournals.RecordToJournalAction:isValid()
     local player = self.character
-    if not player then return false end
+    if not player then
+        print("[BurdJournals] RecordToJournalAction:isValid FAILED - no player")
+        return false
+    end
 
     -- Check if journal is still in inventory
     local journal = BurdJournals.findItemById(player, self.journal:getID())
-    if not journal then return false end
+    if not journal then
+        print("[BurdJournals] RecordToJournalAction:isValid FAILED - journal not found in inventory")
+        return false
+    end
 
     -- Check if main panel is still open
     if self.mainPanel and not self.mainPanel:isVisible() then
+        print("[BurdJournals] RecordToJournalAction:isValid FAILED - panel not visible")
         return false
     end
 
@@ -815,6 +830,7 @@ function BurdJournals.RecordToJournalAction:isValid()
     local requirePen = BurdJournals.getSandboxOption("RequirePenToWrite")
     if requirePen ~= false then  -- default true
         if not BurdJournals.hasWritingTool(player) then
+            print("[BurdJournals] RecordToJournalAction:isValid FAILED - no writing tool")
             return false
         end
     end
@@ -833,6 +849,7 @@ function BurdJournals.RecordToJournalAction:update()
 end
 
 function BurdJournals.RecordToJournalAction:start()
+    print("[BurdJournals] RecordToJournalAction:start() called with " .. #self.records .. " records")
     -- Set up writing animation with book in hand
     self:setAnimVariable("ReadType", "book")
     self:setActionAnim(CharacterActionAnims.Read)
@@ -1062,25 +1079,205 @@ end
 
 -- ==================== HELPER: Queue Learn Action ====================
 -- Helper function to queue a learn action via ISTimedActionQueue
+-- For "Absorb All", processes items ONE AT A TIME to prevent buffer overflow
 function BurdJournals.queueLearnAction(player, journal, rewards, isAbsorbAll, mainPanel)
     if not player or not journal then return false end
     if not rewards or #rewards == 0 then return false end
 
-    local action = BurdJournals.LearnFromJournalAction:new(player, journal, rewards, isAbsorbAll, mainPanel)
-    ISTimedActionQueue.add(action)
+    -- For "Absorb All" with multiple items, process ONE AT A TIME
+    -- This prevents buffer overflow by sending small packets to server
+    if isAbsorbAll and #rewards > 1 then
+        -- Take first item, queue the rest
+        local firstReward = table.remove(rewards, 1)
+        local action = BurdJournals.LearnFromJournalAction:new(
+            player, journal, {firstReward}, false, mainPanel, rewards
+        )
+        ISTimedActionQueue.add(action)
+    else
+        -- Single item or explicit single-item queue
+        local action = BurdJournals.LearnFromJournalAction:new(
+            player, journal, rewards, isAbsorbAll, mainPanel
+        )
+        ISTimedActionQueue.add(action)
+    end
     return true
 end
 
 
 -- ==================== HELPER: Queue Record Action ====================
 -- Helper function to queue a record action via ISTimedActionQueue
+-- For "Record All", processes items ONE AT A TIME to prevent buffer overflow
 function BurdJournals.queueRecordAction(player, journal, records, isRecordAll, mainPanel)
-    if not player or not journal then return false end
-    if not records or #records == 0 then return false end
+    print("[BurdJournals] queueRecordAction called with " .. #records .. " records, isRecordAll=" .. tostring(isRecordAll))
+    if not player or not journal then
+        print("[BurdJournals] queueRecordAction: FAILED - player or journal is nil")
+        return false
+    end
+    if not records or #records == 0 then
+        print("[BurdJournals] queueRecordAction: FAILED - no records to queue")
+        return false
+    end
 
-    local action = BurdJournals.RecordToJournalAction:new(player, journal, records, isRecordAll, mainPanel)
-    ISTimedActionQueue.add(action)
+    -- For "Record All" with multiple items, process ONE AT A TIME
+    -- This prevents buffer overflow by sending small packets to server
+    if isRecordAll and #records > 1 then
+        -- Take first item, queue the rest
+        local firstRecord = table.remove(records, 1)
+        print("[BurdJournals] queueRecordAction: Chunking - first=" .. tostring(firstRecord.name) .. ", remaining=" .. #records)
+        local action = BurdJournals.RecordToJournalAction:new(
+            player, journal, {firstRecord}, false, mainPanel, records
+        )
+        ISTimedActionQueue.add(action)
+        print("[BurdJournals] queueRecordAction: Action added to queue")
+    else
+        -- Single item or explicit single-item queue
+        print("[BurdJournals] queueRecordAction: Single item - " .. tostring(records[1] and records[1].name))
+        local action = BurdJournals.RecordToJournalAction:new(
+            player, journal, records, isRecordAll, mainPanel
+        )
+        ISTimedActionQueue.add(action)
+        print("[BurdJournals] queueRecordAction: Action added to queue")
+    end
     return true
 end
 
+
+-- ==================== ERASE ENTRY ACTION ====================
+-- Timed action for erasing individual entries from journals
+-- Uses writing animation while erasing
+
+BurdJournals.EraseEntryAction = ISBaseTimedAction:derive("BurdJournals_EraseEntryAction")
+
+function BurdJournals.EraseEntryAction:new(character, journal, entryType, entryName, mainPanel)
+    local o = ISBaseTimedAction.new(self, character)
+
+    o.journal = journal
+    o.entryType = entryType  -- "skill", "trait", or "recipe"
+    o.entryName = entryName
+    o.mainPanel = mainPanel  -- Reference to UI panel for updates
+    o.stopOnWalk = true
+    o.stopOnRun = true
+    o.stopOnAim = true
+
+    -- Erase time: 2 seconds (quick action)
+    local eraseTime = 2.0
+    o.maxTime = math.floor(eraseTime * 33)  -- Convert seconds to ticks (~33 ticks/sec)
+
+    return o
+end
+
+function BurdJournals.EraseEntryAction:isValid()
+    local player = self.character
+    if not player then return false end
+
+    -- Check if journal is still in inventory
+    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    if not journal then return false end
+
+    -- Check if player still has an eraser
+    if not BurdJournals.hasEraser(player) then return false end
+
+    -- Check if main panel is still open
+    if self.mainPanel and not self.mainPanel:isVisible() then
+        return false
+    end
+
+    return true
+end
+
+function BurdJournals.EraseEntryAction:update()
+    self.character:setMetabolicTarget(Metabolics.LightWork)
+
+    -- Update progress in the UI panel
+    if self.mainPanel and self.mainPanel.erasingState then
+        local progress = self:getJobDelta()
+        self.mainPanel.erasingState.progress = progress
+    end
+end
+
+function BurdJournals.EraseEntryAction:start()
+    -- Set up writing animation with book in hand
+    self:setAnimVariable("ReadType", "book")
+    self:setActionAnim(CharacterActionAnims.Read)
+    self:setOverrideHandModels(nil, self.journal)
+    self.character:setReading(true)
+    self.character:reportEvent("EventRead")
+
+    -- Play book open sound
+    self.character:playSound("OpenBook")
+
+    -- Update UI to show erasing state
+    if self.mainPanel then
+        self.mainPanel.erasingState = {
+            active = true,
+            entryType = self.entryType,
+            entryName = self.entryName,
+            progress = 0,
+        }
+    end
+end
+
+function BurdJournals.EraseEntryAction:stop()
+    -- Reset reading state and play close sound
+    self.character:setReading(false)
+    self.character:playSound("CloseBook")
+
+    -- Reset UI state if cancelled
+    if self.mainPanel then
+        self.mainPanel.erasingState = {
+            active = false,
+            entryType = nil,
+            entryName = nil,
+        }
+    end
+
+    ISBaseTimedAction.stop(self)
+end
+
+function BurdJournals.EraseEntryAction:perform()
+    -- Reset reading state and play close sound
+    self.character:setReading(false)
+    self.character:playSound("CloseBook")
+
+    local player = self.character
+    local panel = self.mainPanel
+
+    -- Reset erasing state
+    if panel then
+        panel.erasingState = {
+            active = false,
+            entryType = nil,
+            entryName = nil,
+        }
+    end
+
+    -- Perform the actual erase
+    if isClient() and not isServer() then
+        -- Multiplayer - send to server
+        sendClientCommand(player, "BurdJournals", "eraseEntry", {
+            journalId = self.journal:getID(),
+            entryType = self.entryType,
+            entryName = self.entryName
+        })
+    else
+        -- Single player - erase directly via panel method
+        if panel and panel.eraseEntryDirectly then
+            panel:eraseEntryDirectly(self.entryType, self.entryName)
+        end
+    end
+
+    ISBaseTimedAction.perform(self)
+end
+
+
+-- ==================== HELPER: Queue Erase Action ====================
+-- Helper function to queue an erase action via ISTimedActionQueue
+function BurdJournals.queueEraseAction(player, journal, entryType, entryName, mainPanel)
+    if not player or not journal then return false end
+    if not entryType or not entryName then return false end
+
+    local action = BurdJournals.EraseEntryAction:new(player, journal, entryType, entryName, mainPanel)
+    ISTimedActionQueue.add(action)
+    return true
+end
 

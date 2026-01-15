@@ -6,7 +6,7 @@
     - ConvertToCleanAction: Convert worn journal to clean blank (tailoring)
 
     Note: Bloody journal cleaning is now done via the crafting menu only
-    (CleanBloodyFilledToClean recipe) to prevent Bloodyâ†’Worn exploit.
+    (CleanBloodyFilledToClean recipe) to prevent Bloody→Worn exploit.
 ]]
 
 require "TimedActions/ISBaseTimedAction"
@@ -21,30 +21,30 @@ BurdJournals.ConvertToCleanAction = ISBaseTimedAction:derive("BurdJournals_Conve
 
 function BurdJournals.ConvertToCleanAction:new(character, journal)
     local o = ISBaseTimedAction.new(self, character)
-    
+
     o.journal = journal
     o.stopOnWalk = true
     o.stopOnRun = true
     o.stopOnAim = true
-    
+
     -- Use sandbox option for convert time (default 15 seconds = 500 ticks at ~33 ticks/sec)
     local convertTime = BurdJournals.getSandboxOption("ConvertTime") or 15.0
     o.maxTime = math.floor(convertTime * 33)
-    
+
     return o
 end
 
 function BurdJournals.ConvertToCleanAction:isValid()
     local player = self.character
     if not player then return false end
-    
+
     -- Check if journal is still in inventory
     local journal = BurdJournals.findItemById(player, self.journal:getID())
     if not journal then return false end
-    
+
     -- Check if still worn
     if not BurdJournals.isWorn(journal) then return false end
-    
+
     -- Check materials and skill
     return BurdJournals.canConvertToClean(player)
 end
@@ -73,7 +73,7 @@ function BurdJournals.ConvertToCleanAction:perform()
     if self.sound and self.sound ~= 0 then
         self.character:getEmitter():stopSound(self.sound)
     end
-    
+
     local player = self.character
 
     -- In single player, handle directly
@@ -124,7 +124,7 @@ function BurdJournals.ConvertToCleanAction:perform()
                 BurdJournals.updateJournalName(cleanJournal)
                 BurdJournals.updateJournalIcon(cleanJournal)
             end
-            player:Say(getText("UI_BurdJournals_JournalRestored") or "Journal restored!")
+            player:Say("Journal restored!")
         end
     end
 
@@ -138,27 +138,27 @@ BurdJournals.EraseJournalAction = ISBaseTimedAction:derive("BurdJournals_EraseJo
 
 function BurdJournals.EraseJournalAction:new(character, journal)
     local o = ISBaseTimedAction.new(self, character)
-    
+
     o.journal = journal
     o.stopOnWalk = true
     o.stopOnRun = true
     o.stopOnAim = true
-    
+
     -- Use sandbox option for erase time (default 10 seconds = 330 ticks at ~33 ticks/sec)
     local eraseTime = BurdJournals.getSandboxOption("EraseTime") or 10.0
     o.maxTime = math.floor(eraseTime * 33)
-    
+
     return o
 end
 
 function BurdJournals.EraseJournalAction:isValid()
     local player = self.character
     if not player then return false end
-    
+
     -- Check if journal is still in inventory
     local journal = BurdJournals.findItemById(player, self.journal:getID())
     if not journal then return false end
-    
+
     -- Check if player still has an eraser
     return BurdJournals.hasEraser(player)
 end
@@ -187,15 +187,15 @@ function BurdJournals.EraseJournalAction:perform()
     if self.sound and self.sound ~= 0 then
         self.character:getEmitter():stopSound(self.sound)
     end
-    
+
     local player = self.character
     local journal = BurdJournals.findItemById(player, self.journal:getID())
-    
+
     if not journal then
         ISBaseTimedAction.perform(self)
         return
     end
-    
+
     -- Send erase command to server (or handle locally in SP)
     if isClient() and not isServer() then
         sendClientCommand(
@@ -208,10 +208,10 @@ function BurdJournals.EraseJournalAction:perform()
         -- Single player - handle directly
         local inventory = player:getInventory()
         local journalType = journal:getFullType()
-        
+
         -- Remove the old journal
         inventory:Remove(journal)
-        
+
         -- Add a new blank journal
         local blankJournal = inventory:AddItem("BurdJournals.BlankSurvivalJournal")
         if blankJournal then
@@ -225,8 +225,8 @@ function BurdJournals.EraseJournalAction:perform()
             BurdJournals.updateJournalName(blankJournal)
             BurdJournals.updateJournalIcon(blankJournal)
         end
-        
-        player:Say(getText("UI_BurdJournals_JournalErased") or "Journal erased...")
+
+        player:Say("Journal erased...")
     end
 
     ISBaseTimedAction.perform(self)
@@ -356,17 +356,20 @@ function BurdJournals.BindJournalAction:perform()
         BurdJournals.updateJournalIcon(newJournal)
     end
 
-    -- Award Tailoring XP (if enabled in sandbox)
+    -- Award Tailoring XP (if enabled in sandbox) - use MP-safe method
     if config.xpAward and config.xpAward > 0 then
-        player:getXp():AddXP(Perks.Tailoring, config.xpAward)
+        if sendAddXp then
+            sendAddXp(player, Perks.Tailoring, config.xpAward, true, true)
+        else
+            player:getXp():AddXP(Perks.Tailoring, config.xpAward)
+        end
     end
 
     -- Feedback
-    local boundMsg = getText("UI_BurdJournals_JournalBound") or "Journal bound!"
     if HaloTextHelper and HaloTextHelper.addTextWithArrow then
-        HaloTextHelper.addTextWithArrow(player, boundMsg, true, HaloTextHelper.getColorGreen())
+        HaloTextHelper.addTextWithArrow(player, "Journal bound!", true, HaloTextHelper.getColorGreen())
     else
-        player:Say(boundMsg)
+        player:Say("Journal bound!")
     end
 
     ISBaseTimedAction.perform(self)
@@ -459,14 +462,14 @@ function BurdJournals.DisassembleJournalAction:perform()
 
     -- Feedback
     if #itemsGiven > 0 then
-        local msg = string.format(getText("UI_BurdJournals_Salvaged") or "Salvaged: %s", table.concat(itemsGiven, ", "))
+        local msg = "Salvaged: " .. table.concat(itemsGiven, ", ")
         if HaloTextHelper and HaloTextHelper.addTextWithArrow then
             HaloTextHelper.addTextWithArrow(player, msg, true, HaloTextHelper.getColorGreen())
         else
             player:Say(msg)
         end
     else
-        player:Say(getText("UI_BurdJournals_JournalDisassembled") or "Journal disassembled.")
+        player:Say("Journal disassembled.")
     end
 
     ISBaseTimedAction.perform(self)
@@ -486,7 +489,7 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
     o.rewards = rewards or {}  -- Array of {type="skill"|"trait", name=..., xp=...}
     o.isAbsorbAll = isAbsorbAll or false
     o.mainPanel = mainPanel  -- Reference to UI panel for progress updates
-    o.queuedRewards = queuedRewards or {}  -- Queue stored in action object, not just panel state
+    o.queuedRewards = queuedRewards or {}  -- Queue stored in action object for chunked processing
     o.stopOnWalk = true
     o.stopOnRun = true
     o.stopOnAim = true
@@ -498,6 +501,8 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
             totalTime = totalTime + (mainPanel and mainPanel:getSkillLearningTime() or 3.0)
         elseif reward.type == "trait" then
             totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
+        elseif reward.type == "recipe" then
+            totalTime = totalTime + (mainPanel and mainPanel:getRecipeLearningTime() or 0.7)
         end
     end
 
@@ -536,15 +541,11 @@ function BurdJournals.LearnFromJournalAction:update()
 end
 
 function BurdJournals.LearnFromJournalAction:start()
-    -- Set up reading animation with book in hand
-    self:setAnimVariable("ReadType", "book")
-    self:setActionAnim(CharacterActionAnims.Read)
-    self:setOverrideHandModels(nil, self.journal)
-    self.character:setReading(true)
+    self:setActionAnim("Read")
     self.character:reportEvent("EventRead")
 
-    -- Play book open sound
-    self.character:playSound("OpenBook")
+    -- Play page turning sound
+    self.sound = self.character:getEmitter():playSound("PageFlip")
 
     -- Initialize learning state in UI if panel exists
     if self.mainPanel then
@@ -553,7 +554,6 @@ function BurdJournals.LearnFromJournalAction:start()
             active = true,
             skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
             traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
-            recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
             isAbsorbAll = self.isAbsorbAll,
             progress = 0,
             totalTime = self.totalTimeSeconds,
@@ -567,9 +567,10 @@ function BurdJournals.LearnFromJournalAction:start()
 end
 
 function BurdJournals.LearnFromJournalAction:stop()
-    -- Reset reading state and play close sound
-    self.character:setReading(false)
-    self.character:playSound("CloseBook")
+    -- Stop sound if playing
+    if self.sound and self.sound ~= 0 then
+        self.character:getEmitter():stopSound(self.sound)
+    end
 
     -- Reset UI state if cancelled
     if self.mainPanel then
@@ -577,7 +578,6 @@ function BurdJournals.LearnFromJournalAction:stop()
             active = false,
             skillName = nil,
             traitId = nil,
-            recipeName = nil,
             isAbsorbAll = false,
             progress = 0,
             totalTime = 0,
@@ -596,9 +596,10 @@ function BurdJournals.LearnFromJournalAction:stop()
 end
 
 function BurdJournals.LearnFromJournalAction:perform()
-    -- Reset reading state and play close sound
-    self.character:setReading(false)
-    self.character:playSound("CloseBook")
+    -- Stop sound
+    if self.sound and self.sound ~= 0 then
+        self.character:getEmitter():stopSound(self.sound)
+    end
 
     local player = self.character
     local panel = self.mainPanel
@@ -624,15 +625,17 @@ function BurdJournals.LearnFromJournalAction:perform()
             else
                 panel:sendAbsorbTrait(reward.name, true)
             end
+        elseif reward.type == "recipe" then
+            if isPlayerJournal then
+                if panel.sendClaimRecipe then
+                    panel:sendClaimRecipe(reward.name, true)
+                end
+            else
+                if panel.sendAbsorbRecipe then
+                    panel:sendAbsorbRecipe(reward.name, true)
+                end
+            end
         end
-    end
-
-    -- Check if journal was dissolved during reward application (single player path)
-    -- In SP, applyTraitDirectly calls checkDissolution which may have already closed the panel
-    if not panel:isVisible() or not panel.journal then
-        -- Panel was closed (journal dissolved) - don't continue queue processing
-        ISBaseTimedAction.perform(self)
-        return
     end
 
     -- Refresh UI
@@ -648,7 +651,6 @@ function BurdJournals.LearnFromJournalAction:perform()
     end
 
     -- Get queue - merge action's queue with any items added to panel during this action
-    -- Items queued during action go to panel.learningState.queue, items from previous actions are in self.queuedRewards
     local savedQueue = {}
     if not self.isAbsorbAll then
         -- First add items from action's queue (from previous action)
@@ -682,7 +684,6 @@ function BurdJournals.LearnFromJournalAction:perform()
             active = true,
             skillName = nextReward.type == "skill" and nextReward.name or nil,
             traitId = nextReward.type == "trait" and nextReward.name or nil,
-            recipeName = nextReward.type == "recipe" and nextReward.name or nil,
             isAbsorbAll = false,
             progress = 0,
             totalTime = 0,
@@ -719,7 +720,6 @@ function BurdJournals.LearnFromJournalAction:perform()
         active = false,
         skillName = nil,
         traitId = nil,
-        recipeName = nil,
         isAbsorbAll = false,
         progress = 0,
         totalTime = 0,
@@ -747,8 +747,6 @@ function BurdJournals.LearnFromJournalAction:perform()
     end
 
     -- Check dissolution only after queue is fully complete
-    -- (Worn/Bloody journals dissolve when all rewards are claimed)
-    -- Refresh journal reference first to ensure we have latest claimed data
     if panel.refreshJournalData then
         panel:refreshJournalData()
     end
@@ -773,7 +771,7 @@ function BurdJournals.RecordToJournalAction:new(character, journal, records, isR
     o.records = records or {}  -- Array of {type="skill"|"trait"|"stat", name=..., xp=..., level=..., value=...}
     o.isRecordAll = isRecordAll or false
     o.mainPanel = mainPanel  -- Reference to UI panel for progress updates
-    o.queuedRecords = queuedRecords or {}  -- Queue stored in action object, not just panel state
+    o.queuedRecords = queuedRecords or {}  -- Queue stored in action object for chunked processing
     o.stopOnWalk = true
     o.stopOnRun = true
     o.stopOnAim = true
@@ -787,6 +785,8 @@ function BurdJournals.RecordToJournalAction:new(character, journal, records, isR
             totalTime = totalTime + (mainPanel and mainPanel:getTraitRecordingTime() or 5.0)
         elseif record.type == "stat" then
             totalTime = totalTime + (mainPanel and mainPanel:getStatRecordingTime() or 2.0)
+        elseif record.type == "recipe" then
+            totalTime = totalTime + (mainPanel and mainPanel:getRecipeRecordingTime() or 0.8)
         end
     end
 
@@ -833,15 +833,11 @@ function BurdJournals.RecordToJournalAction:update()
 end
 
 function BurdJournals.RecordToJournalAction:start()
-    -- Set up writing animation with book in hand
-    self:setAnimVariable("ReadType", "book")
-    self:setActionAnim(CharacterActionAnims.Read)
-    self:setOverrideHandModels(nil, self.journal)
-    self.character:setReading(true)
-    self.character:reportEvent("EventRead")
+    self:setActionAnim("Write")
+    self.character:reportEvent("EventCrafting")
 
-    -- Play book open sound
-    self.character:playSound("OpenBook")
+    -- Play writing sound
+    self.sound = self.character:getEmitter():playSound("DrawOnMap")
 
     -- Initialize recording state in UI if panel exists
     if self.mainPanel then
@@ -851,7 +847,6 @@ function BurdJournals.RecordToJournalAction:start()
             skillName = firstRecord and firstRecord.type == "skill" and firstRecord.name or nil,
             traitId = firstRecord and firstRecord.type == "trait" and firstRecord.name or nil,
             statId = firstRecord and firstRecord.type == "stat" and firstRecord.name or nil,
-            recipeName = firstRecord and firstRecord.type == "recipe" and firstRecord.name or nil,
             isRecordAll = self.isRecordAll,
             progress = 0,
             totalTime = self.totalTimeSeconds,
@@ -865,9 +860,10 @@ function BurdJournals.RecordToJournalAction:start()
 end
 
 function BurdJournals.RecordToJournalAction:stop()
-    -- Reset reading state and play close sound
-    self.character:setReading(false)
-    self.character:playSound("CloseBook")
+    -- Stop sound if playing
+    if self.sound and self.sound ~= 0 then
+        self.character:getEmitter():stopSound(self.sound)
+    end
 
     -- Reset UI state if cancelled
     if self.mainPanel then
@@ -876,7 +872,6 @@ function BurdJournals.RecordToJournalAction:stop()
             skillName = nil,
             traitId = nil,
             statId = nil,
-            recipeName = nil,
             isRecordAll = false,
             progress = 0,
             totalTime = 0,
@@ -895,9 +890,10 @@ function BurdJournals.RecordToJournalAction:stop()
 end
 
 function BurdJournals.RecordToJournalAction:perform()
-    -- Reset reading state and play close sound
-    self.character:setReading(false)
-    self.character:playSound("CloseBook")
+    -- Stop sound
+    if self.sound and self.sound ~= 0 then
+        self.character:getEmitter():stopSound(self.sound)
+    end
 
     local player = self.character
     local panel = self.mainPanel
@@ -911,11 +907,9 @@ function BurdJournals.RecordToJournalAction:perform()
     local skillsToRecord = {}
     local traitsToRecord = {}
     local statsToRecord = {}
-    local recipesToRecord = {}
     local skillCount = 0
     local traitCount = 0
     local statCount = 0
-    local recipeCount = 0
 
     for _, record in ipairs(self.records) do
         if record.type == "skill" then
@@ -935,14 +929,6 @@ function BurdJournals.RecordToJournalAction:perform()
                 value = record.value
             }
             statCount = statCount + 1
-        elseif record.type == "recipe" then
-            -- Get the magazine source for this recipe
-            local magazineType = BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(record.name) or nil
-            recipesToRecord[record.name] = {
-                name = record.name,
-                source = magazineType
-            }
-            recipeCount = recipeCount + 1
         end
     end
 
@@ -950,15 +936,14 @@ function BurdJournals.RecordToJournalAction:perform()
     panel.pendingRecordFeedback = {
         skills = skillCount,
         traits = traitCount,
-        stats = statCount,
-        recipes = recipeCount
+        stats = statCount
     }
 
     -- Consume pen durability if required
     local requirePen = BurdJournals.getSandboxOption("RequirePenToWrite")
     if requirePen ~= false then
         local penUses = BurdJournals.getSandboxOption("PenUsesPerLog") or 1
-        local totalUses = penUses * (skillCount + traitCount + statCount + recipeCount)
+        local totalUses = penUses * (skillCount + traitCount + statCount)
         local pen = BurdJournals.findWritingTool(player)
         if pen and totalUses > 0 then
             BurdJournals.consumeItemUses(pen, totalUses, player)
@@ -970,12 +955,10 @@ function BurdJournals.RecordToJournalAction:perform()
         journalId = self.journal:getID(),
         skills = skillsToRecord,
         traits = traitsToRecord,
-        stats = statsToRecord,
-        recipes = recipesToRecord
+        stats = statsToRecord
     })
 
     -- Get queue - merge action's queue with any items added to panel during this action
-    -- Items queued during action go to panel.recordingState.queue, items from previous actions are in self.queuedRecords
     local savedQueue = {}
     if not self.isRecordAll then
         -- First add items from action's queue (from previous action)
@@ -1010,7 +993,6 @@ function BurdJournals.RecordToJournalAction:perform()
             skillName = nextRecord.type == "skill" and nextRecord.name or nil,
             traitId = nextRecord.type == "trait" and nextRecord.name or nil,
             statId = nextRecord.type == "stat" and nextRecord.name or nil,
-            recipeName = nextRecord.type == "recipe" and nextRecord.name or nil,
             isRecordAll = false,
             progress = 0,
             totalTime = 0,
@@ -1046,7 +1028,6 @@ function BurdJournals.RecordToJournalAction:perform()
         skillName = nil,
         traitId = nil,
         statId = nil,
-        recipeName = nil,
         isRecordAll = false,
         progress = 0,
         totalTime = 0,
@@ -1062,25 +1043,54 @@ end
 
 -- ==================== HELPER: Queue Learn Action ====================
 -- Helper function to queue a learn action via ISTimedActionQueue
+-- For "Absorb All", processes items ONE AT A TIME to prevent buffer overflow
 function BurdJournals.queueLearnAction(player, journal, rewards, isAbsorbAll, mainPanel)
     if not player or not journal then return false end
     if not rewards or #rewards == 0 then return false end
 
-    local action = BurdJournals.LearnFromJournalAction:new(player, journal, rewards, isAbsorbAll, mainPanel)
-    ISTimedActionQueue.add(action)
+    -- For "Absorb All" with multiple items, process ONE AT A TIME
+    -- This prevents buffer overflow by sending small packets to server
+    if isAbsorbAll and #rewards > 1 then
+        -- Take first item, queue the rest
+        local firstReward = table.remove(rewards, 1)
+        local action = BurdJournals.LearnFromJournalAction:new(
+            player, journal, {firstReward}, false, mainPanel, rewards
+        )
+        ISTimedActionQueue.add(action)
+    else
+        -- Single item or explicit single-item queue
+        local action = BurdJournals.LearnFromJournalAction:new(
+            player, journal, rewards, isAbsorbAll, mainPanel
+        )
+        ISTimedActionQueue.add(action)
+    end
     return true
 end
 
 
 -- ==================== HELPER: Queue Record Action ====================
 -- Helper function to queue a record action via ISTimedActionQueue
+-- For "Record All", processes items ONE AT A TIME to prevent buffer overflow
 function BurdJournals.queueRecordAction(player, journal, records, isRecordAll, mainPanel)
     if not player or not journal then return false end
     if not records or #records == 0 then return false end
 
-    local action = BurdJournals.RecordToJournalAction:new(player, journal, records, isRecordAll, mainPanel)
-    ISTimedActionQueue.add(action)
+    -- For "Record All" with multiple items, process ONE AT A TIME
+    -- This prevents buffer overflow by sending small packets to server
+    if isRecordAll and #records > 1 then
+        -- Take first item, queue the rest
+        local firstRecord = table.remove(records, 1)
+        local action = BurdJournals.RecordToJournalAction:new(
+            player, journal, {firstRecord}, false, mainPanel, records
+        )
+        ISTimedActionQueue.add(action)
+    else
+        -- Single item or explicit single-item queue
+        local action = BurdJournals.RecordToJournalAction:new(
+            player, journal, records, isRecordAll, mainPanel
+        )
+        ISTimedActionQueue.add(action)
+    end
     return true
 end
-
 

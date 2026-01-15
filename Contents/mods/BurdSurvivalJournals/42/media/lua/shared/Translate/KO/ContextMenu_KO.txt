@@ -1,0 +1,47 @@
+ContextMenu_KO = {
+    -- Journal Actions
+    ContextMenu_BurdJournals_OpenJournal = "일지 열기...",
+    ContextMenu_BurdJournals_Read = "일지 읽기",
+    ContextMenu_BurdJournals_Rename = "이름 변경",
+    ContextMenu_BurdJournals_EraseJournal = "일지 지우기",
+    ContextMenu_BurdJournals_RecordProgress = "진행 상황 기록",
+    ContextMenu_BurdJournals_UpdateRecords = "기록 업데이트",
+    ContextMenu_BurdJournals_ClaimAll = "모든 기술 습득",
+
+    -- Bind Journal (Context Menu Crafting)
+    ContextMenu_BurdJournals_BindAsSurvivalJournal = "생존 일지로 제본",
+    ContextMenu_BurdJournals_BindAsSurvivalJournal_Missing = "생존 일지로 제본 (재료 부족)",
+    ContextMenu_BurdJournals_BindAsSurvivalJournal_NoTailoring = "생존 일지로 제본 (재봉술 1 필요)",
+
+    -- Bloody Journal
+    ContextMenu_BurdJournals_BloodyBlank = "피투성이 빈 일지",
+    ContextMenu_BurdJournals_ConvertViaCrafting = "개인 일지로 변환 (제작)",
+
+    -- Worn Journal
+    ContextMenu_BurdJournals_WornBlank = "낡은 빈 일지",
+    ContextMenu_BurdJournals_AbsorbAll = "모든 보상 흡수",
+    ContextMenu_BurdJournals_ConvertToClean = "개인 일지로 재제본",
+
+    -- Absorb All Dynamic Labels (for context menu)
+    ContextMenu_BurdJournals_AbsorbAllFormat = "모두 흡수 (%s)",
+    ContextMenu_BurdJournals_SkillCount = "%d개 기술",
+    ContextMenu_BurdJournals_SkillsCount = "%d개 기술",
+    ContextMenu_BurdJournals_TraitCount = "%d개 특성",
+    ContextMenu_BurdJournals_TraitsCount = "%d개 특성",
+    ContextMenu_BurdJournals_RecipeCount = "%d개 레시피",
+    ContextMenu_BurdJournals_RecipesCount = "%d개 레시피",
+
+    -- Personal Journal (Clean)
+    ContextMenu_BurdJournals_RecordAll = "모든 진행 상황 기록",
+    ContextMenu_BurdJournals_Disassemble = "일지 분해",
+
+    -- Illiterate Trait Block
+    ContextMenu_BurdJournals_CannotRead = "읽을 수 없음 (문맹)",
+
+    -- Legacy (keeping for compatibility)
+    ContextMenu_BurdJournals_CleanRepair = "청소/수리",
+    ContextMenu_BurdJournals_CleanSoap = "비누와 천으로 청소",
+    ContextMenu_BurdJournals_RepairTape = "덕트 테이프로 수리",
+    ContextMenu_BurdJournals_RepairLeather = "가죽으로 재제본",
+    ContextMenu_BurdJournals_RepairGlue = "페이지 접착",
+}

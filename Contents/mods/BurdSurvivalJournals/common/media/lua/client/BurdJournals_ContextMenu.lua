@@ -227,26 +227,10 @@ end
 
 function BurdJournals.ContextMenu.addJournalOptions(context, player, journal)
     -- Debug removed
-
+    
     local ok, err = pcall(function()
         -- First, remove any vanilla read options that shouldn't apply to our journals
         BurdJournals.ContextMenu.removeVanillaReadOptions(context)
-
-        -- Block illiterate players from using journals entirely
-        if BurdJournals.isPlayerIlliterate(player) then
-            local illiterateOption = context:addOption(
-                getText("ContextMenu_BurdJournals_CannotRead") or "Cannot Read (Illiterate)",
-                nil, nil
-            )
-            illiterateOption.notAvailable = true
-            local tooltip = ISToolTip:new()
-            tooltip:initialise()
-            tooltip:setVisible(false)
-            tooltip:setName(getText("Tooltip_BurdJournals_IlliterateName") or "Illiterate")
-            tooltip.description = getText("Tooltip_BurdJournals_IlliterateDesc") or "You cannot read or write. Journals are useless to you."
-            illiterateOption.toolTip = tooltip
-            return  -- Don't add any other options
-        end
 
         local isBloody = BurdJournals.isBloody(journal)
         local isWorn = BurdJournals.isWorn(journal)
@@ -337,11 +321,23 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
 
         -- Absorb All (quick action)
         if remaining > 0 then
-            local absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
+            -- Build label showing what's available (skills, traits) using translations
+            local parts = {}
+            if skillCount > 0 then
+                local skillKey = skillCount > 1 and "ContextMenu_BurdJournals_SkillsCount" or "ContextMenu_BurdJournals_SkillCount"
+                table.insert(parts, string.format(getText(skillKey) or "%d skills", skillCount))
+            end
             if traitCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkillsTraits") or "Absorb All (%d skills, %d traits)", skillCount, traitCount)
-            elseif skillCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkills") or "Absorb All (%d skills)", skillCount)
+                local traitKey = traitCount > 1 and "ContextMenu_BurdJournals_TraitsCount" or "ContextMenu_BurdJournals_TraitCount"
+                table.insert(parts, string.format(getText(traitKey) or "%d traits", traitCount))
+            end
+
+            local absorbLabel
+            if #parts > 0 then
+                local absorbAllBase = getText("ContextMenu_BurdJournals_AbsorbAllFormat") or "Absorb All (%s)"
+                absorbLabel = string.format(absorbAllBase, table.concat(parts, ", "))
+            else
+                absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
             end
 
             local absorbAllOption = context:addOption(
@@ -375,8 +371,8 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
     local tooltip3 = ISToolTip:new()
     tooltip3:initialise()
     tooltip3:setVisible(false)
-    tooltip3:setName(getText("Tooltip_BurdJournals_CraftingRequired") or "Crafting Required")
-    tooltip3.description = getText("Tooltip_BurdJournals_ConvertBloodyDesc") or "Open the crafting menu (B) to find 'Clean and Convert Bloody Journal'.\nRequires: Soap, Cloth, Leather, Thread, Needle, Tailoring Lv1.\nWARNING: Destroys any remaining rewards!"
+    tooltip3:setName("Crafting Required")
+    tooltip3.description = "Open the crafting menu (B) to find 'Clean and Convert Bloody Journal'.\nRequires: Soap, Cloth, Leather, Thread, Needle, Tailoring Lv1.\nWARNING: Destroys any remaining rewards!"
     craftOption.toolTip = tooltip3
 end
 
@@ -444,11 +440,23 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
 
         -- Absorb All (quick action)
         if remaining > 0 then
-            local absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
+            -- Build label showing what's available (skills, traits) using translations
+            local parts = {}
+            if skillCount > 0 then
+                local skillKey = skillCount > 1 and "ContextMenu_BurdJournals_SkillsCount" or "ContextMenu_BurdJournals_SkillCount"
+                table.insert(parts, string.format(getText(skillKey) or "%d skills", skillCount))
+            end
             if traitCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkillsTraits") or "Absorb All (%d skills, %d traits)", skillCount, traitCount)
-            elseif skillCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkills") or "Absorb All (%d skills)", skillCount)
+                local traitKey = traitCount > 1 and "ContextMenu_BurdJournals_TraitsCount" or "ContextMenu_BurdJournals_TraitCount"
+                table.insert(parts, string.format(getText(traitKey) or "%d traits", traitCount))
+            end
+
+            local absorbLabel
+            if #parts > 0 then
+                local absorbAllBase = getText("ContextMenu_BurdJournals_AbsorbAllFormat") or "Absorb All (%s)"
+                absorbLabel = string.format(absorbAllBase, table.concat(parts, ", "))
+            else
+                absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
             end
 
             local absorbAllOption = context:addOption(
@@ -565,28 +573,25 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         tooltip:initialise()
         tooltip:setVisible(false)
         tooltip:setName(getText("Tooltip_BurdJournals_PersonalJournal") or "Personal Survival Journal")
-        local author = journalData.author or (getText("UI_BurdJournals_Unknown") or "Unknown")
-        local desc = (getText("Tooltip_BurdJournals_WrittenBy") or "Written by: %s"):gsub("%%s", author) .. "\n"
-        local itemText = totalRecorded > 1 and (getText("Tooltip_BurdJournals_RecordedItems") or "Contains %d recorded items") or (getText("Tooltip_BurdJournals_RecordedItem") or "Contains %d recorded item")
-        desc = desc .. string.format(itemText, totalRecorded) .. "\n\n"
+        local author = journalData.author or "Unknown"
+        local desc = "Written by: " .. author .. "\n"
+        desc = desc .. "Contains " .. totalRecorded .. " recorded item" .. (totalRecorded > 1 and "s" or "") .. "\n\n"
         if claimableSkills > 0 or claimableTraits > 0 then
             if canClaim then
-                desc = desc .. (getText("Tooltip_BurdJournals_ClaimableRewards") or "Claimable rewards:") .. "\n"
+                desc = desc .. "Claimable rewards:\n"
                 if claimableSkills > 0 then
-                    local skillText = claimableSkills > 1 and (getText("Tooltip_BurdJournals_SkillsCount") or "  - %d skills") or (getText("Tooltip_BurdJournals_SkillCount") or "  - %d skill")
-                    desc = desc .. string.format(skillText, claimableSkills) .. "\n"
+                    desc = desc .. "  - " .. claimableSkills .. " skill" .. (claimableSkills > 1 and "s" or "") .. "\n"
                 end
                 if claimableTraits > 0 then
-                    local traitText = claimableTraits > 1 and (getText("Tooltip_BurdJournals_TraitsCount") or "  - %d traits") or (getText("Tooltip_BurdJournals_TraitCount") or "  - %d trait")
-                    desc = desc .. string.format(traitText, claimableTraits) .. "\n"
+                    desc = desc .. "  - " .. claimableTraits .. " trait" .. (claimableTraits > 1 and "s" or "") .. "\n"
                 end
             else
-                desc = desc .. (getText("Tooltip_BurdJournals_ViewOnly") or "View only") .. " - " .. (claimReason or (getText("Tooltip_BurdJournals_CannotClaimDefault") or "Cannot claim from this journal.")) .. "\n"
+                desc = desc .. "View only - " .. (claimReason or "Cannot claim from this journal.") .. "\n"
             end
         else
-            desc = desc .. (getText("Tooltip_BurdJournals_NoNewRewards") or "No new rewards available.") .. "\n"
+            desc = desc .. "No new rewards available.\n"
         end
-        desc = desc .. "\n" .. (getText("Tooltip_BurdJournals_ClaimingInfo") or "Claiming sets your XP to the recorded level (if higher).")
+        desc = desc .. "\nClaiming sets your XP to the recorded level (if higher)."
         tooltip.description = desc
         openOption.toolTip = tooltip
     end
@@ -602,8 +607,8 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         local tooltip = ISToolTip:new()
         tooltip:initialise()
         tooltip:setVisible(false)
-        tooltip:setName(getText("Tooltip_BurdJournals_UpdateRecords") or "Update Journal Records")
-        tooltip.description = getText("Tooltip_BurdJournals_UpdateRecordsDesc") or "Opens journal to update your recorded skills.\nRecorded values are only updated if your current level is higher."
+        tooltip:setName("Update Journal Records")
+        tooltip.description = "Opens journal to update your recorded skills.\nRecorded values are only updated if your current level is higher."
         recordOption.toolTip = tooltip
     end
     
@@ -621,21 +626,19 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
             tooltip:initialise()
             tooltip:setVisible(false)
             tooltip:setName(getText("Tooltip_BurdJournals_CannotClaim") or "Cannot Claim")
-            tooltip.description = claimReason or (getText("Tooltip_BurdJournals_NoPermissionClaim") or "You don't have permission to claim from this journal.")
+            tooltip.description = claimReason or "You don't have permission to claim from this journal."
             claimAllOption.toolTip = tooltip
         else
             local tooltip = ISToolTip:new()
             tooltip:initialise()
             tooltip:setVisible(false)
             tooltip:setName(getText("Tooltip_BurdJournals_ClaimAll") or "Claim All Skills")
-            local desc = (getText("Tooltip_BurdJournals_ClaimAllDesc") or "Opens journal and claims all available skills.") .. "\n\n"
-            local skillText = claimableSkills > 1 and (getText("Tooltip_BurdJournals_AvailableSkills") or "Available: %d skills") or (getText("Tooltip_BurdJournals_AvailableSkill") or "Available: %d skill")
-            desc = desc .. string.format(skillText, claimableSkills)
+            local desc = "Opens journal and claims all available skills.\n\n"
+            desc = desc .. "Available: " .. claimableSkills .. " skill" .. (claimableSkills > 1 and "s" or "")
             if claimableTraits > 0 then
-                local traitText = claimableTraits > 1 and (getText("Tooltip_BurdJournals_AndTraits") or ", %d traits") or (getText("Tooltip_BurdJournals_AndTrait") or ", %d trait")
-                desc = desc .. string.format(traitText, claimableTraits)
+                desc = desc .. ", " .. claimableTraits .. " trait" .. (claimableTraits > 1 and "s" or "")
             end
-            desc = desc .. "\n\n" .. (getText("Tooltip_BurdJournals_ReadingSpeedNote") or "This will take time based on your reading speed.")
+            desc = desc .. "\n\nThis will take time based on your reading speed."
             tooltip.description = desc
             claimAllOption.toolTip = tooltip
         end
@@ -662,8 +665,8 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         local tooltip = ISToolTip:new()
         tooltip:initialise()
         tooltip:setVisible(false)
-        tooltip:setName(getText("Tooltip_BurdJournals_EraseContents") or "Erase All Contents")
-        tooltip.description = getText("Tooltip_BurdJournals_EraseContentsDesc") or "Erases all recorded data, returning the journal to a blank state.\nRequires an eraser."
+        tooltip:setName("Erase All Contents")
+        tooltip.description = "Erases all recorded data, returning the journal to a blank state.\nRequires an eraser."
         eraseOption.toolTip = tooltip
     end
 end
@@ -684,7 +687,7 @@ function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, j
     tooltip:initialise()
     tooltip:setVisible(false)
     tooltip:setName(getText("Tooltip_BurdJournals_BlankJournal") or "Blank Survival Journal")
-    tooltip.description = getText("Tooltip_BurdJournals_BlankJournalDesc") or "Opens the journal to record your survival progress.\nRequires a writing tool."
+    tooltip.description = "Opens the journal to record your survival progress.\nRequires a writing tool."
     openOption.toolTip = tooltip
     if not hasPen then
         openOption.notAvailable = true
@@ -709,7 +712,7 @@ function BurdJournals.ContextMenu.addCleanBlankJournalOptions(context, player, j
     tooltip2:initialise()
     tooltip2:setVisible(false)
     tooltip2:setName(getText("Tooltip_BurdJournals_Disassemble") or "Disassemble Journal")
-    tooltip2.description = getText("Tooltip_BurdJournals_DisassembleDesc") or "Tear apart this journal for materials.\n\nYou will receive:\n  2x Paper\n  1x Leather Strips"
+    tooltip2.description = "Tear apart this journal for materials.\n\nYou will receive:\n  2x Paper\n  1x Leather Strips"
     disassembleOption.toolTip = tooltip2
 end
 
@@ -907,10 +910,8 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
                 -- Already has trait - don't claim
                 traitsSkipped = traitsSkipped + 1
             else
-                -- Try to grant trait
-                local success = pcall(function()
-                    player:getTraits():add(traitId)
-                end)
+                -- Try to grant trait using Build 42 compatible function
+                local success = BurdJournals.safeAddTrait(player, traitId)
                 if success then
                     BurdJournals.claimTrait(journal, traitId)
                     traitsAbsorbed = traitsAbsorbed + 1
@@ -924,8 +925,7 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
         if totalXP > 0 or traitsAbsorbed > 0 then
             local message = "+" .. BurdJournals.formatXP(totalXP) .. " XP"
             if traitsAbsorbed > 0 then
-                local traitText = traitsAbsorbed > 1 and (getText("UI_BurdJournals_PlusTraits") or ", +%d traits") or (getText("UI_BurdJournals_PlusTrait") or ", +%d trait")
-                message = message .. string.format(traitText, traitsAbsorbed)
+                message = message .. ", +" .. traitsAbsorbed .. " trait" .. (traitsAbsorbed > 1 and "s" or "")
             end
             if HaloTextHelper and HaloTextHelper.addTextWithArrow then
                 HaloTextHelper.addTextWithArrow(player, message, true, HaloTextHelper.getColorGreen())
@@ -938,13 +938,11 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
         if skillsSkipped > 0 or traitsSkipped > 0 then
             local skipMsg = ""
             if skillsSkipped > 0 then
-                local skillText = skillsSkipped > 1 and (getText("UI_BurdJournals_SkillsAlreadyMaxed") or "%d skills already maxed") or (getText("UI_BurdJournals_SkillAlreadyMaxed") or "%d skill already maxed")
-                skipMsg = string.format(skillText, skillsSkipped)
+                skipMsg = skillsSkipped .. " skill" .. (skillsSkipped > 1 and "s" or "") .. " already maxed"
             end
             if traitsSkipped > 0 then
                 if skipMsg ~= "" then skipMsg = skipMsg .. ", " end
-                local traitText = traitsSkipped > 1 and (getText("UI_BurdJournals_TraitsAlreadyKnown") or "%d traits already known") or (getText("UI_BurdJournals_TraitAlreadyKnown") or "%d trait already known")
-                skipMsg = skipMsg .. string.format(traitText, traitsSkipped)
+                skipMsg = skipMsg .. traitsSkipped .. " trait" .. (traitsSkipped > 1 and "s" or "") .. " already known"
         end
         player:Say(skipMsg)
         end
@@ -1081,6 +1079,15 @@ function BurdJournals.ContextMenu.onConfirmRename(target, button, journal)
         local newName = button.parent.entry:getText()
         if newName and newName ~= "" then
             journal:setName(newName)
+            -- Mark as custom-named to prevent auto-localization from overwriting
+            local modData = journal:getModData()
+            if modData.BurdJournals then
+                modData.BurdJournals.customName = newName
+                -- Sync in multiplayer
+                if journal.transmitModData then
+                    journal:transmitModData()
+                end
+            end
         end
     end
 end

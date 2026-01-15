@@ -40,6 +40,7 @@ Tooltip_EN = {
     -- Tooltip Dynamic Text
     Tooltip_BurdJournals_SkillsAvailable = "Skills: %d/%d available",
     Tooltip_BurdJournals_TraitsAvailable = "Traits: %d/%d available",
+    Tooltip_BurdJournals_RecipesAvailable = "Recipes: %d/%d available",
     Tooltip_BurdJournals_NoRewardsFound = "No rewards found",
     Tooltip_BurdJournals_AbsorbAllRewards = "Absorb All Rewards",
     Tooltip_BurdJournals_AbsorbAllSkillsTraits = "Absorb All (%d skills, %d traits)",
@@ -97,6 +98,7 @@ Tooltip_EN = {
     Tooltip_BurdJournals_SkillsLineXP = "Skills: %d/%d (%s XP)",
     Tooltip_BurdJournals_AllClaimed = "(all claimed)",
     Tooltip_BurdJournals_TraitsLine = "Traits: %d/%d",
+    Tooltip_BurdJournals_RecipesLine = "Recipes: %d/%d",
     Tooltip_BurdJournals_ConditionBloody = "Condition: Bloody",
     Tooltip_BurdJournals_ConditionWorn = "Condition: Worn",
     Tooltip_BurdJournals_ConditionRestored = "Condition: Restored",

@@ -283,11 +283,13 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
     local isFilled = BurdJournals.isFilledJournal(journal)
 
     if isFilled and journalData then
-        -- Count skills and traits separately for detailed display
+        -- Count skills, traits, and recipes separately for detailed display
         local skillCount = 0
         local totalSkills = 0
         local traitCount = 0
         local totalTraits = 0
+        local recipeCount = 0
+        local totalRecipes = 0
 
         if journalData.skills then
             for skillName, _ in pairs(journalData.skills) do
@@ -305,8 +307,16 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
                 end
             end
         end
+        if journalData.recipes then
+            for recipeName, _ in pairs(journalData.recipes) do
+                totalRecipes = totalRecipes + 1
+                if not BurdJournals.isRecipeClaimed(journal, recipeName) then
+                    recipeCount = recipeCount + 1
+                end
+            end
+        end
 
-        local remaining = skillCount + traitCount
+        local remaining = skillCount + traitCount + recipeCount
 
         -- Open Journal... (absorption UI) - same as worn but with rare rewards
         local openOption = context:addOption(
@@ -320,13 +330,16 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
         tooltip:setVisible(false)
         tooltip:setName(getText("Tooltip_BurdJournals_BloodyJournal") or "Bloody Journal")
 
-        -- Build detailed tooltip showing skills and traits separately
+        -- Build detailed tooltip showing skills, traits, and recipes separately
         local tooltipDesc = ""
         if totalSkills > 0 then
             tooltipDesc = tooltipDesc .. (getText("Tooltip_BurdJournals_SkillsAvailable") or "Skills: %d/%d available"):gsub("%%d/%%d", skillCount .. "/" .. totalSkills) .. "\n"
         end
         if totalTraits > 0 then
             tooltipDesc = tooltipDesc .. (getText("Tooltip_BurdJournals_TraitsAvailable") or "Traits: %d/%d available"):gsub("%%d/%%d", traitCount .. "/" .. totalTraits) .. "\n"
+        end
+        if totalRecipes > 0 then
+            tooltipDesc = tooltipDesc .. (getText("Tooltip_BurdJournals_RecipesAvailable") or "Recipes: %d/%d available"):gsub("%%d/%%d", recipeCount .. "/" .. totalRecipes) .. "\n"
         end
         if tooltipDesc == "" then
             tooltipDesc = (getText("Tooltip_BurdJournals_NoRewardsFound") or "No rewards found") .. "\n"
@@ -337,11 +350,27 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
 
         -- Absorb All (quick action)
         if remaining > 0 then
-            local absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
+            -- Build label showing what's available (skills, traits, recipes) using translations
+            local parts = {}
+            if skillCount > 0 then
+                local skillKey = skillCount > 1 and "ContextMenu_BurdJournals_SkillsCount" or "ContextMenu_BurdJournals_SkillCount"
+                table.insert(parts, string.format(getText(skillKey) or "%d skills", skillCount))
+            end
             if traitCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkillsTraits") or "Absorb All (%d skills, %d traits)", skillCount, traitCount)
-            elseif skillCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkills") or "Absorb All (%d skills)", skillCount)
+                local traitKey = traitCount > 1 and "ContextMenu_BurdJournals_TraitsCount" or "ContextMenu_BurdJournals_TraitCount"
+                table.insert(parts, string.format(getText(traitKey) or "%d traits", traitCount))
+            end
+            if recipeCount > 0 then
+                local recipeKey = recipeCount > 1 and "ContextMenu_BurdJournals_RecipesCount" or "ContextMenu_BurdJournals_RecipeCount"
+                table.insert(parts, string.format(getText(recipeKey) or "%d recipes", recipeCount))
+            end
+
+            local absorbLabel
+            if #parts > 0 then
+                local absorbAllBase = getText("ContextMenu_BurdJournals_AbsorbAllFormat") or "Absorb All (%s)"
+                absorbLabel = string.format(absorbAllBase, table.concat(parts, ", "))
+            else
+                absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
             end
 
             local absorbAllOption = context:addOption(
@@ -354,7 +383,7 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
             tooltip2:initialise()
             tooltip2:setVisible(false)
             tooltip2:setName(getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards")
-            tooltip2.description = getText("Tooltip_BurdJournals_AbsorbAllDesc") or "Opens the journal and begins reading all rewards.\nRequires time to absorb each skill and trait.\nMaxed skills and known traits will be skipped."
+            tooltip2.description = getText("Tooltip_BurdJournals_AbsorbAllDesc") or "Opens the journal and begins reading all rewards.\nRequires time to absorb each skill, trait, and recipe.\nMaxed skills and known items will be skipped."
             absorbAllOption.toolTip = tooltip2
         end
     else
@@ -384,19 +413,21 @@ end
 
 function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal, isBlank)
     -- Debug removed
-    
+
     local ok, err = pcall(function()
         local journalData = BurdJournals.getJournalData(journal)
         local isFilled = BurdJournals.isFilledJournal(journal)
-        
+
         if isFilled and journalData then
             -- Debug removed
-            
-            -- Count skills and traits separately for detailed display
+
+            -- Count skills, traits, and recipes separately for detailed display
             local skillCount = 0
             local totalSkills = 0
             local traitCount = 0
             local totalTraits = 0
+            local recipeCount = 0
+            local totalRecipes = 0
 
             if journalData.skills then
                 for skillName, _ in pairs(journalData.skills) do
@@ -414,12 +445,20 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
                     end
                 end
             end
+            if journalData.recipes then
+                for recipeName, _ in pairs(journalData.recipes) do
+                    totalRecipes = totalRecipes + 1
+                    if not BurdJournals.isRecipeClaimed(journal, recipeName) then
+                        recipeCount = recipeCount + 1
+                    end
+                end
+            end
 
-            local remaining = skillCount + traitCount
+            local remaining = skillCount + traitCount + recipeCount
 
             -- Open Journal... (absorption UI)
             local openText = getText("ContextMenu_BurdJournals_OpenJournal") or "Open Journal..."
-            
+
             local openOption = context:addOption(
                 openText,
                 player,
@@ -431,10 +470,13 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
         tooltip:setVisible(false)
         tooltip:setName(getText("Tooltip_BurdJournals_WornJournal") or "Worn Journal")
 
-        -- Build detailed tooltip showing skills available
+        -- Build detailed tooltip showing skills and recipes available
         local tooltipDesc = ""
         if totalSkills > 0 then
-            tooltipDesc = (getText("Tooltip_BurdJournals_SkillsAvailable") or "Skills: %d/%d available"):gsub("%%d/%%d", skillCount .. "/" .. totalSkills)
+            tooltipDesc = (getText("Tooltip_BurdJournals_SkillsAvailable") or "Skills: %d/%d available"):gsub("%%d/%%d", skillCount .. "/" .. totalSkills) .. "\n"
+        end
+        if totalRecipes > 0 then
+            tooltipDesc = tooltipDesc .. (getText("Tooltip_BurdJournals_RecipesAvailable") or "Recipes: %d/%d available"):gsub("%%d/%%d", recipeCount .. "/" .. totalRecipes) .. "\n"
         end
         if tooltipDesc == "" then
             tooltipDesc = getText("Tooltip_BurdJournals_NoRewardsFound") or "No rewards found"
@@ -444,11 +486,27 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
 
         -- Absorb All (quick action)
         if remaining > 0 then
-            local absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
+            -- Build label showing what's available (skills, traits, recipes) using translations
+            local parts = {}
+            if skillCount > 0 then
+                local skillKey = skillCount > 1 and "ContextMenu_BurdJournals_SkillsCount" or "ContextMenu_BurdJournals_SkillCount"
+                table.insert(parts, string.format(getText(skillKey) or "%d skills", skillCount))
+            end
             if traitCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkillsTraits") or "Absorb All (%d skills, %d traits)", skillCount, traitCount)
-            elseif skillCount > 0 then
-                absorbLabel = string.format(getText("Tooltip_BurdJournals_AbsorbAllSkills") or "Absorb All (%d skills)", skillCount)
+                local traitKey = traitCount > 1 and "ContextMenu_BurdJournals_TraitsCount" or "ContextMenu_BurdJournals_TraitCount"
+                table.insert(parts, string.format(getText(traitKey) or "%d traits", traitCount))
+            end
+            if recipeCount > 0 then
+                local recipeKey = recipeCount > 1 and "ContextMenu_BurdJournals_RecipesCount" or "ContextMenu_BurdJournals_RecipeCount"
+                table.insert(parts, string.format(getText(recipeKey) or "%d recipes", recipeCount))
+            end
+
+            local absorbLabel
+            if #parts > 0 then
+                local absorbAllBase = getText("ContextMenu_BurdJournals_AbsorbAllFormat") or "Absorb All (%s)"
+                absorbLabel = string.format(absorbAllBase, table.concat(parts, ", "))
+            else
+                absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
             end
 
             local absorbAllOption = context:addOption(
@@ -461,7 +519,7 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
             tooltip2:initialise()
             tooltip2:setVisible(false)
             tooltip2:setName(getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards")
-            tooltip2.description = getText("Tooltip_BurdJournals_AbsorbAllDesc") or "Opens the journal and begins reading all rewards.\nRequires time to absorb each skill and trait.\nMaxed skills and known traits will be skipped."
+            tooltip2.description = getText("Tooltip_BurdJournals_AbsorbAllDesc") or "Opens the journal and begins reading all rewards.\nRequires time to absorb each skill, trait, and recipe.\nMaxed skills and known items will be skipped."
             absorbAllOption.toolTip = tooltip2
         end
     else
@@ -907,10 +965,8 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
                 -- Already has trait - don't claim
                 traitsSkipped = traitsSkipped + 1
             else
-                -- Try to grant trait
-                local success = pcall(function()
-                    player:getTraits():add(traitId)
-                end)
+                -- Try to grant trait using Build 42 compatible function
+                local success = BurdJournals.safeAddTrait(player, traitId)
                 if success then
                     BurdJournals.claimTrait(journal, traitId)
                     traitsAbsorbed = traitsAbsorbed + 1
@@ -1081,6 +1137,15 @@ function BurdJournals.ContextMenu.onConfirmRename(target, button, journal)
         local newName = button.parent.entry:getText()
         if newName and newName ~= "" then
             journal:setName(newName)
+            -- Mark as custom-named to prevent auto-localization from overwriting
+            local modData = journal:getModData()
+            if modData.BurdJournals then
+                modData.BurdJournals.customName = newName
+                -- Sync in multiplayer
+                if journal.transmitModData then
+                    journal:transmitModData()
+                end
+            end
         end
     end
 end

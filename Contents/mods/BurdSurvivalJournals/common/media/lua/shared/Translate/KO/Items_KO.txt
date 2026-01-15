@@ -1,0 +1,11 @@
+Items_KO = {
+    /* Blank Journals - Key format: DisplayName_ModuleName_ItemName */
+    DisplayName_BurdJournals_BlankSurvivalJournal = "빈 생존 일지",
+    DisplayName_BurdJournals_BlankSurvivalJournal_Worn = "낡은 빈 일지",
+    DisplayName_BurdJournals_BlankSurvivalJournal_Bloody = "피투성이 빈 일지",
+
+    /* Filled Journals */
+    DisplayName_BurdJournals_FilledSurvivalJournal = "작성된 생존 일지",
+    DisplayName_BurdJournals_FilledSurvivalJournal_Worn = "낡은 생존 일지",
+    DisplayName_BurdJournals_FilledSurvivalJournal_Bloody = "피투성이 생존 일지",
+}

@@ -153,7 +153,7 @@ end
 
 -- Safely get trait display name
 local function safeGetTraitName(traitId)
-    if not traitId then return "Unknown Trait" end
+    if not traitId then return getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait" end
 
     -- Try CharacterTraitDefinition first (B42)
     local traitDef = getTraitDefinition(traitId)
@@ -692,24 +692,40 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
 
     -- ============ HEADER STYLING ============
     local headerHeight = 52
+    -- Helper to get flavor text: try flavorKey translation first, fallback to legacy flavorText, then generic
+    local function getFlavorText(data, fallbackKey)
+        if data and data.flavorKey then
+            local translated = getText(data.flavorKey)
+            if translated and translated ~= data.flavorKey then
+                return translated
+            end
+        end
+        -- Fallback to legacy hardcoded flavorText (for old journals)
+        if data and data.flavorText then
+            return data.flavorText
+        end
+        -- Final fallback to generic text
+        return getText(fallbackKey)
+    end
+
     if isBloody then
         self.headerColor = {r=0.45, g=0.08, b=0.08}
         self.headerAccent = {r=0.7, g=0.15, b=0.15}
         self.typeText = getText("UI_BurdJournals_BloodyJournalHeader")
         self.rarityText = getText("UI_BurdJournals_RarityRare")
-        self.flavorText = getText("UI_BurdJournals_BloodyFlavor")
+        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_BloodyFlavor")
     elseif hasBloodyOrigin then
         self.headerColor = {r=0.30, g=0.22, b=0.12}
         self.headerAccent = {r=0.5, g=0.35, b=0.2}
         self.typeText = getText("UI_BurdJournals_WornJournalHeader")
         self.rarityText = getText("UI_BurdJournals_RarityUncommon")
-        self.flavorText = getText("UI_BurdJournals_WornBloodyFlavor")
+        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_WornBloodyFlavor")
     else
         self.headerColor = {r=0.22, g=0.20, b=0.15}
         self.headerAccent = {r=0.4, g=0.35, b=0.25}
         self.typeText = getText("UI_BurdJournals_WornJournalHeader")
         self.rarityText = nil
-        self.flavorText = getText("UI_BurdJournals_WornFlavor")
+        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_WornFlavor")
     end
     self.headerHeight = headerHeight
     y = headerHeight + 6
@@ -821,9 +837,14 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
             local row = listbox:rowAt(x, y)
             if row and row >= 1 and row <= #listbox.items then
                 local item = listbox.items[row] and listbox.items[row].item
-                if item and not item.isHeader and not item.isEmpty and not item.isClaimed then
-                    local btnAreaStart = listbox:getWidth() - 80
-                    if x >= btnAreaStart or item.isTrait or item.isRecipe then
+                if item and not item.isHeader and not item.isEmpty then
+                    -- Button layout: [CLAIM (55px)] [margin 10px]
+                    local btnW = 55
+                    local margin = 10
+                    local claimBtnStart = listbox:getWidth() - btnW - margin
+
+                    if x >= claimBtnStart and not item.isClaimed then
+                        -- Claim button clicked
                         if item.isSkill then
                             listbox.mainPanel:absorbSkill(item.skillName, item.xp)
                         elseif item.isTrait and not item.alreadyKnown then
@@ -859,11 +880,23 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     local absorbAllText = getText("UI_BurdJournals_BtnAbsorbAll") or "Absorb All"
     local closeText = getText("UI_BurdJournals_BtnClose") or "Close"
 
-    -- Measure text widths and use the largest plus padding
-    local absorbTabW = getTextManager():MeasureStringX(UIFont.Small, absorbTabText) + 16
-    local absorbAllW = getTextManager():MeasureStringX(UIFont.Small, absorbAllText) + 16
-    local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 16
-    local btnWidth = math.max(90, absorbTabW, absorbAllW, closeW)
+    -- Measure text widths for ALL tabs to ensure buttons fit any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+    local btnPrefix = getText("UI_BurdJournals_BtnAbsorbTab") or "Absorb %s"
+    local maxAbsorbTabW = 90
+    for _, name in ipairs(allTabNames) do
+        local text = string.format(btnPrefix, name)
+        local w = getTextManager():MeasureStringX(UIFont.Small, text) + 20
+        maxAbsorbTabW = math.max(maxAbsorbTabW, w)
+    end
+    local absorbAllW = getTextManager():MeasureStringX(UIFont.Small, absorbAllText) + 20
+    local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
+    local btnWidth = math.max(90, maxAbsorbTabW, absorbAllW, closeW)
 
     local btnSpacing = 8
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
@@ -913,18 +946,14 @@ end
 
 -- Absorb All button handler
 function BurdJournals.UI.MainPanel:onAbsorbAll()
-    -- Start learning all rewards with combined timer
-    if not self:startLearningAll() then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading"), {r=0.9, g=0.7, b=0.3})
-    end
+    -- startLearningAll handles its own feedback messages
+    self:startLearningAll()
 end
 
 -- Absorb Tab button handler (tab-specific)
 function BurdJournals.UI.MainPanel:onAbsorbTab()
-    -- Start learning only rewards from the current tab
-    if not self:startLearningTab(self.currentTab or "skills") then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading"), {r=0.9, g=0.7, b=0.3})
-    end
+    -- startLearningTab handles its own feedback messages
+    self:startLearningTab(self.currentTab or "skills")
 end
 
 -- ==================== CUSTOM RENDER FOR HEADER/FOOTER ====================
@@ -1116,12 +1145,13 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
                 self:drawRect(barX, barY, barW * progress, barH, 0.85, 0.25, 0.55, 0.45)
                 self:drawRectBorder(barX, barY, barW, barH, 0.8, 0.4, 0.6, 0.7)
                 
-                local progressText = string.format("Recording All: %d%% (%s remaining)", 
-                                                  math.floor(progress * 100), remainingText)
+                local progressFormat = getText("UI_BurdJournals_RecordingAllProgress") or "Recording All: %d%% (%s remaining)"
+                local progressText = string.format(progressFormat, math.floor(progress * 100), remainingText)
                 local textWidth = getTextManager():MeasureStringX(UIFont.Small, progressText)
                 self:drawText(progressText, (self.width - textWidth) / 2, barY + 1, 1, 1, 1, 1, UIFont.Small)
-                
-                local countText = string.format("%d item%s", totalRecords, totalRecords > 1 and "s" or "")
+
+                local countFormat = totalRecords > 1 and (getText("UI_BurdJournals_ItemCountPlural") or "%d items") or (getText("UI_BurdJournals_ItemCount") or "%d item")
+                local countText = string.format(countFormat, totalRecords)
                 local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
                 self:drawText(countText, (self.width - countWidth) / 2, barY + barH + 4, 0.6, 0.7, 0.75, 1, UIFont.Small)
             end
@@ -1149,13 +1179,18 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             end
             self:drawRectBorder(barX, barY, barW, barH, 0.8, 0.5, 0.5, 0.5)
             
-            local actionText = (self.mode == "view") and "Claiming All" or "Absorbing All"
-            local progressText = string.format("%s: %d%% (%s remaining)", actionText,
-                                              math.floor(progress * 100), remainingText)
+            local progressFormat
+            if self.mode == "view" then
+                progressFormat = getText("UI_BurdJournals_ClaimingAllProgress") or "Claiming All: %d%% (%s remaining)"
+            else
+                progressFormat = getText("UI_BurdJournals_AbsorbingAllProgress") or "Absorbing All: %d%% (%s remaining)"
+            end
+            local progressText = string.format(progressFormat, math.floor(progress * 100), remainingText)
             local textWidth = getTextManager():MeasureStringX(UIFont.Small, progressText)
             self:drawText(progressText, (self.width - textWidth) / 2, barY + 1, 1, 1, 1, 1, UIFont.Small)
             
-            local countText = string.format("%d reward%s queued", totalRewards, totalRewards > 1 and "s" or "")
+            local countFormat = totalRewards > 1 and (getText("UI_BurdJournals_RewardsQueued") or "%d rewards queued") or (getText("UI_BurdJournals_RewardQueued") or "%d reward queued")
+            local countText = string.format(countFormat, totalRewards)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, (self.width - countWidth) / 2, barY + barH + 4, 0.6, 0.6, 0.55, 1, UIFont.Small)
         else
@@ -1163,11 +1198,15 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             if self.mode == "absorb" or self.mode == "view" then
         local summaryText = ""
         if self.totalXP and self.totalXP > 0 then
-            summaryText = "Total: +" .. BurdJournals.formatXP(self.totalXP) .. " XP"
+            local xpFormat = getText("UI_BurdJournals_SummaryTotalXP") or "Total: +%s XP"
+            summaryText = string.format(xpFormat, BurdJournals.formatXP(self.totalXP))
         end
         if self.traitCount and self.traitCount > 0 then
-            if summaryText ~= "" then summaryText = summaryText .. "  |  " end
-            summaryText = summaryText .. self.traitCount .. " trait" .. (self.traitCount > 1 and "s" or "")
+            if summaryText ~= "" then
+                summaryText = summaryText .. (getText("UI_BurdJournals_SummarySeparator") or "  |  ")
+            end
+            local traitFormat = self.traitCount > 1 and (getText("UI_BurdJournals_SummaryTraits") or "%d traits") or (getText("UI_BurdJournals_SummaryTrait") or "%d trait")
+            summaryText = summaryText .. string.format(traitFormat, self.traitCount)
         end
         if summaryText ~= "" then
             local textWidth = getTextManager():MeasureStringX(UIFont.Small, summaryText)
@@ -1210,9 +1249,9 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     -- ============ HEADER ROW ============
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.15, 0.14, 0.12)
-        self:drawText(data.text or "SKILLS", x + padding, y + (h - 18) / 2, 0.9, 0.8, 0.6, 1, UIFont.Medium)
+        self:drawText(data.text or getText("UI_BurdJournals_Skills") or "SKILLS", x + padding, y + (h - 18) / 2, 0.9, 0.8, 0.6, 1, UIFont.Medium)
         if data.count then
-            local countText = "(" .. data.count .. " available)"
+            local countText = string.format(getText("UI_BurdJournals_Available") or "(%d available)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.5, 0.5, 0.45, 1, UIFont.Small)
         end
@@ -1221,7 +1260,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
     -- ============ EMPTY ROW ============
     if data.isEmpty then
-        self:drawText(data.text or "No rewards available", x + padding, y + (h - 14) / 2, 0.4, 0.4, 0.4, 1, UIFont.Small)
+        self:drawText(data.text or getText("UI_BurdJournals_NoRewardsAvailable") or "No rewards available", x + padding, y + (h - 14) / 2, 0.4, 0.4, 0.4, 1, UIFont.Small)
         return y + h
     end
 
@@ -1286,7 +1325,8 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
         -- Line 2: Level squares + XP info OR learning progress
         if isLearningThis then
             -- Show learning progress bar
-            local progressText = string.format("Reading... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, textX, cardY + 24, 0.9, 0.8, 0.3, 1, UIFont.Small)
 
             local barX = textX + 90
@@ -1369,16 +1409,16 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                 {r=0.15, g=0.15, b=0.15}   -- Dimmer for progress
             )
             local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            self:drawText("Claimed", squaresX + squaresWidth + 8, squaresY, 0.35, 0.35, 0.35, 1, UIFont.Small)
+            self:drawText(getText("UI_BurdJournals_StatusClaimed") or "Claimed", squaresX + squaresWidth + 8, squaresY, 0.35, 0.35, 0.35, 1, UIFont.Small)
         end
 
-        -- Button (right side)
+        -- Button (right side) - No erase button in absorption mode (worn/bloody journals)
         if not data.isClaimed and not isLearningThis then
-            local btnW = 65
+            local btnW = 60
             local btnH = 24
             local btnX = cardX + cardW - btnW - 10
             local btnY = cardY + (cardH - btnH) / 2
-            
+
             if isQueued then
                 -- Show "QUEUED" indicator (not clickable style)
                 self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
@@ -1395,11 +1435,11 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                 self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
             elseif not learningState.active then
                 -- Show "ABSORB" button (normal state)
-            self:drawRect(btnX, btnY, btnW, btnH, 0.7, accentColor.r * 0.6, accentColor.g * 0.6, accentColor.b * 0.6)
-            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, accentColor.r, accentColor.g, accentColor.b)
-            local btnText = getText("UI_BurdJournals_Absorb")
-            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                self:drawRect(btnX, btnY, btnW, btnH, 0.7, accentColor.r * 0.6, accentColor.g * 0.6, accentColor.b * 0.6)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, accentColor.r, accentColor.g, accentColor.b)
+                local btnText = getText("UI_BurdJournals_Absorb")
+                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
             end
         end
     end
@@ -1417,7 +1457,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
         local queuePosition = mainPanel:getQueuePosition(data.traitId)
         local isQueued = queuePosition ~= nil
         
-        local traitName = data.traitName or data.traitId or "Unknown Trait"
+        local traitName = data.traitName or data.traitId or getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait"
         local traitTextX = textX
 
         -- Draw trait icon if available
@@ -1445,7 +1485,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
         -- Show learning progress bar if this trait is being learned
         if isLearningThis then
-            local progressText = string.format("Absorbing... %d%%", math.floor(learningState.progress * 100))
+            local progressText = string.format(getText("UI_BurdJournals_AbsorbingProgress") or "Absorbing... %d%%", math.floor(learningState.progress * 100))
             self:drawText(progressText, traitTextX, cardY + 22, 0.9, 0.7, 0.3, 1, UIFont.Small)
 
             -- Learning progress bar (shorter width to account for icon offset)
@@ -1496,13 +1536,13 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
             end
         end
 
-        -- Button for traits (not already known or claimed)
+        -- Button for traits (not already known or claimed) - No erase button in absorption mode
         if not data.isClaimed and not data.alreadyKnown and not isLearningThis then
             local btnW = 60
             local btnH = 24
             local btnX = cardX + cardW - btnW - 10
             local btnY = cardY + (cardH - btnH) / 2
-            
+
             if isQueued then
                 -- Show "QUEUED" indicator
                 self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
@@ -1519,11 +1559,11 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                 self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
             elseif not learningState.active then
                 -- Show "CLAIM" button (normal state)
-            self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.5, 0.35, 0.15)
-            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.7, 0.5, 0.25)
-            local btnText = getText("UI_BurdJournals_BtnClaim")
-            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
+                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.5, 0.35, 0.15)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.7, 0.5, 0.25)
+                local btnText = getText("UI_BurdJournals_BtnClaim")
+                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
             end
         end
     end
@@ -1543,6 +1583,30 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
         local recipeName = data.displayName or data.recipeName or "Unknown Recipe"
         local recipeTextX = textX
+
+        -- Load and draw magazine icon if available
+        local magazineTexture = nil
+        if data.magazineSource then
+            pcall(function()
+                local script = getScriptManager():getItem(data.magazineSource)
+                if script then
+                    local iconName = script:getIcon()
+                    if iconName then
+                        magazineTexture = getTexture("Item_" .. iconName)
+                    end
+                end
+            end)
+        end
+
+        -- Draw magazine icon if we have one
+        if magazineTexture then
+            local iconSize = 24
+            local iconX = textX
+            local iconY = cardY + (cardH - iconSize) / 2
+            local iconAlpha = (data.isClaimed or data.alreadyKnown) and 0.4 or 1.0
+            self:drawTextureScaledAspect(magazineTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
+            recipeTextX = textX + iconSize + 6
+        end
 
         -- Recipe name with teal/cyan color theme
         local recipeColor
@@ -1575,12 +1639,12 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
         elseif isQueued then
             -- Show as queued with position
-            local queueText = string.format("Recipe knowledge - Queued #%d", queuePosition)
+            local queueText = string.format(getText("UI_BurdJournals_RecipeKnowledgeQueuedNum") or "Recipe knowledge - Queued #%d", queuePosition)
             self:drawText(queueText, recipeTextX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
 
         elseif isQueuedInAbsorbAll then
             -- Show queued state for Absorb All
-            local bonusText = "Recipe knowledge - Queued"
+            local bonusText = getText("UI_BurdJournals_RecipeKnowledgeQueued") or "Recipe knowledge - Queued"
             self:drawText(bonusText, recipeTextX, cardY + 22, 0.4, 0.6, 0.65, 1, UIFont.Small)
 
         elseif data.isClaimed then
@@ -1589,7 +1653,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
             self:drawText(getText("UI_BurdJournals_RecipeAlreadyKnown") or "Already known", recipeTextX, cardY + 22, 0.5, 0.4, 0.3, 1, UIFont.Small)
         else
             -- Show magazine source if available
-            local sourceText = "Recipe knowledge"
+            local sourceText = getText("UI_BurdJournals_RecipeKnowledge") or "Recipe knowledge"
             if data.magazineSource then
                 local magazineName = BurdJournals.getMagazineDisplayName(data.magazineSource)
                 sourceText = string.format(getText("UI_BurdJournals_RecipeFromMagazine") or "From: %s", magazineName)
@@ -1599,11 +1663,12 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
 
         -- Button for recipes (not already known or claimed)
         if not data.isClaimed and not data.alreadyKnown and not isLearningThis then
-            local btnW = 60
+            local btnW = 55
             local btnH = 24
+
+            -- Position main button (CLAIM/QUEUE)
             local btnX = cardX + cardW - btnW - 10
             local btnY = cardY + (cardH - btnH) / 2
-
             if isQueued then
                 -- Show "QUEUED" indicator
                 self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.5, 0.55)
@@ -1728,7 +1793,8 @@ function BurdJournals.UI.MainPanel:populateAbsorptionList()
                 local isClaimed = BurdJournals.isRecipeClaimed(self.journal, recipeName)
                 local alreadyKnown = BurdJournals.playerKnowsRecipe(self.player, recipeName)
                 local displayName = BurdJournals.getRecipeDisplayName(recipeName)
-                local magazineSource = recipeData.source or BurdJournals.getMagazineForRecipe(recipeName)
+                local magazineSource = (type(recipeData) == "table" and recipeData.source) or BurdJournals.getMagazineForRecipe(recipeName)
+
                 -- Apply search filter
                 if self:matchesSearch(displayName) then
                     matchCount = matchCount + 1
@@ -1977,7 +2043,8 @@ end
 
 -- Get learning time for a recipe (in seconds)
 function BurdJournals.UI.MainPanel:getRecipeLearningTime()
-    local baseTime = BurdJournals.getSandboxOption("LearningTimePerRecipe") or 2.0
+    -- Recipes are quick to learn (about 0.7 seconds base, ~3x faster than skills)
+    local baseTime = (BurdJournals.getSandboxOption("LearningTimePerRecipe") or 2.0) * 0.35
     local multiplier = BurdJournals.getSandboxOption("LearningTimeMultiplier") or 1.0
     local readingMultiplier = self:getReadingSpeedMultiplier()
     return baseTime * multiplier * readingMultiplier
@@ -1986,6 +2053,7 @@ end
 -- Start learning all available rewards (Absorb All) - uses ISTimedActionQueue
 function BurdJournals.UI.MainPanel:startLearningAll()
     if self.learningState.active then
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
         return false
     end
 
@@ -2035,8 +2103,9 @@ function BurdJournals.UI.MainPanel:startLearningAll()
                     shouldInclude = true
                 end
             else
-                -- Worn/bloody: Include if not claimed
-                if not BurdJournals.isTraitClaimed(self.journal, traitId) then
+                -- Worn/bloody: Include if not claimed AND player doesn't already have trait
+                if not BurdJournals.isTraitClaimed(self.journal, traitId) and
+                   not BurdJournals.playerHasTrait(self.player, traitId) then
                     shouldInclude = true
                 end
             end
@@ -2048,7 +2117,7 @@ function BurdJournals.UI.MainPanel:startLearningAll()
     end
 
     if #pendingRewards == 0 then
-        self:showFeedback(getText("UI_BurdJournals_NoNewRewards"), {r=0.7, g=0.7, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NoNewRewards") or "No new rewards to claim", {r=0.7, g=0.7, b=0.5})
         return false
     end
 
@@ -2062,8 +2131,10 @@ function BurdJournals.UI.MainPanel:startLearningAll()
     for _, reward in ipairs(pendingRewards) do
         if reward.type == "skill" then
             totalTime = totalTime + self:getSkillLearningTime()
-        else
+        elseif reward.type == "trait" then
             totalTime = totalTime + self:getTraitLearningTime()
+        elseif reward.type == "recipe" then
+            totalTime = totalTime + self:getRecipeLearningTime()
         end
     end
 
@@ -2071,6 +2142,7 @@ function BurdJournals.UI.MainPanel:startLearningAll()
         active = true,
         skillName = nil,
         traitId = nil,
+        recipeName = nil,
         isAbsorbAll = true,
         progress = 0,
         totalTime = totalTime,
@@ -2091,6 +2163,7 @@ end
 -- Start learning only rewards from a specific tab (Absorb Tab / Claim Tab)
 function BurdJournals.UI.MainPanel:startLearningTab(tabId)
     if self.learningState.active then
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
         return false
     end
 
@@ -2140,7 +2213,9 @@ function BurdJournals.UI.MainPanel:startLearningTab(tabId)
                         shouldInclude = true
                     end
                 else
-                    if not BurdJournals.isTraitClaimed(self.journal, traitId) then
+                    -- Worn/bloody: Include if not claimed AND player doesn't already have trait
+                    if not BurdJournals.isTraitClaimed(self.journal, traitId) and
+                       not BurdJournals.playerHasTrait(self.player, traitId) then
                         shouldInclude = true
                     end
                 end
@@ -2163,8 +2238,9 @@ function BurdJournals.UI.MainPanel:startLearningTab(tabId)
                         shouldInclude = true
                     end
                 else
-                    -- For worn/bloody, check if not claimed
-                    if not BurdJournals.isRecipeClaimed(self.journal, recipeName) then
+                    -- Worn/bloody: Include if not claimed AND player doesn't already know recipe
+                    if not BurdJournals.isRecipeClaimed(self.journal, recipeName) and
+                       not BurdJournals.playerKnowsRecipe(self.player, recipeName) then
                         shouldInclude = true
                     end
                 end
@@ -2378,9 +2454,9 @@ function BurdJournals.UI.MainPanel:getStatRecordingTime()
     return self:getSkillRecordingTime()
 end
 
--- Get recording time for recipes (half of learning time, like skills/traits)
+-- Get recording time for recipes (quick - about 0.8 seconds base, ~3x faster than skills)
 function BurdJournals.UI.MainPanel:getRecipeRecordingTime()
-    local baseTime = (BurdJournals.getSandboxOption("LearningTimePerRecipe") or 5.0) * 0.5
+    local baseTime = (BurdJournals.getSandboxOption("LearningTimePerRecipe") or 5.0) * 0.16
     local multiplier = BurdJournals.getSandboxOption("LearningTimeMultiplier") or 1.0
     return baseTime * multiplier
 end
@@ -2423,10 +2499,97 @@ function BurdJournals.UI.MainPanel:startRecordingRecipe(recipeName)
     return true
 end
 
+-- Check journal capacity and return warning message if approaching limits
+function BurdJournals.UI.MainPanel:checkJournalCapacity(pendingSkillCount, pendingTraitCount, pendingRecipeCount)
+    local limits = BurdJournals.Limits or {}
+    local warnings = {}
+
+    -- Get current journal counts
+    local currentSkills = 0
+    local currentTraits = 0
+    local currentRecipes = 0
+
+    if self.recordedSkills then
+        for _ in pairs(self.recordedSkills) do currentSkills = currentSkills + 1 end
+    end
+    if self.recordedTraits then
+        for _ in pairs(self.recordedTraits) do currentTraits = currentTraits + 1 end
+    end
+    if self.recordedRecipes then
+        for _ in pairs(self.recordedRecipes) do currentRecipes = currentRecipes + 1 end
+    end
+
+    local maxSkills = limits.MAX_SKILLS or 50
+    local maxTraits = limits.MAX_TRAITS or 100
+    local maxRecipes = limits.MAX_RECIPES or 200
+    local warnSkills = limits.WARN_SKILLS or 25
+    local warnTraits = limits.WARN_TRAITS or 40
+    local warnRecipes = limits.WARN_RECIPES or 80
+
+    local newSkillTotal = currentSkills + (pendingSkillCount or 0)
+    local newTraitTotal = currentTraits + (pendingTraitCount or 0)
+    local newRecipeTotal = currentRecipes + (pendingRecipeCount or 0)
+
+    -- Check for hard limit violations (will be rejected by server)
+    if newSkillTotal > maxSkills then
+        return false, string.format("Too many skills! Journal limit is %d (would have %d)", maxSkills, newSkillTotal)
+    end
+    if newTraitTotal > maxTraits then
+        return false, string.format("Too many traits! Journal limit is %d (would have %d)", maxTraits, newTraitTotal)
+    end
+    if newRecipeTotal > maxRecipes then
+        return false, string.format("Too many recipes! Journal limit is %d (would have %d)", maxRecipes, newRecipeTotal)
+    end
+
+    -- Check for soft limit warnings (approaching capacity)
+    if newSkillTotal >= warnSkills and pendingSkillCount > 0 then
+        table.insert(warnings, string.format(getText("UI_BurdJournals_CapacitySkills") or "Skills: %d/%d", newSkillTotal, maxSkills))
+    end
+    if newTraitTotal >= warnTraits and pendingTraitCount > 0 then
+        table.insert(warnings, string.format(getText("UI_BurdJournals_CapacityTraits") or "Traits: %d/%d", newTraitTotal, maxTraits))
+    end
+    if newRecipeTotal >= warnRecipes and pendingRecipeCount > 0 then
+        table.insert(warnings, string.format(getText("UI_BurdJournals_CapacityRecipes") or "Recipes: %d/%d", newRecipeTotal, maxRecipes))
+    end
+
+    if #warnings > 0 then
+        return true, string.format(getText("UI_BurdJournals_ApproachingCapacity") or "Journal approaching capacity: %s", table.concat(warnings, ", "))
+    end
+
+    return true, nil
+end
+
 -- Start recording all skills, traits, and stats (uses ISTimedActionQueue)
 function BurdJournals.UI.MainPanel:startRecordingAll()
     if self.recordingState and self.recordingState.active then
         return false
+    end
+
+    -- Ensure baseline is captured before allowing recording (balance mode protection)
+    if BurdJournals.isBaselineRestrictionEnabled() then
+        if not BurdJournals.hasBaselineCaptured(self.player) then
+            -- Trigger baseline capture with 5-tick delay for safety
+            if BurdJournals.Client and BurdJournals.Client.captureBaseline then
+                local panel = self
+                local ticksWaited = 0
+                local delayedCapture
+                delayedCapture = function()
+                    ticksWaited = ticksWaited + 1
+                    if ticksWaited >= 5 then
+                        Events.OnTick.Remove(delayedCapture)
+                        BurdJournals.Client.captureBaseline(panel.player, true)
+                        -- Refresh the UI after baseline is captured
+                        if panel.populateRecordList then
+                            panel:populateRecordList()
+                        end
+                    end
+                end
+                Events.OnTick.Add(delayedCapture)
+            end
+            -- Show feedback and abort this recording attempt
+            self:showFeedback(getText("UI_BurdJournals_BaselineInitializing") or "Please wait - character data initializing...", {r=1, g=0.8, b=0.3})
+            return false
+        end
     end
 
     if not self.recordingState then
@@ -2469,13 +2632,19 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
     local playerTraits = BurdJournals.collectPlayerTraits(self.player)
     local traitBaseline = BurdJournals.getTraitBaseline(self.player) or {}
     local grantableTraits = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or BurdJournals.GRANTABLE_TRAITS or {}
+    local traitDebug = getDebug() -- Only log if debug mode is on
     for traitId, _ in pairs(playerTraits) do
         -- Check if this is a grantable trait (handles profession variants like soto:slaughterer2)
         local isGrantable = BurdJournals.isTraitGrantable(traitId, grantableTraits)
-        -- Check if player started with this trait (baseline)
+        -- Check if player started with this trait (baseline) - case insensitive
         local isStartingTrait = traitBaseline[traitId] or traitBaseline[string.lower(traitId)]
-        -- Check if already recorded
-        local isRecorded = recordedTraits[traitId]
+        -- Check if already recorded - case insensitive for consistency
+        local isRecorded = recordedTraits[traitId] or recordedTraits[string.lower(traitId)]
+
+        if traitDebug then
+            print("[BurdJournals] Trait check: " .. traitId .. " | grantable=" .. tostring(isGrantable) .. 
+                  " | starting=" .. tostring(isStartingTrait) .. " | recorded=" .. tostring(isRecorded))
+        end
 
         if isGrantable and not isStartingTrait and not isRecorded then
             table.insert(pendingRecords, {type = "trait", name = traitId})
@@ -2508,6 +2677,26 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
     if #pendingRecords == 0 then
         self:showFeedback(getText("UI_BurdJournals_NothingNewToRecord") or "Nothing new to record", {r=0.7, g=0.7, b=0.5})
         return false
+    end
+
+    -- Count pending items by type for capacity check
+    local pendingSkillCount, pendingTraitCount, pendingRecipeCount = 0, 0, 0
+    for _, record in ipairs(pendingRecords) do
+        if record.type == "skill" then pendingSkillCount = pendingSkillCount + 1
+        elseif record.type == "trait" then pendingTraitCount = pendingTraitCount + 1
+        elseif record.type == "recipe" then pendingRecipeCount = pendingRecipeCount + 1
+        end
+    end
+
+    -- Check journal capacity before recording
+    local canRecord, capacityMsg = self:checkJournalCapacity(pendingSkillCount, pendingTraitCount, pendingRecipeCount)
+    if not canRecord then
+        self:showFeedback(capacityMsg, {r=1, g=0.4, b=0.4})
+        return false
+    end
+    if capacityMsg then
+        -- Show warning but allow recording to proceed
+        self:showFeedback(capacityMsg, {r=1, g=0.8, b=0.3})
     end
 
     -- Queue the timed action (respects game pause)
@@ -2551,6 +2740,33 @@ end
 function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
     if self.recordingState and self.recordingState.active then
         return false
+    end
+
+    -- Ensure baseline is captured before allowing recording (balance mode protection)
+    if BurdJournals.isBaselineRestrictionEnabled() then
+        if not BurdJournals.hasBaselineCaptured(self.player) then
+            -- Trigger baseline capture with 5-tick delay for safety
+            if BurdJournals.Client and BurdJournals.Client.captureBaseline then
+                local panel = self
+                local ticksWaited = 0
+                local delayedCapture
+                delayedCapture = function()
+                    ticksWaited = ticksWaited + 1
+                    if ticksWaited >= 5 then
+                        Events.OnTick.Remove(delayedCapture)
+                        BurdJournals.Client.captureBaseline(panel.player, true)
+                        -- Refresh the UI after baseline is captured
+                        if panel.populateRecordList then
+                            panel:populateRecordList()
+                        end
+                    end
+                end
+                Events.OnTick.Add(delayedCapture)
+            end
+            -- Show feedback and abort this recording attempt
+            self:showFeedback(getText("UI_BurdJournals_BaselineInitializing") or "Please wait - character data initializing...", {r=1, g=0.8, b=0.3})
+            return false
+        end
     end
 
     if not self.recordingState then
@@ -2597,7 +2813,8 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
             -- Use isTraitGrantable which handles profession variants (e.g., soto:slaughterer2)
             local isGrantable = BurdJournals.isTraitGrantable(traitId, grantableTraits)
             local isStartingTrait = traitBaseline[traitId] or traitBaseline[string.lower(traitId)]
-            local isRecorded = recordedTraits[traitId]
+            -- Case insensitive check for consistency
+            local isRecorded = recordedTraits[traitId] or recordedTraits[string.lower(traitId)]
 
             if isGrantable and not isStartingTrait and not isRecorded then
                 table.insert(pendingRecords, {type = "trait", name = traitId})
@@ -2633,6 +2850,26 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
     if #pendingRecords == 0 then
         self:showFeedback(getText("UI_BurdJournals_NothingNewToRecord") or "Nothing new to record", {r=0.7, g=0.7, b=0.5})
         return false
+    end
+
+    -- Count pending items by type for capacity check
+    local pendingSkillCount, pendingTraitCount, pendingRecipeCount = 0, 0, 0
+    for _, record in ipairs(pendingRecords) do
+        if record.type == "skill" then pendingSkillCount = pendingSkillCount + 1
+        elseif record.type == "trait" then pendingTraitCount = pendingTraitCount + 1
+        elseif record.type == "recipe" then pendingRecipeCount = pendingRecipeCount + 1
+        end
+    end
+
+    -- Check journal capacity before recording
+    local canRecord, capacityMsg = self:checkJournalCapacity(pendingSkillCount, pendingTraitCount, pendingRecipeCount)
+    if not canRecord then
+        self:showFeedback(capacityMsg, {r=1, g=0.4, b=0.4})
+        return false
+    end
+    if capacityMsg then
+        -- Show warning but allow recording to proceed
+        self:showFeedback(capacityMsg, {r=1, g=0.8, b=0.3})
     end
 
     -- Queue the timed action (respects game pause)
@@ -3323,7 +3560,7 @@ function BurdJournals.UI.MainPanel:sendClaimTrait(traitId)
 end
 
 -- Send recipe absorption command to server (for worn/bloody journals)
-function BurdJournals.UI.MainPanel:sendAbsorbRecipe(recipeName)
+function BurdJournals.UI.MainPanel:sendAbsorbRecipe(recipeName, skipRefresh)
     local journalId = self.journal:getID()
     -- In MP (isClient and not isServer), send command to server
     -- In SP (isClient and isServer), fall through to direct application
@@ -3334,7 +3571,13 @@ function BurdJournals.UI.MainPanel:sendAbsorbRecipe(recipeName)
         })
     else
         -- Single player: apply directly
-        self:applyRecipeDirectly(recipeName)
+        local success = self:applyRecipeDirectly(recipeName)
+        -- Mark as claimed in journal modData (even if learning failed, to prevent retry spam)
+        BurdJournals.claimRecipe(self.journal, recipeName)
+        -- Refresh the UI to show the recipe as claimed
+        if not skipRefresh then
+            self:refreshAbsorptionList()
+        end
     end
 end
 
@@ -3359,34 +3602,35 @@ function BurdJournals.UI.MainPanel:sendClaimRecipe(recipeName)
         self:applyRecipeDirectly(recipeName)
         -- Mark as claimed in journal modData
         BurdJournals.claimRecipe(self.journal, recipeName)
+        -- Refresh the UI to show the recipe as claimed
+        self:refreshAbsorptionList()
     end
 end
 
 -- Apply recipe directly (single player fallback)
+-- Uses the comprehensive learnRecipeWithVerification from Shared module
+-- Handles both standard recipes and magazine-based recipes
 function BurdJournals.UI.MainPanel:applyRecipeDirectly(recipeName)
-    if not self.player or not recipeName then return end
+    if not self.player or not recipeName then return false end
 
-    -- Check if player already knows the recipe
+    local displayName = BurdJournals.getRecipeDisplayName(recipeName) or recipeName
+
+    -- Check if player already knows the recipe using our comprehensive check
     if BurdJournals.playerKnowsRecipe(self.player, recipeName) then
-        self:showFeedback(string.format(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", recipeName), {r=0.7, g=0.7, b=0.5})
-        return
+        self:showFeedback(string.format(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName), {r=0.7, g=0.7, b=0.5})
+        return false
     end
 
-    -- Learn the recipe
-    local recipeWasLearned = false
-    pcall(function()
-        self.player:learnRecipe(recipeName)
-        recipeWasLearned = true
-    end)
+    -- Use the comprehensive shared utility function
+    local learned = BurdJournals.learnRecipeWithVerification(self.player, recipeName, "[BurdJournals Client]")
 
-    if recipeWasLearned then
-        local displayName = BurdJournals.getRecipeDisplayName(recipeName) or recipeName
+    if learned then
         self:showFeedback(string.format(getText("UI_BurdJournals_LearnedRecipe") or "Learned: %s", displayName), {r=0.5, g=0.9, b=0.95})
-
-        -- Show halo text for recipe learned
         BurdJournals.Client.showHaloMessage(self.player, "+" .. displayName, BurdJournals.Client.HaloColors.RECIPE_GAIN)
+        return true
     else
-        self:showFeedback("Failed to learn recipe", {r=0.9, g=0.5, b=0.5})
+        self:showFeedback(string.format(getText("UI_BurdJournals_RecipeNotAvailable") or "Recipe not available: %s", displayName), {r=0.9, g=0.7, b=0.5})
+        return false
     end
 end
 
@@ -3478,6 +3722,131 @@ function BurdJournals.UI.MainPanel:absorbRecipe(recipeName)
     -- Start learning the recipe
     if not self:startLearningRecipe(recipeName) then
         self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+    end
+end
+
+-- ==================== ERASE ENTRY FUNCTIONS ====================
+
+-- Erase a skill entry from the journal
+function BurdJournals.UI.MainPanel:eraseSkillEntry(skillName)
+    if not self.journal or not skillName then return end
+
+    -- Check if player has eraser
+    if not BurdJournals.hasEraser(self.player) then
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        return
+    end
+
+    -- Queue timed action for erasing
+    BurdJournals.queueEraseAction(self.player, self.journal, "skill", skillName, self)
+end
+
+-- Erase a trait entry from the journal
+function BurdJournals.UI.MainPanel:eraseTraitEntry(traitId)
+    if not self.journal or not traitId then return end
+
+    -- Check if player has eraser
+    if not BurdJournals.hasEraser(self.player) then
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        return
+    end
+
+    -- Queue timed action for erasing
+    BurdJournals.queueEraseAction(self.player, self.journal, "trait", traitId, self)
+end
+
+-- Erase a recipe entry from the journal
+function BurdJournals.UI.MainPanel:eraseRecipeEntry(recipeName)
+    if not self.journal or not recipeName then return end
+
+    -- Check if player has eraser
+    if not BurdJournals.hasEraser(self.player) then
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        return
+    end
+
+    -- Queue timed action for erasing
+    BurdJournals.queueEraseAction(self.player, self.journal, "recipe", recipeName, self)
+end
+
+-- Direct entry erasure (single player or called by server response)
+function BurdJournals.UI.MainPanel:eraseEntryDirectly(entryType, entryName)
+    if not self.journal or not entryType or not entryName then return end
+
+    local modData = self.journal:getModData()
+    local journalData = modData.BurdJournals
+    if not journalData then return end
+
+    -- Get display name BEFORE erasing the entry
+    local displayName = entryName
+    if entryType == "skill" then
+        -- Get skill display name via PZ API
+        local perk = Perks.FromString(entryName)
+        if perk then
+            displayName = PerkFactory.getPerkName(perk) or entryName
+        end
+    elseif entryType == "trait" then
+        local trait = TraitFactory.getTrait(entryName)
+        if trait then
+            local label = trait:getLabel()
+            displayName = label and getText(label) or entryName
+        end
+    elseif entryType == "recipe" then
+        -- Try to get recipe display name
+        local recipe = getScriptManager():getRecipe(entryName)
+        if recipe then
+            displayName = recipe:getName() or entryName
+        end
+    end
+
+    local erased = false
+
+    if entryType == "skill" then
+        if journalData.skills and journalData.skills[entryName] then
+            journalData.skills[entryName] = nil
+            erased = true
+        end
+        if journalData.claimedSkills then
+            journalData.claimedSkills[entryName] = nil
+        end
+    elseif entryType == "trait" then
+        if journalData.traits and journalData.traits[entryName] then
+            journalData.traits[entryName] = nil
+            erased = true
+        end
+        if journalData.claimedTraits then
+            journalData.claimedTraits[entryName] = nil
+        end
+    elseif entryType == "recipe" then
+        if journalData.recipes and journalData.recipes[entryName] then
+            journalData.recipes[entryName] = nil
+            erased = true
+        end
+        if journalData.claimedRecipes then
+            journalData.claimedRecipes[entryName] = nil
+        end
+    end
+
+    if erased then
+        -- Sync modData
+        if self.journal.transmitModData then
+            self.journal:transmitModData()
+        end
+
+        -- Note: Eraser is not consumed per-use (no durability system)
+
+        -- Show feedback
+        self:showFeedback(string.format(getText("UI_BurdJournals_EntryErased") or "Erased: %s", displayName), {r=0.9, g=0.6, b=0.6})
+
+        -- Refresh UI based on mode
+        if self.mode == "view" then
+            self:refreshCurrentList()
+        else
+            self:refreshAbsorptionList()
+        end
+
+        -- Play erase sound
+        self:playSound(BurdJournals.Sounds.PAGE_TURN)
     end
 end
 
@@ -3769,11 +4138,16 @@ end
 
 -- Actually close the panel
 function BurdJournals.UI.MainPanel:doClose()
+    -- Defensively remove ALL tick handlers (in case any are orphaned)
+    pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onLearningTickStatic) end)
+    pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onRecordingTickStatic) end)
+    pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onPendingJournalRetryStatic) end)
+
     -- Cancel any active learning
     if self.learningState and self.learningState.active then
         self:cancelLearning()
     end
-    
+
     -- Close any open confirmation dialog
     if self.confirmDialog then
         pcall(function()
@@ -3782,7 +4156,7 @@ function BurdJournals.UI.MainPanel:doClose()
         end)
         self.confirmDialog = nil
     end
-    
+
     self:setVisible(false)
     self:removeFromUIManager()
     BurdJournals.UI.MainPanel.instance = nil
@@ -3887,7 +4261,45 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode)
         BurdJournals.UI.MainPanel.instance:onClose()
     end
 
-    local width = 410  -- Extended from 360 to prevent progress bars from squishing content
+    -- Calculate dynamic width based on button text lengths
+    local baseWidth = 410
+    local btnPadding = 20  -- Increased padding for better fit
+    local btnSpacing = 8
+    local minBtnWidth = 90
+
+    -- Measure button text widths for ALL tabs to ensure panel fits any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+
+    local maxBtn1W = minBtnWidth
+    local btn2Text, btn3Text
+    local btnPrefix
+    if mode == "log" then
+        btnPrefix = getText("UI_BurdJournals_BtnRecordTab") or "Record %s"
+        btn2Text = getText("UI_BurdJournals_BtnRecordAll") or "Record All"
+    else
+        btnPrefix = getText("UI_BurdJournals_BtnAbsorbTab") or "Absorb %s"
+        btn2Text = getText("UI_BurdJournals_BtnAbsorbAll") or "Absorb All"
+    end
+    btn3Text = getText("UI_BurdJournals_BtnClose") or "Close"
+
+    -- Find the widest button text across all possible tab names
+    for _, tabName in ipairs(allTabNames) do
+        local btn1Text = string.format(btnPrefix, tabName)
+        local btn1W = getTextManager():MeasureStringX(UIFont.Small, btn1Text) + btnPadding
+        maxBtn1W = math.max(maxBtn1W, btn1W)
+    end
+
+    local btn2W = math.max(minBtnWidth, getTextManager():MeasureStringX(UIFont.Small, btn2Text) + btnPadding)
+    local btn3W = math.max(minBtnWidth, getTextManager():MeasureStringX(UIFont.Small, btn3Text) + btnPadding)
+    local maxBtnW = math.max(maxBtn1W, btn2W, btn3W)
+    local totalBtnWidth = maxBtnW * 3 + btnSpacing * 2 + 48  -- 48 for side margins (24 each)
+
+    local width = math.max(baseWidth, totalBtnWidth)
 
     -- Calculate dynamic height based on content
     local baseHeight = 180  -- Header + author + footer
@@ -4077,8 +4489,13 @@ function BurdJournals.UI.MainPanel:createLogUI()
             if row and row >= 1 and row <= #listbox.items then
                 local item = listbox.items[row] and listbox.items[row].item
                 if item and not item.isHeader and not item.isEmpty then
-                    local btnAreaStart = listbox:getWidth() - 80
-                    if x >= btnAreaStart then
+                    -- Button layout: [RECORD (55px)] [margin 10px]
+                    local btnW = 55
+                    local margin = 10
+                    local mainBtnStart = listbox:getWidth() - btnW - margin
+
+                    if x >= mainBtnStart then
+                        -- Record button clicked
                         -- Only allow recording if canRecord is true
                         if not item.canRecord then
                             -- Show feedback for non-recordable items
@@ -4126,11 +4543,23 @@ function BurdJournals.UI.MainPanel:createLogUI()
     local recordAllText = getText("UI_BurdJournals_BtnRecordAll") or "Record All"
     local closeText = getText("UI_BurdJournals_BtnClose") or "Close"
 
-    -- Measure text widths and use the largest plus padding
-    local recordTabW = getTextManager():MeasureStringX(UIFont.Small, recordTabText) + 16
-    local recordAllW = getTextManager():MeasureStringX(UIFont.Small, recordAllText) + 16
-    local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 16
-    local btnWidth = math.max(90, recordTabW, recordAllW, closeW)
+    -- Measure text widths for ALL tabs to ensure buttons fit any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+    local btnPrefix = getText("UI_BurdJournals_BtnRecordTab") or "Record %s"
+    local maxRecordTabW = 90
+    for _, name in ipairs(allTabNames) do
+        local text = string.format(btnPrefix, name)
+        local w = getTextManager():MeasureStringX(UIFont.Small, text) + 20
+        maxRecordTabW = math.max(maxRecordTabW, w)
+    end
+    local recordAllW = getTextManager():MeasureStringX(UIFont.Small, recordAllText) + 20
+    local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
+    local btnWidth = math.max(90, maxRecordTabW, recordAllW, closeW)
 
     local btnSpacing = 8
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
@@ -4235,6 +4664,37 @@ end
 -- Populate the record list with player's current skills and traits
 function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
     self.skillList:clear()
+
+    -- Ensure baseline is captured before showing recordable items (balance mode protection)
+    -- This prevents showing starting skills/traits as recordable before baseline is captured
+    if BurdJournals.isBaselineRestrictionEnabled() then
+        if not BurdJournals.hasBaselineCaptured(self.player) then
+            -- Trigger baseline capture with 5-tick delay for safety
+            if BurdJournals.Client and BurdJournals.Client.captureBaseline then
+                local panel = self
+                local ticksWaited = 0
+                local delayedCapture
+                delayedCapture = function()
+                    ticksWaited = ticksWaited + 1
+                    if ticksWaited >= 5 then
+                        Events.OnTick.Remove(delayedCapture)
+                        BurdJournals.Client.captureBaseline(panel.player, true)
+                        -- Refresh the UI after baseline is captured
+                        if panel.populateRecordList then
+                            panel:populateRecordList()
+                        end
+                    end
+                end
+                Events.OnTick.Add(delayedCapture)
+            end
+            -- Show a placeholder message while baseline is being captured
+            self.skillList:addItem("initializing", {
+                isEmpty = true, 
+                text = getText("UI_BurdJournals_BaselineInitializing") or "Please wait - character data initializing..."
+            })
+            return
+        end
+    end
 
     -- CRITICAL: Re-read journal data to get latest recorded skills/traits
     -- This ensures the UI reflects server-synced data after recording
@@ -4347,7 +4807,8 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
             if self:matchesSearch(traitName) then
                 matchCount = matchCount + 1
                 local traitTexture = getTraitTexture(traitId)
-                local isRecorded = recordedTraits[traitId] ~= nil
+                -- Case insensitive check for consistency
+                local isRecorded = recordedTraits[traitId] ~= nil or recordedTraits[string.lower(traitId)] ~= nil
                 local isStartingTrait = BurdJournals.isStartingTrait(self.player, traitId)
                 local isPositive = isTraitPositive(traitId)
 
@@ -4441,7 +4902,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                 -- Apply search filter
                 if self:matchesSearch(displayName) then
                     matchCount = matchCount + 1
-                    local magazineSource = recipeData.source or BurdJournals.getMagazineForRecipe(recipeName)
+                    local magazineSource = (type(recipeData) == "table" and recipeData.source) or BurdJournals.getMagazineForRecipe(recipeName)
                     local isRecorded = recordedRecipes[recipeName] ~= nil
 
                     self.skillList:addItem(recipeName, {
@@ -4489,18 +4950,18 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
     -- ============ HEADER ROW ============
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.12, 0.18, 0.22)
-        self:drawText(data.text or "YOUR SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
+        self:drawText(data.text or getText("UI_BurdJournals_YourSkills") or "YOUR SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
         if data.count then
-            local countText = "(" .. data.count .. " recordable)"
+            local countText = string.format(getText("UI_BurdJournals_Recordable") or "(%d recordable)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.4, 0.6, 0.7, 1, UIFont.Small)
         end
         return y + h
     end
-    
+
     -- ============ EMPTY ROW ============
     if data.isEmpty then
-        self:drawText(data.text or "Nothing to record", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
+        self:drawText(data.text or getText("UI_BurdJournals_NothingToRecord") or "Nothing to record", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
         return y + h
     end
     
@@ -4568,7 +5029,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         -- Line 2: Level squares + XP info OR recording progress
         if isRecordingThis then
             -- Show recording progress bar
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, textX, cardY + 24, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             local barX = textX + 100
@@ -4637,7 +5099,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
                 if baselineXP > 0 then
                     xpText = string.format(getText("UI_BurdJournals_XPWithBaseline"),
                         BurdJournals.formatXP(earnedXP), BurdJournals.formatXP(baselineXP))
-                    xpText = xpText .. " (was " .. BurdJournals.formatXP(data.recordedXP) .. ")"
+                    xpText = xpText .. string.format(getText("UI_BurdJournals_WasSuffix") or " (was %s)", BurdJournals.formatXP(data.recordedXP))
                 else
                     xpText = string.format(getText("UI_BurdJournals_RecordedWas") or "%s XP (was %s)", BurdJournals.formatXP(earnedXP), BurdJournals.formatXP(data.recordedXP))
                 end
@@ -4657,37 +5119,39 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         end
         
         -- RECORD/QUEUE button
+        local btnW = 55
+        local btnH = 24
+
+        -- Position main button
+        local mainBtnX = cardX + cardW - btnW - 10
+        local btnY = cardY + (cardH - btnH) / 2
+
         if data.canRecord and not isRecordingThis then
-            local btnW = 65
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            
             -- Check if in queue
             local queuePosition = mainPanel:getRecordQueuePosition(data.skillName)
             local isQueued = queuePosition ~= nil
-            
+
             if isQueued then
                 -- Show queue position indicator
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.5, 0.6)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.4, 0.5, 0.6)
                 local btnText = "#" .. queuePosition
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
             elseif recordingState and recordingState.active and not recordingState.isRecordAll then
                 -- Show QUEUE button when another item is recording
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.25, 0.35, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.4, 0.55, 0.7)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.25, 0.35, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.4, 0.55, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnQueue")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
             else
                 -- Normal RECORD button
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.35)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.5)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.35)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.5)
                 local btnText = getText("UI_BurdJournals_BtnRecord")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
             end
         end
     end
@@ -4698,7 +5162,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         local isRecordingThis = recordingState and recordingState.active and not recordingState.isRecordAll
                                and recordingState.traitId == data.traitId
         
-        local traitName = data.traitName or data.traitId or "Unknown Trait"
+        local traitName = data.traitName or data.traitId or getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait"
         local traitTextX = textX
         
         -- Draw trait icon if available
@@ -4730,7 +5194,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         
         -- Status text
         if isRecordingThis then
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, traitTextX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             -- Progress bar for traits (shorter width to account for icon offset)
@@ -4758,33 +5223,35 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         end
         
         -- RECORD/QUEUE button
+        local btnW = 55
+        local btnH = 24
+
+        -- Position main button
+        local mainBtnX = cardX + cardW - btnW - 10
+        local btnY = cardY + (cardH - btnH) / 2
+
         if data.canRecord and not isRecordingThis then
-            local btnW = 65
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            
             if isQueued then
                 -- Show queue position indicator
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
                 local btnText = "#" .. queuePosition
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
             elseif recordingState and recordingState.active and not recordingState.isRecordAll then
                 -- Show QUEUE button when another item is recording
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.35, 0.25)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.5, 0.35)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.4, 0.35, 0.25)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.6, 0.5, 0.35)
                 local btnText = getText("UI_BurdJournals_BtnQueue")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
             else
                 -- Normal RECORD button
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.25)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.4)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.25)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.4)
                 local btnText = getText("UI_BurdJournals_BtnRecord")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 0.9, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 0.9, 1, UIFont.Small)
             end
         end
     end
@@ -4805,7 +5272,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         -- Value display
         if isRecordingThis then
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, textX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             -- Progress bar for stats (shorter width to fit within card)
@@ -4913,7 +5381,8 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         -- Source/status line
         if isRecordingThis then
-            local progressText = string.format("Recording... %d%%", math.floor(recordingState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
+            local progressText = string.format(progressFormat, math.floor(recordingState.progress * 100))
             self:drawText(progressText, recipeTextX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             -- Progress bar
@@ -5141,14 +5610,48 @@ function BurdJournals.UI.MainPanel:createViewUI()
             if row and row >= 1 and row <= #listbox.items then
                 local item = listbox.items[row] and listbox.items[row].item
                 if item and not item.isHeader and not item.isEmpty then
-                    local btnAreaStart = listbox:getWidth() - 80
-                    if x >= btnAreaStart or item.isTrait or item.isRecipe then
-                        if item.isSkill and item.canClaim then
-                            listbox.mainPanel:claimSkill(item.skillName, item.xp)
-                        elseif item.isTrait and not item.alreadyKnown and not item.isClaimed then
-                            listbox.mainPanel:claimTrait(item.traitId)
-                        elseif item.isRecipe and not item.alreadyKnown and not item.isClaimed then
-                            listbox.mainPanel:claimRecipe(item.recipeName)
+                    -- Button layout depends on whether CLAIM is shown
+                    -- If CLAIM shown: [ERASE (55px)] [gap 4px] [CLAIM (55px)] [margin 10px]
+                    -- If CLAIM hidden: [ERASE (55px)] [margin 10px] (at rightmost position)
+                    local hasEraser = BurdJournals.hasEraser(listbox.mainPanel.player)
+                    local btnW = 55
+                    local btnGap = 4
+                    local margin = 10
+                    local rightmostBtnStart = listbox:getWidth() - btnW - margin
+
+                    -- Determine if CLAIM button is shown for this item
+                    local showClaimBtn = false
+                    if item.isSkill then
+                        showClaimBtn = item.canClaim
+                    elseif item.isTrait then
+                        showClaimBtn = not item.alreadyKnown and not item.isClaimed
+                    elseif item.isRecipe then
+                        showClaimBtn = not item.alreadyKnown and not item.isClaimed
+                    end
+
+                    -- Calculate button positions based on layout
+                    local claimBtnStart = rightmostBtnStart
+                    local eraseBtnStart = showClaimBtn and (rightmostBtnStart - btnW - btnGap) or rightmostBtnStart
+
+                    if x >= eraseBtnStart then
+                        if hasEraser and x >= eraseBtnStart and x < eraseBtnStart + btnW then
+                            -- Erase button clicked
+                            if item.isSkill then
+                                listbox.mainPanel:eraseSkillEntry(item.skillName)
+                            elseif item.isTrait then
+                                listbox.mainPanel:eraseTraitEntry(item.traitId)
+                            elseif item.isRecipe then
+                                listbox.mainPanel:eraseRecipeEntry(item.recipeName)
+                            end
+                        elseif showClaimBtn and x >= claimBtnStart then
+                            -- Claim button clicked (only if shown)
+                            if item.isSkill and item.canClaim then
+                                listbox.mainPanel:claimSkill(item.skillName, item.xp)
+                            elseif item.isTrait and not item.alreadyKnown and not item.isClaimed then
+                                listbox.mainPanel:claimTrait(item.traitId)
+                            elseif item.isRecipe and not item.alreadyKnown and not item.isClaimed then
+                                listbox.mainPanel:claimRecipe(item.recipeName)
+                            end
                         end
                     end
                 end
@@ -5178,11 +5681,23 @@ function BurdJournals.UI.MainPanel:createViewUI()
     local claimAllText = getText("UI_BurdJournals_BtnClaimAll") or "Claim All"
     local closeText = getText("UI_BurdJournals_BtnClose") or "Close"
 
-    -- Measure text widths and use the largest plus padding
-    local claimTabW = getTextManager():MeasureStringX(UIFont.Small, claimTabText) + 16
-    local claimAllW = getTextManager():MeasureStringX(UIFont.Small, claimAllText) + 16
-    local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 16
-    local btnWidth = math.max(90, claimTabW, claimAllW, closeW)
+    -- Measure text widths for ALL tabs to ensure buttons fit any tab selection
+    local allTabNames = {
+        getText("UI_BurdJournals_TabSkills") or "Skills",
+        getText("UI_BurdJournals_TabTraits") or "Traits",
+        getText("UI_BurdJournals_TabRecipes") or "Recipes",
+        getText("UI_BurdJournals_TabStats") or "Stats"
+    }
+    local btnPrefix = getText("UI_BurdJournals_BtnClaimTab") or "Claim %s"
+    local maxClaimTabW = 90
+    for _, name in ipairs(allTabNames) do
+        local text = string.format(btnPrefix, name)
+        local w = getTextManager():MeasureStringX(UIFont.Small, text) + 20
+        maxClaimTabW = math.max(maxClaimTabW, w)
+    end
+    local claimAllW = getTextManager():MeasureStringX(UIFont.Small, claimAllText) + 20
+    local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
+    local btnWidth = math.max(90, maxClaimTabW, claimAllW, closeW)
 
     local btnSpacing = 8
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
@@ -5344,7 +5859,7 @@ function BurdJournals.UI.MainPanel:populateViewList()
                     matchCount = matchCount + 1
                     local alreadyKnown = BurdJournals.playerKnowsRecipe(self.player, recipeName)
                     local isClaimed = BurdJournals.isRecipeClaimed(self.journal, recipeName)
-                    local magazineSource = recipeData.source or BurdJournals.getMagazineForRecipe(recipeName)
+                    local magazineSource = (type(recipeData) == "table" and recipeData.source) or BurdJournals.getMagazineForRecipe(recipeName)
                     local isPending = self.pendingClaims.recipes and self.pendingClaims.recipes[recipeName]
 
                     -- Clear pending flag if recipe has been learned
@@ -5439,18 +5954,18 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
     -- ============ HEADER ROW ============
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.12, 0.18, 0.22)
-        self:drawText(data.text or "SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
+        self:drawText(data.text or getText("UI_BurdJournals_Skills") or "SKILLS", x + padding, y + (h - 18) / 2, 0.7, 0.9, 1.0, 1, UIFont.Medium)
         if data.count then
-            local countText = "(" .. data.count .. " claimable)"
+            local countText = string.format(getText("UI_BurdJournals_Claimable") or "(%d claimable)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
             self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.4, 0.6, 0.7, 1, UIFont.Small)
         end
         return y + h
     end
-    
+
     -- ============ EMPTY ROW ============
     if data.isEmpty then
-        self:drawText(data.text or "No content", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
+        self:drawText(data.text or getText("UI_BurdJournals_NoContent") or "No content", x + padding, y + (h - 14) / 2, 0.4, 0.5, 0.55, 1, UIFont.Small)
         return y + h
     end
     
@@ -5510,6 +6025,11 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
         local isLearningThis = learningState and learningState.active and not learningState.isAbsorbAll
                               and learningState.skillName == data.skillName
 
+        -- Check if erasing this entry
+        local erasingState = mainPanel.erasingState
+        local isErasingThis = erasingState and erasingState.active
+                              and erasingState.entryType == "skill" and erasingState.entryName == data.skillName
+
         -- Line 1: Skill name
         local displayName = data.displayName or data.skillName or "Unknown Skill"
         self:drawText(displayName, textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
@@ -5518,10 +6038,24 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
         local queuePosition = mainPanel:getQueuePosition(data.skillName)
         local isQueued = queuePosition ~= nil
 
-        -- Line 2: Level squares + XP info OR learning progress
-        if isLearningThis then
+        -- Line 2: Level squares + XP info OR learning/erasing progress
+        if isErasingThis then
+            -- Show erasing progress bar
+            local progressFormat = getText("UI_BurdJournals_ErasingProgress") or "Erasing... %d%%"
+            local progressText = string.format(progressFormat, math.floor((erasingState.progress or 0) * 100))
+            self:drawText(progressText, textX, cardY + 24, 0.9, 0.5, 0.5, 1, UIFont.Small)
+
+            local barX = textX + 90
+            local barY = cardY + 27
+            local barW = cardW - 120 - padding
+            local barH = 10
+            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
+            self:drawRect(barX, barY, barW * (erasingState.progress or 0), barH, 0.9, 0.7, 0.3, 0.3)
+            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.6, 0.3, 0.3)
+        elseif isLearningThis then
             -- Show learning progress bar
-            local progressText = string.format("Reading... %d%%", math.floor(learningState.progress * 100))
+            local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
+            local progressText = string.format(progressFormat, math.floor(learningState.progress * 100))
             self:drawText(progressText, textX, cardY + 24, 0.3, 0.7, 0.9, 1, UIFont.Small)
 
             local barX = textX + 90
@@ -5576,46 +6110,71 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             self:drawText(getText("UI_BurdJournals_StatusAlreadyClaimed") or "Already claimed", squaresX + squaresWidth + 8, squaresY, 0.4, 0.45, 0.45, 1, UIFont.Small)
         end
         
-        -- CLAIM/QUEUE button
-        if data.canClaim and not isLearningThis then
-            local btnW = 60
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            
+        -- CLAIM/QUEUE button or ERASE button
+        local btnW = 55
+        local btnH = 24
+        local btnGap = 4
+        local hasEraser = BurdJournals.hasEraser(mainPanel.player)
+
+        -- Rightmost position for buttons
+        local rightmostBtnX = cardX + cardW - btnW - 10
+        local btnY = cardY + (cardH - btnH) / 2
+
+        -- Determine if CLAIM button will be shown (canClaim and not learning)
+        local showClaimBtn = data.canClaim and not isLearningThis
+
+        -- Position erase button: rightmost if no CLAIM, otherwise to the left of CLAIM
+        local eraseBtnX = showClaimBtn and (rightmostBtnX - btnW - btnGap) or rightmostBtnX
+
+        -- Draw ERASE button (only if eraser present and not currently erasing this entry)
+        if hasEraser and not isErasingThis then
+            self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
+            self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
+            local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
+            local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
+            self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+        end
+
+        if showClaimBtn then
+            local mainBtnX = rightmostBtnX
             if isQueued then
                 -- Show queue position indicator
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.5, 0.6)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.4, 0.5, 0.6)
                 local btnText = "#" .. queuePosition
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
             elseif learningState and learningState.active and not learningState.isAbsorbAll then
                 -- Show QUEUE button
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.25, 0.35, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.4, 0.55, 0.7)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.25, 0.35, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.4, 0.55, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnQueue")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
             else
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.4, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.3, 0.55, 0.65)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.4, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.55, 0.65)
                 local btnText = getText("UI_BurdJournals_BtnClaim")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
             end
         end
     end
-    
+
     -- ============ TRAIT ROW ============
     if data.isTrait then
         local learningState = mainPanel.learningState
         local isLearningThis = learningState and learningState.active and not learningState.isAbsorbAll
                               and learningState.traitId == data.traitId
-        
-        local traitName = data.traitName or data.traitId or "Unknown Trait"
+
+        -- Check if erasing this entry
+        local erasingState = mainPanel.erasingState
+        local isErasingThis = erasingState and erasingState.active
+                              and erasingState.entryType == "trait" and erasingState.entryName == data.traitId
+
+        local traitName = data.traitName or data.traitId or getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait"
         local traitTextX = textX
-        
+
         -- Draw trait icon if available
         if data.traitTexture then
             local iconSize = 24
@@ -5625,11 +6184,11 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             self:drawTextureScaledAspect(data.traitTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
             traitTextX = textX + iconSize + 6
         end
-        
+
         -- Check if in queue
         local queuePosition = mainPanel:getQueuePosition(data.traitId)
         local isQueued = queuePosition ~= nil
-        
+
         -- Trait name with color based on positive/negative type
         local traitColor
         if data.alreadyKnown then
@@ -5642,9 +6201,27 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             traitColor = {r=0.8, g=0.9, b=1.0}  -- Original light blue for unknown
         end
         self:drawText(traitName, traitTextX, cardY + 6, traitColor.r, traitColor.g, traitColor.b, 1, UIFont.Small)
-        
+
         -- Status text
-        if isLearningThis then
+        if isErasingThis then
+            -- Show erasing progress bar
+            local progressFormat = getText("UI_BurdJournals_ErasingProgress") or "Erasing... %d%%"
+            local progressText = string.format(progressFormat, math.floor((erasingState.progress or 0) * 100))
+            self:drawText(progressText, traitTextX, cardY + 22, 0.9, 0.5, 0.5, 1, UIFont.Small)
+
+            -- Progress bar for erasing (shorter width to account for icon offset)
+            local barX = traitTextX + 100
+            local barY = cardY + 25
+            local barW = cardW - barX - 20  -- Dynamic width based on actual start position
+            local barH = 10
+
+            -- Bar background
+            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
+            -- Bar fill (red for erasing)
+            self:drawRect(barX, barY, barW * (erasingState.progress or 0), barH, 0.9, 0.7, 0.3, 0.3)
+            -- Border
+            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.6, 0.3, 0.3)
+        elseif isLearningThis then
             local progressText = string.format("Learning... %d%%", math.floor(learningState.progress * 100))
             self:drawText(progressText, traitTextX, cardY + 22, 0.3, 0.7, 0.9, 1, UIFont.Small)
 
@@ -5669,33 +6246,53 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             self:drawText(getText("UI_BurdJournals_RecordedTrait") or "Recorded trait", traitTextX, cardY + 22, 0.5, 0.7, 0.8, 1, UIFont.Small)
         end
 
-        -- CLAIM/QUEUE button
-        if not data.alreadyKnown and not isLearningThis then
-            local btnW = 60
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            
+        -- CLAIM/QUEUE button or ERASE button
+        local btnW = 55
+        local btnH = 24
+        local btnGap = 4
+        local hasEraser = BurdJournals.hasEraser(mainPanel.player)
+
+        -- Rightmost position for buttons
+        local rightmostBtnX = cardX + cardW - btnW - 10
+        local btnY = cardY + (cardH - btnH) / 2
+
+        -- Determine if CLAIM button will be shown (not already known and not learning)
+        local showClaimBtn = not data.alreadyKnown and not isLearningThis
+
+        -- Position erase button: rightmost if no CLAIM, otherwise to the left of CLAIM
+        local eraseBtnX = showClaimBtn and (rightmostBtnX - btnW - btnGap) or rightmostBtnX
+
+        -- Draw ERASE button (only if eraser present and not currently erasing this entry)
+        if hasEraser and not isErasingThis then
+            self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
+            self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
+            local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
+            local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
+            self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+        end
+
+        if showClaimBtn then
+            local mainBtnX = rightmostBtnX
             if isQueued then
                 -- Show queue position indicator
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
                 local btnText = "#" .. queuePosition
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
             elseif learningState and learningState.active and not learningState.isAbsorbAll then
                 -- Show QUEUE button
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.35, 0.4, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.5, 0.55, 0.65)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.35, 0.4, 0.5)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.55, 0.65)
                 local btnText = getText("UI_BurdJournals_BtnQueue")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.9, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.9, 1, UIFont.Small)
             else
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.55)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.7)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.55)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnClaim")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
             end
         end
     end
@@ -5705,6 +6302,11 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
         local learningState = mainPanel.learningState
         local isLearningThis = learningState and learningState.active and not learningState.isAbsorbAll
                               and learningState.recipeName == data.recipeName
+
+        -- Check if erasing this entry
+        local erasingState = mainPanel.erasingState
+        local isErasingThis = erasingState and erasingState.active
+                              and erasingState.entryType == "recipe" and erasingState.entryName == data.recipeName
 
         local recipeName = data.displayName or data.recipeName or "Unknown Recipe"
         local recipeTextX = textX
@@ -5747,7 +6349,25 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
         self:drawText(recipeName, recipeTextX, cardY + 6, recipeColor.r, recipeColor.g, recipeColor.b, 1, UIFont.Small)
 
         -- Status text
-        if isLearningThis then
+        if isErasingThis then
+            -- Show erasing progress bar
+            local progressFormat = getText("UI_BurdJournals_ErasingProgress") or "Erasing... %d%%"
+            local progressText = string.format(progressFormat, math.floor((erasingState.progress or 0) * 100))
+            self:drawText(progressText, recipeTextX, cardY + 22, 0.9, 0.5, 0.5, 1, UIFont.Small)
+
+            -- Progress bar for erasing
+            local barX = recipeTextX + 100
+            local barY = cardY + 25
+            local barW = cardW - barX - 20
+            local barH = 10
+
+            -- Bar background
+            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
+            -- Bar fill (red for erasing)
+            self:drawRect(barX, barY, barW * (erasingState.progress or 0), barH, 0.9, 0.7, 0.3, 0.3)
+            -- Border
+            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.6, 0.3, 0.3)
+        elseif isLearningThis then
             local progressText = string.format("Learning... %d%%", math.floor(learningState.progress * 100))
             self:drawText(progressText, recipeTextX, cardY + 22, 0.3, 0.8, 0.85, 1, UIFont.Small)
 
@@ -5778,34 +6398,54 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
             self:drawText(sourceText, recipeTextX, cardY + 22, 0.4, 0.65, 0.7, 1, UIFont.Small)
         end
 
-        -- CLAIM/QUEUE button
-        if not data.alreadyKnown and not isLearningThis then
-            local btnW = 60
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
+        -- CLAIM/QUEUE button or ERASE button
+        local btnW = 55
+        local btnH = 24
+        local btnGap = 4
+        local hasEraser = BurdJournals.hasEraser(mainPanel.player)
 
+        -- Rightmost position for buttons
+        local rightmostBtnX = cardX + cardW - btnW - 10
+        local btnY = cardY + (cardH - btnH) / 2
+
+        -- Determine if CLAIM button will be shown (not already known and not learning)
+        local showClaimBtn = not data.alreadyKnown and not isLearningThis
+
+        -- Position erase button: rightmost if no CLAIM, otherwise to the left of CLAIM
+        local eraseBtnX = showClaimBtn and (rightmostBtnX - btnW - btnGap) or rightmostBtnX
+
+        -- Draw ERASE button (only if eraser present and not currently erasing this entry)
+        if hasEraser and not isErasingThis then
+            self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
+            self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
+            local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
+            local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
+            self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+        end
+
+        if showClaimBtn then
+            local mainBtnX = rightmostBtnX
             if isQueued then
                 -- Show queue position indicator
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.5, 0.55)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.6, 0.7)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.3, 0.5, 0.55)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.4, 0.6, 0.7)
                 local btnText = "#" .. queuePosition
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.95, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.95, 1, 1, UIFont.Small)
             elseif learningState and learningState.active and not learningState.isAbsorbAll then
                 -- Show QUEUE button
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.25, 0.45, 0.55)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.35, 0.6, 0.7)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.25, 0.45, 0.55)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.35, 0.6, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnQueue")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
             else
                 -- Show CLAIM button (teal theme)
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.55)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.7)
+                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.55)
+                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnClaim")
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
+                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
             end
         end
     end

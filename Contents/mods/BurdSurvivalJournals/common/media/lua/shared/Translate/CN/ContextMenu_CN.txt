@@ -22,9 +22,21 @@ ContextMenu_CN = {
     ContextMenu_BurdJournals_AbsorbAll = "领取全部奖励",
     ContextMenu_BurdJournals_ConvertToClean = "重新绑定为干净个人日志",
 
+    -- Absorb All Dynamic Labels (for context menu)
+    ContextMenu_BurdJournals_AbsorbAllFormat = "全部领悟 (%s)",
+    ContextMenu_BurdJournals_SkillCount = "%d项技能",
+    ContextMenu_BurdJournals_SkillsCount = "%d项技能",
+    ContextMenu_BurdJournals_TraitCount = "%d项特质",
+    ContextMenu_BurdJournals_TraitsCount = "%d项特质",
+    ContextMenu_BurdJournals_RecipeCount = "%d个配方",
+    ContextMenu_BurdJournals_RecipesCount = "%d个配方",
+
     -- Personal Journal (Clean)
     ContextMenu_BurdJournals_RecordAll = "记录全部进度",
     ContextMenu_BurdJournals_Disassemble = "拆解日志",
+
+    -- Illiterate Trait Block
+    ContextMenu_BurdJournals_CannotRead = "无法阅读（文盲）",
 
     -- Legacy (keeping for compatibility)
     ContextMenu_BurdJournals_CleanRepair = "清洁/修复",

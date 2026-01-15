@@ -43,7 +43,7 @@ Category_XX = {
 | Sandbox_EN.txt | ~51 | Sandbox/server options |
 | UI_EN.txt | ~172 | UI labels, buttons, messages, feedback, stats |
 | IG_UI_EN.txt | ~60 | In-game UI elements (legacy) |
-| ContextMenu_EN.txt | ~24 | Right-click menu options |
+| ContextMenu_EN.txt | ~31 | Right-click menu options |
 | Tooltip_EN.txt | ~80 | Item hover tooltips + inventory tooltip labels |
 | Items_EN.txt | 6 | Item display names |
 | Recipes_EN.txt | ~10 | Crafting recipe names |
@@ -171,6 +171,16 @@ Server/sandbox option names and tooltips shown in the game settings menu.
 | `Sandbox_BurdJournals_BloodyJournalMaxTraits` | Max Traits Per Bloody |
 | `Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip` | Maximum number of traits that can spawn on a single bloody journal (0-5). |
 
+### Loot Settings - Recipe/Magazine Spawns
+| Key | English Value |
+|-----|---------------|
+| `Sandbox_BurdJournals_WornJournalRecipeChance` | Worn Recipe Chance % |
+| `Sandbox_BurdJournals_WornJournalRecipeChance_tooltip` | Chance for worn journals to include a magazine recipe (0-100%). Worn journals have a lower chance than bloody. |
+| `Sandbox_BurdJournals_BloodyJournalRecipeChance` | Bloody Recipe Chance % |
+| `Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip` | Chance for bloody journals to include magazine recipes (0-100%). Bloody journals have a higher chance than worn. |
+| `Sandbox_BurdJournals_BloodyJournalMaxRecipes` | Max Recipes Per Bloody |
+| `Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip` | Maximum number of magazine recipes that can spawn on a single bloody journal (1-5). |
+
 ### Advanced Settings
 | Key | English Value |
 |-----|---------------|
@@ -262,6 +272,19 @@ Main UI labels, buttons, messages, feedback, and condition states. This file was
 | `UI_BurdJournals_JournalConverted` | Journal converted to a clean blank journal. |
 | `UI_BurdJournals_JournalDissolved` | The journal crumbles in your hands... |
 
+### Dissolution Messages (Random spoken text when journal is fully consumed)
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_Dissolve1` | Looks like that journal was on its last read... |
+| `UI_BurdJournals_Dissolve2` | The pages crumble to dust in your hands... |
+| `UI_BurdJournals_Dissolve3` | That was all it had left to give... |
+| `UI_BurdJournals_Dissolve4` | The journal falls apart as you close it... |
+| `UI_BurdJournals_Dissolve5` | Nothing but scraps remain... |
+| `UI_BurdJournals_Dissolve6` | The binding finally gives way... |
+| `UI_BurdJournals_Dissolve7` | It served its purpose... |
+| `UI_BurdJournals_Dissolve8` | The ink fades completely as you finish reading... |
+| `UI_BurdJournals_Dissolve9` | The worn pages disintegrate... |
+| `UI_BurdJournals_Dissolve10` | Knowledge absorbed, the journal fades away... |
 ### Condition States
 | Key | English Value |
 |-----|---------------|
@@ -375,6 +398,7 @@ Main UI labels, buttons, messages, feedback, and condition states. This file was
 | `UI_BurdJournals_BtnQueue` | QUEUE |
 | `UI_BurdJournals_BtnClaim` | CLAIM |
 | `UI_BurdJournals_BtnRecord` | RECORD |
+| `UI_BurdJournals_BtnErase` | Erase |
 
 ### Button States
 | Key | English Value |
@@ -382,6 +406,8 @@ Main UI labels, buttons, messages, feedback, and condition states. This file was
 | `UI_BurdJournals_StateReading` | Reading... |
 | `UI_BurdJournals_StateClaiming` | Claiming... |
 | `UI_BurdJournals_StateRecording` | Recording... |
+| `UI_BurdJournals_StateErasing` | Erasing... |
+| `UI_BurdJournals_ErasingProgress` | Erasing... %d%% |
 
 ### Feedback Messages (MainPanel)
 | Key | English Value |
@@ -405,6 +431,7 @@ Main UI labels, buttons, messages, feedback, and condition states. This file was
 | `UI_BurdJournals_BaselineReset` | Baseline reset! |
 | `UI_BurdJournals_GainedXP` | +%s %s |
 | `UI_BurdJournals_JournalSyncFailed` | Error: Journal sync failed |
+| `UI_BurdJournals_EntryErased` | Entry erased: %s |
 | `UI_BurdJournals_PlusTrait` | , +%d trait |
 | `UI_BurdJournals_PlusTraits` | , +%d traits |
 | `UI_BurdJournals_SkillAlreadyMaxed` | %d skill already maxed |
@@ -692,6 +719,17 @@ Right-click context menu options.
 | `ContextMenu_BurdJournals_WornBlank` | Worn Blank Journal |
 | `ContextMenu_BurdJournals_AbsorbAll` | Absorb All Rewards |
 | `ContextMenu_BurdJournals_ConvertToClean` | Rebind as Personal Journal |
+
+### Absorb All Dynamic Labels
+| Key | English Value |
+|-----|---------------|
+| `ContextMenu_BurdJournals_AbsorbAllFormat` | Absorb All (%s) |
+| `ContextMenu_BurdJournals_SkillCount` | %d skill |
+| `ContextMenu_BurdJournals_SkillsCount` | %d skills |
+| `ContextMenu_BurdJournals_TraitCount` | %d trait |
+| `ContextMenu_BurdJournals_TraitsCount` | %d traits |
+| `ContextMenu_BurdJournals_RecipeCount` | %d recipe |
+| `ContextMenu_BurdJournals_RecipesCount` | %d recipes |
 
 ### Personal Journal (Clean)
 | Key | English Value |

@@ -71,6 +71,16 @@ Sandbox_EN = {
     Sandbox_BurdJournals_LearningTimePerRecipe = "Learning Time Per Recipe (sec)",
     Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "Base time in seconds to learn each recipe from a journal.",
 
+    -- Journal Capacity Limits
+    Sandbox_BurdJournals_MaxSkillsPerJournal = "Max Skills Per Journal",
+    Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip = "Maximum number of skills that can be recorded in a single journal. Vanilla game has ~30 skills. Increase for heavily modded games.",
+
+    Sandbox_BurdJournals_MaxTraitsPerJournal = "Max Traits Per Journal",
+    Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip = "Maximum number of traits that can be recorded in a single journal. Vanilla game has ~50 grantable traits. Increase for heavily modded games.",
+
+    Sandbox_BurdJournals_MaxRecipesPerJournal = "Max Recipes Per Journal",
+    Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip = "Maximum number of recipes that can be recorded in a single journal. Heavily modded games can have 400+ magazine recipes. Increase if you get capacity warnings.",
+
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
     -- ============================================================
@@ -93,7 +103,13 @@ Sandbox_EN = {
     
     Sandbox_BurdJournals_WornJournalMaxXP = "Worn Max XP/Skill",
     Sandbox_BurdJournals_WornJournalMaxXP_tooltip = "Maximum XP per skill in worn journals.",
-    
+
+    Sandbox_BurdJournals_WornJournalRecipeChance = "Worn Recipe Chance %",
+    Sandbox_BurdJournals_WornJournalRecipeChance_tooltip = "Chance for worn journals to include a magazine recipe (0-100%). Worn journals have a lower chance than bloody.",
+
+    Sandbox_BurdJournals_WornJournalMaxRecipes = "Max Recipes Per Worn",
+    Sandbox_BurdJournals_WornJournalMaxRecipes_tooltip = "Maximum number of magazine recipes that can spawn on a single worn journal (1-5).",
+
     -- Bloody Journals (Zombie Corpses)
     Sandbox_BurdJournals_EnableBloodyJournalSpawns = "Enable Bloody Journal Drops",
     Sandbox_BurdJournals_EnableBloodyJournalSpawns_tooltip = "Allow zombies to drop bloody journals. These offer better rewards and rare traits.",
@@ -118,7 +134,13 @@ Sandbox_EN = {
     
     Sandbox_BurdJournals_BloodyJournalMaxTraits = "Max Traits Per Bloody",
     Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip = "Maximum number of traits that can spawn on a single bloody journal (0-5).",
-    
+
+    Sandbox_BurdJournals_BloodyJournalRecipeChance = "Bloody Recipe Chance %",
+    Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip = "Chance for bloody journals to include magazine recipes (0-100%). Bloody journals have a higher chance than worn.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes = "Max Recipes Per Bloody",
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip = "Maximum number of magazine recipes that can spawn on a single bloody journal (1-5).",
+
     -- ============================================================
     -- TAB 3: ADVANCED SETTINGS
     -- ============================================================

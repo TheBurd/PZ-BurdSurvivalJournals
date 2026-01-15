@@ -72,6 +72,16 @@ Sandbox_CN = {
     Sandbox_BurdJournals_LearningTimePerRecipe = "单个配方学习耗时（秒）",
     Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "从日志中学习每个配方的基础耗时（秒）。",
 
+    -- Journal Capacity Limits
+    Sandbox_BurdJournals_MaxSkillsPerJournal = "单本日志最大技能数",
+    Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip = "单本日志可记录的最大技能数量。原版游戏约有30个技能，安装大量模组时可适当增加。",
+
+    Sandbox_BurdJournals_MaxTraitsPerJournal = "单本日志最大特质数",
+    Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip = "单本日志可记录的最大特质数量。原版游戏约有50个可解锁特质，安装大量模组时可适当增加。",
+
+    Sandbox_BurdJournals_MaxRecipesPerJournal = "单本日志最大配方数",
+    Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip = "单本日志可记录的最大配方数量。模组较多时可能有超过400个杂志配方，如出现容量警告请增加此值。",
+
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
     -- ============================================================
@@ -94,6 +104,12 @@ Sandbox_CN = {
 
     Sandbox_BurdJournals_WornJournalMaxXP = "破旧日志单技能最高经验",
     Sandbox_BurdJournals_WornJournalMaxXP_tooltip = "破旧日志中每个技能包含的最高经验值。",
+
+    Sandbox_BurdJournals_WornJournalRecipeChance = "破损日志配方概率 %",
+    Sandbox_BurdJournals_WornJournalRecipeChance_tooltip = "破损日志包含杂志配方的概率 (0-100%)。破损日志的概率低于血迹斑斑的日志。",
+
+    Sandbox_BurdJournals_WornJournalMaxRecipes = "破损日志最大配方数",
+    Sandbox_BurdJournals_WornJournalMaxRecipes_tooltip = "单本破损日志可生成的最大杂志配方数量 (1-5)。",
 
     -- Bloody Journals (Zombie Corpses)
     Sandbox_BurdJournals_EnableBloodyJournalSpawns = "启用沾血日志掉落",
@@ -119,6 +135,12 @@ Sandbox_CN = {
 
     Sandbox_BurdJournals_BloodyJournalMaxTraits = "单本沾血日志最多特质数",
     Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip = "单本沾血日志可生成的最多特质数量（0-5）。",
+
+    Sandbox_BurdJournals_BloodyJournalRecipeChance = "血迹日志配方概率 %",
+    Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip = "血迹日志包含杂志配方的概率 (0-100%)。血迹日志的概率高于破损日志。",
+
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes = "血迹日志最大配方数",
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip = "单本血迹日志可生成的最大杂志配方数量 (1-5)。",
 
     -- ============================================================
     -- TAB 3: ADVANCED SETTINGS

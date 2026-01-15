@@ -37,6 +37,34 @@ BurdJournals = BurdJournals or {}
 BurdJournals.VERSION = "2.4.3"
 BurdJournals.MOD_ID = "BurdSurvivalJournals"
 
+-- ==================== DATA SAFETY LIMITS ====================
+-- These limits prevent server/client issues with large journal payloads
+-- Soft limits trigger warnings; hard limits prevent recording beyond capacity
+-- MAX_SKILLS/TRAITS/RECIPES are read from sandbox settings (configurable by server admin)
+
+BurdJournals.Limits = {
+    -- Chunk sizes for batched recording (items per server command)
+    CHUNK_SKILLS = 10,      -- Skills per chunk
+    CHUNK_TRAITS = 10,      -- Traits per chunk
+    CHUNK_RECIPES = 20,     -- Recipes per chunk
+    CHUNK_STATS = 10,       -- Stats per chunk
+
+    -- Soft limits (warnings shown at this threshold - 50% of max)
+    -- These are calculated dynamically based on MAX values
+    WARN_SKILLS = 25,       -- Default, will be recalculated
+    WARN_TRAITS = 40,       -- Default, will be recalculated
+    WARN_RECIPES = 200,     -- Default, will be recalculated
+
+    -- Hard limits - now read from sandbox settings
+    -- Note: After storage optimization (recipes/traits stored as boolean), higher limits are safe
+    MAX_SKILLS = 50,        -- Default, sandbox setting: MaxSkillsPerJournal
+    MAX_TRAITS = 100,       -- Default, sandbox setting: MaxTraitsPerJournal
+    MAX_RECIPES = 500,      -- Default, sandbox setting: MaxRecipesPerJournal
+
+    -- Delay between chunks in milliseconds (prevents server overload)
+    CHUNK_DELAY_MS = 50,
+}
+
 -- ==================== MOD COMPATIBILITY API ====================
 --[[
     Third-party mods can use these functions to integrate with Burd's Survival Journals.
@@ -1235,7 +1263,22 @@ end
 
 -- ==================== DISSOLUTION MESSAGES ====================
 
-BurdJournals.DissolutionMessages = {
+-- Translation keys for dissolution messages
+BurdJournals.DissolutionMessageKeys = {
+    "UI_BurdJournals_Dissolve1",
+    "UI_BurdJournals_Dissolve2",
+    "UI_BurdJournals_Dissolve3",
+    "UI_BurdJournals_Dissolve4",
+    "UI_BurdJournals_Dissolve5",
+    "UI_BurdJournals_Dissolve6",
+    "UI_BurdJournals_Dissolve7",
+    "UI_BurdJournals_Dissolve8",
+    "UI_BurdJournals_Dissolve9",
+    "UI_BurdJournals_Dissolve10",
+}
+
+-- Fallback messages in case translations aren't loaded
+BurdJournals.DissolutionFallbacks = {
     "Looks like that journal was on its last read...",
     "The pages crumble to dust in your hands...",
     "That was all it had left to give...",
@@ -1249,8 +1292,14 @@ BurdJournals.DissolutionMessages = {
 }
 
 function BurdJournals.getRandomDissolutionMessage()
-    local index = ZombRand(#BurdJournals.DissolutionMessages) + 1
-    return BurdJournals.DissolutionMessages[index]
+    local index = ZombRand(#BurdJournals.DissolutionMessageKeys) + 1
+    local key = BurdJournals.DissolutionMessageKeys[index]
+    local translated = getText(key)
+    -- If getText returns the key itself (translation not found), use fallback
+    if translated == key then
+        return BurdJournals.DissolutionFallbacks[index]
+    end
+    return translated
 end
 
 -- ==================== SANDBOX OPTIONS ====================
@@ -1282,6 +1331,10 @@ function BurdJournals.getSandboxOption(optionName)
         RecordHoursSurvived = true,
         -- Recipe recording
         EnableRecipeRecording = true,
+        -- Journal capacity limits
+        MaxSkillsPerJournal = 50,
+        MaxTraitsPerJournal = 100,
+        MaxRecipesPerJournal = 500,
         -- Worn journal spawns (world containers)
         EnableWornJournalSpawns = true,
         WornJournalSpawnChance = 2.0,
@@ -1318,6 +1371,32 @@ end
 function BurdJournals.isEnabled()
     return BurdJournals.getSandboxOption("EnableJournals")
 end
+
+-- Initialize Limits metatable to read MAX_* values from sandbox settings dynamically
+-- This must be done after getSandboxOption is defined
+setmetatable(BurdJournals.Limits, {
+    __index = function(t, key)
+        -- Map MAX_* keys to sandbox option names
+        if key == "MAX_SKILLS" then
+            return BurdJournals.getSandboxOption("MaxSkillsPerJournal") or 50
+        elseif key == "MAX_TRAITS" then
+            return BurdJournals.getSandboxOption("MaxTraitsPerJournal") or 100
+        elseif key == "MAX_RECIPES" then
+            return BurdJournals.getSandboxOption("MaxRecipesPerJournal") or 500
+        -- Calculate WARN_* as percentage of MAX_*
+        elseif key == "WARN_SKILLS" then
+            local maxSkills = BurdJournals.getSandboxOption("MaxSkillsPerJournal") or 50
+            return math.floor(maxSkills * 0.5)
+        elseif key == "WARN_TRAITS" then
+            local maxTraits = BurdJournals.getSandboxOption("MaxTraitsPerJournal") or 100
+            return math.floor(maxTraits * 0.4)
+        elseif key == "WARN_RECIPES" then
+            local maxRecipes = BurdJournals.getSandboxOption("MaxRecipesPerJournal") or 500
+            return math.floor(maxRecipes * 0.4)
+        end
+        return rawget(t, key)
+    end
+})
 
 -- ==================== JOURNAL OWNERSHIP & PERMISSIONS ====================
 
@@ -2210,11 +2289,26 @@ end
 
 -- ==================== JOURNAL NAME FORMATTING ====================
 
-function BurdJournals.updateJournalName(item)
-    if not item then return end
+-- Helper to safely get translated text with proper fallback
+-- getText() returns the key itself when translation is missing, not nil
+function BurdJournals.safeGetText(key, fallback)
+    if not key then return fallback end
+    local result = getText(key)
+    -- If getText returns the key itself (untranslated), use the fallback
+    if result == key then
+        return fallback
+    end
+    return result or fallback
+end
+
+-- Compute the localized display name for a journal based on current client's language
+-- This is a pure function that does NOT modify the item - just returns the name string
+function BurdJournals.computeLocalizedName(item)
+    if not item then return nil end
 
     local modData = item:getModData()
     local data = modData.BurdJournals or {}
+
     local isWornState = data.isWorn
     local isBloodyState = data.isBloody
     local author = data.author
@@ -2223,37 +2317,41 @@ function BurdJournals.updateJournalName(item)
 
     local stateSuffix = ""
     if isBloodyState then
-        stateSuffix = getText("UI_BurdJournals_StateBloody") or "Bloody"
+        stateSuffix = BurdJournals.safeGetText("UI_BurdJournals_StateBloody", "Bloody")
     elseif isWornState then
-        stateSuffix = getText("UI_BurdJournals_StateWorn") or "Worn"
+        stateSuffix = BurdJournals.safeGetText("UI_BurdJournals_StateWorn", "Worn")
     end
 
     local baseName
     if BurdJournals.isBlankJournal(item) then
-        baseName = getText("UI_BurdJournals_BlankJournal") or "Blank Survival Journal"
+        baseName = BurdJournals.safeGetText("UI_BurdJournals_BlankJournal", "Blank Survival Journal")
         if stateSuffix ~= "" then
             baseName = baseName .. " (" .. stateSuffix .. ")"
         end
     elseif BurdJournals.isFilledJournal(item) then
-        baseName = getText("UI_BurdJournals_FilledJournal") or "Filled Survival Journal"
+        baseName = BurdJournals.safeGetText("UI_BurdJournals_FilledJournal", "Filled Survival Journal")
         local suffixParts = {}
 
         if stateSuffix ~= "" then
             table.insert(suffixParts, stateSuffix)
         end
 
+        -- For player journals, show the author name (character name)
         -- For found journals (non-player), show the profession
-        -- Don't add "Previous" if name already starts with "Former" (zombie professions)
-        -- For player journals, show the author name
-        if not isPlayerCreated and professionName then
-            -- Check if profession already has a past-tense prefix
+        if isPlayerCreated and author then
+            -- Player-created journal: show character name
+            table.insert(suffixParts, author)
+        elseif not isPlayerCreated and professionName then
+            -- Found journal: show profession
+            -- Don't add "Previous" if name already starts with "Former" (zombie professions)
             if string.find(professionName, "^Former") or string.find(professionName, "^Previous") then
                 table.insert(suffixParts, professionName)
             else
-                local prevFormat = getText("UI_BurdJournals_PreviousProfession") or "Previous %s"
+                local prevFormat = BurdJournals.safeGetText("UI_BurdJournals_PreviousProfession", "Previous %s")
                 table.insert(suffixParts, string.format(prevFormat, professionName))
             end
         elseif author then
+            -- Fallback: show author if available (for any journal type)
             table.insert(suffixParts, author)
         end
 
@@ -2262,8 +2360,79 @@ function BurdJournals.updateJournalName(item)
         end
     end
 
+    return baseName
+end
+
+-- Client-side cache to track which items we've already localized this session
+-- This is NOT synced to server - each client maintains their own cache
+BurdJournals._localizedItems = BurdJournals._localizedItems or {}
+
+-- Clear the local cache (call on game reload, etc.)
+function BurdJournals.clearLocalizedItemsCache()
+    BurdJournals._localizedItems = {}
+end
+
+-- Update the journal's display name for the LOCAL client only
+-- IMPORTANT: In multiplayer, this does NOT sync the name to other players!
+-- Each client computes their own localized name based on their language.
+--
+-- Parameters:
+--   item: the journal item
+--   forceUpdate: if true, will update even if already localized
+function BurdJournals.updateJournalName(item, forceUpdate)
+    if not item then return end
+
+    local modData = item:getModData()
+    local data = modData.BurdJournals or {}
+
+    -- If journal has a custom name set by player, always use that
+    if data.customName then
+        if item:getName() ~= data.customName then
+            item:setName(data.customName)
+        end
+        return
+    end
+
+    -- Use item ID to track what we've already localized this session
+    -- This prevents redundant updates on inventory transfers
+    local itemId = item:getID()
+    if not forceUpdate and BurdJournals._localizedItems[itemId] then
+        -- Already localized this item this session
+        return
+    end
+
+    -- Check if the current name looks like it needs localization
+    -- (contains internal key patterns or looks like a raw item type)
+    local currentName = item:getName()
+    local needsLocalization = not currentName
+        or currentName == ""
+        or currentName:find("UI_BurdJournals_")
+        or currentName:find("^Item_")
+        or currentName:find("^BurdJournals%.")
+        or currentName:find("BlankSurvivalJournal")
+        or currentName:find("FilledSurvivalJournal")
+
+    -- For non-player-created journals (worn/bloody found in world), ALWAYS re-localize
+    -- This ensures each client sees the name in their own language
+    -- The server sets a name in English, but the client should override with localized version
+    local isNonPlayerJournal = not data.isPlayerCreated and (data.isWorn or data.isBloody or data.wasFromBloody)
+    if isNonPlayerJournal then
+        needsLocalization = true
+    end
+
+    -- If already has a localized-looking name and not forced, just mark as done
+    if not needsLocalization and not forceUpdate then
+        BurdJournals._localizedItems[itemId] = true
+        return
+    end
+
+    -- Compute and apply the localized name for THIS client
+    local baseName = BurdJournals.computeLocalizedName(item)
+
     if baseName and item.setName then
         item:setName(baseName)
+        -- Mark as localized for this session (client-side only, not synced!)
+        BurdJournals._localizedItems[itemId] = true
     end
 end
 
@@ -2334,6 +2503,44 @@ function BurdJournals.generateRandomSurvivorName()
     local firstName = BurdJournals.RANDOM_FIRST_NAMES[ZombRand(#BurdJournals.RANDOM_FIRST_NAMES) + 1]
     local lastName = BurdJournals.RANDOM_LAST_NAMES[ZombRand(#BurdJournals.RANDOM_LAST_NAMES) + 1]
     return firstName .. " " .. lastName
+end
+
+-- ==================== SHARED PROFESSION DATA ====================
+-- This is available on both client and server for OnCreate callbacks
+
+BurdJournals.PROFESSIONS = {
+    {id = "fireofficer", name = "Fire Officer", nameKey = "UI_BurdJournals_ProfFireOfficer", flavorKey = "UI_BurdJournals_FlavorFireOfficer"},
+    {id = "policeofficer", name = "Police Officer", nameKey = "UI_BurdJournals_ProfPoliceOfficer", flavorKey = "UI_BurdJournals_FlavorPoliceOfficer"},
+    {id = "parkranger", name = "Park Ranger", nameKey = "UI_BurdJournals_ProfParkRanger", flavorKey = "UI_BurdJournals_FlavorParkRanger"},
+    {id = "constructionworker", name = "Construction Worker", nameKey = "UI_BurdJournals_ProfConstructionWorker", flavorKey = "UI_BurdJournals_FlavorConstructionWorker"},
+    {id = "securityguard", name = "Security Guard", nameKey = "UI_BurdJournals_ProfSecurityGuard", flavorKey = "UI_BurdJournals_FlavorSecurityGuard"},
+    {id = "carpenter", name = "Carpenter", nameKey = "UI_BurdJournals_ProfCarpenter", flavorKey = "UI_BurdJournals_FlavorCarpenter"},
+    {id = "burglar", name = "Burglar", nameKey = "UI_BurdJournals_ProfBurglar", flavorKey = "UI_BurdJournals_FlavorBurglar"},
+    {id = "chef", name = "Chef", nameKey = "UI_BurdJournals_ProfChef", flavorKey = "UI_BurdJournals_FlavorChef"},
+    {id = "repairman", name = "Repairman", nameKey = "UI_BurdJournals_ProfRepairman", flavorKey = "UI_BurdJournals_FlavorMechanic"},
+    {id = "farmer", name = "Farmer", nameKey = "UI_BurdJournals_ProfFarmer", flavorKey = "UI_BurdJournals_FlavorFarmer"},
+    {id = "fisherman", name = "Fisherman", nameKey = "UI_BurdJournals_ProfFisherman", flavorKey = "UI_BurdJournals_FlavorFisherman"},
+    {id = "doctor", name = "Doctor", nameKey = "UI_BurdJournals_ProfDoctor", flavorKey = "UI_BurdJournals_FlavorDoctor"},
+    {id = "nurse", name = "Nurse", nameKey = "UI_BurdJournals_ProfNurse", flavorKey = "UI_BurdJournals_FlavorNurse"},
+    {id = "lumberjack", name = "Lumberjack", nameKey = "UI_BurdJournals_ProfLumberjack", flavorKey = "UI_BurdJournals_FlavorLumberjack"},
+    {id = "fitnessInstructor", name = "Fitness Instructor", nameKey = "UI_BurdJournals_ProfFitnessInstructor", flavorKey = "UI_BurdJournals_FlavorFitnessInstructor"},
+    {id = "burgerflipper", name = "Burger Flipper", nameKey = "UI_BurdJournals_ProfBurgerFlipper", flavorKey = "UI_BurdJournals_FlavorBurgerFlipper"},
+    {id = "electrician", name = "Electrician", nameKey = "UI_BurdJournals_ProfElectrician", flavorKey = "UI_BurdJournals_FlavorElectrician"},
+    {id = "engineer", name = "Engineer", nameKey = "UI_BurdJournals_ProfEngineer", flavorKey = "UI_BurdJournals_FlavorEngineer"},
+    {id = "metalworker", name = "Metalworker", nameKey = "UI_BurdJournals_ProfMetalworker", flavorKey = "UI_BurdJournals_FlavorMetalworker"},
+    {id = "mechanics", name = "Mechanic", nameKey = "UI_BurdJournals_ProfMechanic", flavorKey = "UI_BurdJournals_FlavorMechanic"},
+    {id = "veteran", name = "Veteran", nameKey = "UI_BurdJournals_ProfVeteran", flavorKey = "UI_BurdJournals_FlavorVeteran"},
+    {id = "unemployed", name = "Unemployed", nameKey = "UI_BurdJournals_ProfUnemployed", flavorKey = "UI_BurdJournals_FlavorUnemployed"},
+}
+
+-- Get a random profession (available on both client and server)
+-- Returns: professionId, professionName, flavorKey
+function BurdJournals.getRandomProfession()
+    local professions = BurdJournals.PROFESSIONS
+    local prof = professions[ZombRand(#professions) + 1]
+    -- Use translated name if available, fallback to English
+    local profName = prof.nameKey and getText(prof.nameKey) or prof.name
+    return prof.id, profName, prof.flavorKey
 end
 
 -- Generate random skills with XP values for spawned journals
@@ -2419,10 +2626,13 @@ end
 -- Check if trait was a starting trait (not acquired during gameplay)
 function BurdJournals.isStartingTrait(player, traitId)
     if not player then return false end
+    if not traitId then return false end
     local modData = player:getModData()
     if not modData.BurdJournals then return false end
     if not modData.BurdJournals.traitBaseline then return false end
-    return modData.BurdJournals.traitBaseline[traitId] == true
+    -- Check both exact case and lowercase for consistency
+    return modData.BurdJournals.traitBaseline[traitId] == true 
+        or modData.BurdJournals.traitBaseline[string.lower(traitId)] == true
 end
 
 -- Get the full trait baseline table for a player
@@ -3101,7 +3311,7 @@ end
 
 -- Get all magazine recipes known by a player
 -- Returns table: { recipeName = { name = displayName, source = magazineType } }
--- Uses Build 42's getAlreadyReadPages() to check which magazines were read
+-- Uses Build 42's APIs with multiple fallback methods for maximum compatibility
 function BurdJournals.collectPlayerMagazineRecipes(player)
     if not player then
         print("[BurdJournals] collectPlayerMagazineRecipes: no player")
@@ -3125,10 +3335,35 @@ function BurdJournals.collectPlayerMagazineRecipes(player)
     print("[BurdJournals] collectPlayerMagazineRecipes: checking " .. magCount .. " magazine types")
 
     local ok, err = pcall(function()
-        -- Method 1: Check getAlreadyReadPages for each magazine type
-        -- In B42, when a player reads a magazine fully, the pages read = total pages
-        print("[BurdJournals] Method 1: Checking getAlreadyReadPages for each magazine...")
+        -- Method 1 (PRIMARY): Use isRecipeKnown() to check each magazine recipe directly
+        -- This is the most reliable B42 method
+        print("[BurdJournals] Method 1: Using isRecipeKnown() for each magazine recipe...")
         local method1Count = 0
+
+        if player.isRecipeKnown then
+            for magazineType, recipeList in pairs(magToRecipes) do
+                for _, recipeName in ipairs(recipeList) do
+                    if not recipes[recipeName] then
+                        local isKnown = false
+                        pcall(function()
+                            isKnown = player:isRecipeKnown(recipeName)
+                        end)
+                        if isKnown then
+                            method1Count = method1Count + 1
+                            recipes[recipeName] = true  -- Simplified: just mark recipe as known
+                        end
+                    end
+                end
+            end
+            print("[BurdJournals] Method 1 (isRecipeKnown): found " .. method1Count .. " known recipes")
+        else
+            print("[BurdJournals] Method 1: isRecipeKnown not available, skipping")
+        end
+
+        -- Method 2: Check getAlreadyReadPages for each magazine type
+        -- In B42, when a player reads a magazine fully, the pages read = total pages
+        print("[BurdJournals] Method 2: Checking getAlreadyReadPages for each magazine...")
+        local method2Count = 0
 
         for magazineType, recipeList in pairs(magToRecipes) do
             local pagesRead = 0
@@ -3138,80 +3373,76 @@ function BurdJournals.collectPlayerMagazineRecipes(player)
 
             -- If pages read > 0, they've read this magazine (magazines typically have 1 page)
             if pagesRead > 0 then
-                print("[BurdJournals] Magazine read: " .. tostring(magazineType) .. " (pages: " .. pagesRead .. ")")
                 for _, recipeName in ipairs(recipeList) do
                     if not recipes[recipeName] then
-                        method1Count = method1Count + 1
-                        print("[BurdJournals]   - Recipe: " .. tostring(recipeName))
-                        recipes[recipeName] = {
-                            name = recipeName,
-                            source = magazineType
-                        }
+                        method2Count = method2Count + 1
+                        recipes[recipeName] = true  -- Simplified: just mark recipe as known
                     end
                 end
             end
         end
-        print("[BurdJournals] Method 1 (getAlreadyReadPages): found " .. method1Count .. " recipes from read magazines")
+        print("[BurdJournals] Method 2 (getAlreadyReadPages): found " .. method2Count .. " additional recipes")
 
-        -- Method 2: Also check getAlreadyReadBook list as fallback
-        print("[BurdJournals] Method 2: Checking getAlreadyReadBook list...")
-        local method2Count = 0
+        -- Method 3: Check getAlreadyReadBook list as fallback
+        print("[BurdJournals] Method 3: Checking getAlreadyReadBook list...")
+        local method3Count = 0
         local readBooks = nil
         pcall(function()
             readBooks = player:getAlreadyReadBook()
         end)
 
         if readBooks then
-            print("[BurdJournals] Method 2: player has " .. readBooks:size() .. " items in getAlreadyReadBook")
-            for i = 0, readBooks:size() - 1 do
-                local bookType = readBooks:get(i)
-                if bookType then
-                    local recipeList = magToRecipes[bookType]
-                    if recipeList then
-                        print("[BurdJournals] Found in readBook list: " .. tostring(bookType))
-                        for _, recipeName in ipairs(recipeList) do
-                            if not recipes[recipeName] then
-                                method2Count = method2Count + 1
-                                print("[BurdJournals]   - Recipe: " .. tostring(recipeName))
-                                recipes[recipeName] = {
-                                    name = recipeName,
-                                    source = bookType
-                                }
+            local hasSize, bookCount = pcall(function() return readBooks:size() end)
+            if hasSize and bookCount then
+                print("[BurdJournals] Method 3: player has " .. bookCount .. " items in getAlreadyReadBook")
+                for i = 0, bookCount - 1 do
+                    local bookType = nil
+                    pcall(function() bookType = readBooks:get(i) end)
+                    if bookType then
+                        local recipeList = magToRecipes[tostring(bookType)]
+                        if recipeList then
+                            for _, recipeName in ipairs(recipeList) do
+                                if not recipes[recipeName] then
+                                    method3Count = method3Count + 1
+                                    recipes[recipeName] = true  -- Simplified: just mark recipe as known
+                                end
                             end
                         end
                     end
                 end
             end
         else
-            print("[BurdJournals] Method 2: getAlreadyReadBook returned nil")
+            print("[BurdJournals] Method 3: getAlreadyReadBook returned nil")
         end
-        print("[BurdJournals] Method 2 (getAlreadyReadBook): found " .. method2Count .. " additional recipes")
+        print("[BurdJournals] Method 3 (getAlreadyReadBook): found " .. method3Count .. " additional recipes")
 
-        -- Method 3: Still try getKnownRecipes as last resort (in case sandbox enables all recipes)
-        print("[BurdJournals] Method 3: Checking getKnownRecipes...")
-        local method3Count = 0
+        -- Method 4: Check getKnownRecipes list (for recipes learned via learnRecipe())
+        print("[BurdJournals] Method 4: Checking getKnownRecipes...")
+        local method4Count = 0
         local knownRecipes = nil
         pcall(function()
             knownRecipes = player:getKnownRecipes()
         end)
 
-        if knownRecipes and knownRecipes:size() > 0 then
-            print("[BurdJournals] Method 3: player knows " .. knownRecipes:size() .. " recipes")
-            for i = 0, knownRecipes:size() - 1 do
-                local recipeName = knownRecipes:get(i)
-                if recipeName then
-                    local magazineType = recipeToMag[recipeName]
-                    if magazineType and not recipes[recipeName] then
-                        method3Count = method3Count + 1
-                        recipes[recipeName] = {
-                            name = recipeName,
-                            source = magazineType
-                        }
+        if knownRecipes then
+            local hasSize, recipeCount = pcall(function() return knownRecipes:size() end)
+            if hasSize and recipeCount and recipeCount > 0 then
+                print("[BurdJournals] Method 4: player has " .. recipeCount .. " items in getKnownRecipes")
+                for i = 0, recipeCount - 1 do
+                    local recipeName = nil
+                    pcall(function() recipeName = knownRecipes:get(i) end)
+                    if recipeName then
+                        recipeName = tostring(recipeName)
+                        local magazineType = recipeToMag[recipeName]
+                        if magazineType and not recipes[recipeName] then
+                            method4Count = method4Count + 1
+                            recipes[recipeName] = true  -- Simplified: just mark recipe as known
+                        end
                     end
                 end
             end
         end
-        print("[BurdJournals] Method 3 (getKnownRecipes): found " .. method3Count .. " additional recipes")
+        print("[BurdJournals] Method 4 (getKnownRecipes): found " .. method4Count .. " additional recipes")
     end)
 
     if not ok then
@@ -3226,43 +3457,398 @@ function BurdJournals.collectPlayerMagazineRecipes(player)
 end
 
 -- Check if player knows a specific recipe
--- Uses Build 42-compatible detection methods
+-- Uses Build 42-compatible detection methods with multiple fallbacks
+-- Priority: isRecipeKnown() > getKnownRecipes():contains() > magazine read status
 function BurdJournals.playerKnowsRecipe(player, recipeName)
     if not player or not recipeName then return false end
 
+    -- Enable verbose debug logging (set to false in production)
+    local DEBUG_RECIPE_CHECK = false
+
     local ok, result = pcall(function()
-        -- Method 1: Check getKnownRecipes (may not work in Build 42)
-        local knownRecipes = player:getKnownRecipes()
-        if knownRecipes and knownRecipes:contains(recipeName) then
-            return true
+        -- Method 1 (PRIMARY): Use isRecipeKnown() - the B42 dedicated API
+        -- This is the most reliable method in Build 42
+        if player.isRecipeKnown then
+            local known = player:isRecipeKnown(recipeName)
+            if known then
+                if DEBUG_RECIPE_CHECK then
+                    print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via isRecipeKnown()")
+                end
+                return true
+            end
         end
 
-        -- Method 2: Check if player has read the magazine that teaches this recipe
-        local magazineType = BurdJournals.getMagazineForRecipe(recipeName)
-        if magazineType then
-            -- Check getAlreadyReadPages for this magazine
-            local pagesRead = player:getAlreadyReadPages(magazineType) or 0
-            if pagesRead > 0 then
+        -- Method 2: Check getKnownRecipes list (ArrayList<String>)
+        -- This works for recipes learned via learnRecipe()
+        local knownRecipes = player:getKnownRecipes()
+        if knownRecipes then
+            -- Try contains() first (ArrayList method)
+            local hasContains, containsResult = pcall(function()
+                return knownRecipes:contains(recipeName)
+            end)
+            if hasContains and containsResult then
+                if DEBUG_RECIPE_CHECK then
+                    print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via getKnownRecipes():contains()")
+                end
                 return true
             end
 
-            -- Check getAlreadyReadBook list
-            local readBooks = player:getAlreadyReadBook()
-            if readBooks then
-                for i = 0, readBooks:size() - 1 do
-                    local bookType = readBooks:get(i)
-                    if bookType and tostring(bookType) == magazineType then
+            -- Fallback: iterate through the list
+            local hasSize, listSize = pcall(function() return knownRecipes:size() end)
+            if hasSize and listSize and listSize > 0 then
+                for i = 0, listSize - 1 do
+                    local known = knownRecipes:get(i)
+                    if known and tostring(known) == recipeName then
+                        if DEBUG_RECIPE_CHECK then
+                            print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via getKnownRecipes() iteration")
+                        end
                         return true
                     end
                 end
             end
         end
 
+        -- Method 3: Check if player has read the magazine that teaches this recipe
+        -- Magazine-based recipes may not appear in getKnownRecipes until crafting
+        local magazineType = BurdJournals.getMagazineForRecipe(recipeName)
+        if magazineType then
+            -- Check getAlreadyReadPages for this magazine
+            local pagesRead = player:getAlreadyReadPages(magazineType) or 0
+            if pagesRead > 0 then
+                if DEBUG_RECIPE_CHECK then
+                    print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via getAlreadyReadPages(" .. magazineType .. ")=" .. pagesRead)
+                end
+                return true
+            end
+
+            -- Check getAlreadyReadBook list (ArrayList<String>)
+            local readBooks = player:getAlreadyReadBook()
+            if readBooks then
+                local hasSize, bookCount = pcall(function() return readBooks:size() end)
+                if hasSize and bookCount and bookCount > 0 then
+                    for i = 0, bookCount - 1 do
+                        local bookType = readBooks:get(i)
+                        if bookType and tostring(bookType) == magazineType then
+                            if DEBUG_RECIPE_CHECK then
+                                print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via getAlreadyReadBook contains " .. magazineType)
+                            end
+                            return true
+                        end
+                    end
+                end
+            end
+        end
+
+        if DEBUG_RECIPE_CHECK then
+            print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> FALSE (no method returned true)")
+        end
         return false
     end)
 
     if ok then return result end
     return false
+end
+
+-- Validate that a recipe name exists in the game's recipe list
+-- Returns the exact recipe name if found, nil otherwise
+-- This helps catch typos and case-sensitivity issues
+function BurdJournals.validateRecipeName(recipeName)
+    if not recipeName then return nil end
+
+    local ok, result = pcall(function()
+        local recipes = getAllRecipes()
+        if not recipes then return nil end
+
+        -- First try exact match
+        for i = 0, recipes:size() - 1 do
+            local recipe = recipes:get(i)
+            if recipe then
+                local name = recipe:getName()
+                if name == recipeName then
+                    return name  -- Exact match found
+                end
+            end
+        end
+
+        -- Try case-insensitive match
+        local recipeNameLower = string.lower(recipeName)
+        for i = 0, recipes:size() - 1 do
+            local recipe = recipes:get(i)
+            if recipe then
+                local name = recipe:getName()
+                if name and string.lower(name) == recipeNameLower then
+                    return name  -- Case-insensitive match, return correct casing
+                end
+            end
+        end
+
+        return nil
+    end)
+
+    if ok then return result end
+    return nil
+end
+
+-- Get the Recipe object by name (useful for advanced operations)
+function BurdJournals.getRecipeByName(recipeName)
+    if not recipeName then return nil end
+
+    local ok, result = pcall(function()
+        local recipes = getAllRecipes()
+        if not recipes then return nil end
+
+        for i = 0, recipes:size() - 1 do
+            local recipe = recipes:get(i)
+            if recipe and recipe:getName() == recipeName then
+                return recipe
+            end
+        end
+        return nil
+    end)
+
+    if ok then return result end
+    return nil
+end
+
+-- Learn a recipe with comprehensive verification
+-- Returns true if recipe was successfully learned, false otherwise
+-- Includes detailed logging for debugging
+function BurdJournals.learnRecipeWithVerification(player, recipeName, logPrefix)
+    if not player or not recipeName then return false end
+    logPrefix = logPrefix or "[BurdJournals]"
+
+    -- Check if already known
+    if BurdJournals.playerKnowsRecipe(player, recipeName) then
+        print(logPrefix .. " Recipe already known: " .. recipeName)
+        return true
+    end
+
+    -- Validate the recipe exists
+    local validatedName = BurdJournals.validateRecipeName(recipeName)
+    if not validatedName then
+        print(logPrefix .. " WARNING: Recipe '" .. recipeName .. "' not found in game recipes!")
+        -- Continue anyway - it might be a magazine recipe that's not in getAllRecipes()
+        validatedName = recipeName
+    elseif validatedName ~= recipeName then
+        print(logPrefix .. " Recipe name corrected: '" .. recipeName .. "' -> '" .. validatedName .. "'")
+        recipeName = validatedName
+    end
+
+    local learned = false
+
+    -- Method 1: Try standard learnRecipe()
+    local ok1, err1 = pcall(function()
+        player:learnRecipe(recipeName)
+    end)
+
+    if ok1 then
+        -- Verify it worked using isRecipeKnown
+        if player.isRecipeKnown and player:isRecipeKnown(recipeName) then
+            print(logPrefix .. " Learned recipe via learnRecipe(): " .. recipeName)
+            learned = true
+        else
+            -- Fallback verification via getKnownRecipes
+            local knownRecipes = player:getKnownRecipes()
+            if knownRecipes then
+                local hasIt, containsIt = pcall(function() return knownRecipes:contains(recipeName) end)
+                if hasIt and containsIt then
+                    print(logPrefix .. " Learned recipe via learnRecipe() (verified via getKnownRecipes): " .. recipeName)
+                    learned = true
+                end
+            end
+        end
+    else
+        print(logPrefix .. " learnRecipe() threw error: " .. tostring(err1))
+    end
+
+    -- Method 2: If standard method didn't work, try magazine-based approach
+    if not learned then
+        local magazineType = BurdJournals.getMagazineForRecipe(recipeName)
+        if magazineType then
+            print(logPrefix .. " Trying magazine method for: " .. recipeName .. " (magazine: " .. magazineType .. ")")
+
+            -- Get the magazine script to find page count
+            local ok2, err2 = pcall(function()
+                local script = getScriptManager():getItem(magazineType)
+                if script then
+                    local pageCount = 1
+                    if script.getPageToLearn then
+                        pageCount = script:getPageToLearn() or 1
+                    end
+                    -- Mark all pages as read
+                    player:setAlreadyReadPages(magazineType, pageCount)
+                    print(logPrefix .. " Set " .. pageCount .. " pages read for magazine: " .. magazineType)
+                end
+            end)
+
+            if not ok2 then
+                print(logPrefix .. " setAlreadyReadPages error: " .. tostring(err2))
+            end
+
+            -- Also add to read books list
+            local ok3, err3 = pcall(function()
+                local readBooks = player:getAlreadyReadBook()
+                if readBooks then
+                    local hasContains, alreadyHas = pcall(function() return readBooks:contains(magazineType) end)
+                    if not (hasContains and alreadyHas) then
+                        readBooks:add(magazineType)
+                        print(logPrefix .. " Added magazine to read books: " .. magazineType)
+                    end
+                end
+            end)
+
+            if not ok3 then
+                print(logPrefix .. " getAlreadyReadBook error: " .. tostring(err3))
+            end
+
+            -- Verify magazine method worked
+            if BurdJournals.playerKnowsRecipe(player, recipeName) then
+                print(logPrefix .. " Learned recipe via magazine system: " .. recipeName)
+                learned = true
+            end
+        end
+    end
+
+    if not learned then
+        print(logPrefix .. " FAILED to learn recipe: " .. recipeName)
+    end
+
+    return learned
+end
+
+-- Debug function to diagnose recipe system issues
+-- Call this to print detailed info about the player's recipe knowledge state
+function BurdJournals.debugRecipeSystem(player)
+    if not player then
+        print("[BurdJournals DEBUG] No player provided")
+        return
+    end
+
+    print("==================== RECIPE SYSTEM DEBUG ====================")
+
+    -- Test isRecipeKnown availability
+    print("\n[API Availability]")
+    print("  player.isRecipeKnown: " .. tostring(player.isRecipeKnown ~= nil))
+    print("  player.learnRecipe: " .. tostring(player.learnRecipe ~= nil))
+    print("  player.getKnownRecipes: " .. tostring(player.getKnownRecipes ~= nil))
+    print("  player.getAlreadyReadPages: " .. tostring(player.getAlreadyReadPages ~= nil))
+    print("  player.setAlreadyReadPages: " .. tostring(player.setAlreadyReadPages ~= nil))
+    print("  player.getAlreadyReadBook: " .. tostring(player.getAlreadyReadBook ~= nil))
+
+    -- Test getKnownRecipes
+    print("\n[getKnownRecipes Test]")
+    local knownRecipes = nil
+    local ok1, err1 = pcall(function()
+        knownRecipes = player:getKnownRecipes()
+    end)
+    if ok1 and knownRecipes then
+        local hasSize, recipeCount = pcall(function() return knownRecipes:size() end)
+        if hasSize then
+            print("  Count: " .. tostring(recipeCount))
+            if recipeCount > 0 and recipeCount <= 10 then
+                print("  First few recipes:")
+                for i = 0, math.min(recipeCount - 1, 4) do
+                    local r = knownRecipes:get(i)
+                    print("    - " .. tostring(r))
+                end
+            elseif recipeCount > 10 then
+                print("  (Showing first 5 of " .. recipeCount .. " recipes)")
+                for i = 0, 4 do
+                    local r = knownRecipes:get(i)
+                    print("    - " .. tostring(r))
+                end
+            end
+        else
+            print("  Error getting size")
+        end
+    else
+        print("  Error: " .. tostring(err1))
+    end
+
+    -- Test getAlreadyReadBook
+    print("\n[getAlreadyReadBook Test]")
+    local readBooks = nil
+    local ok2, err2 = pcall(function()
+        readBooks = player:getAlreadyReadBook()
+    end)
+    if ok2 and readBooks then
+        local hasSize, bookCount = pcall(function() return readBooks:size() end)
+        if hasSize then
+            print("  Count: " .. tostring(bookCount))
+            if bookCount > 0 and bookCount <= 20 then
+                print("  Read books/magazines:")
+                for i = 0, bookCount - 1 do
+                    local b = readBooks:get(i)
+                    print("    - " .. tostring(b))
+                end
+            elseif bookCount > 20 then
+                print("  (Showing first 10 of " .. bookCount .. " items)")
+                for i = 0, 9 do
+                    local b = readBooks:get(i)
+                    print("    - " .. tostring(b))
+                end
+            end
+        else
+            print("  Error getting size")
+        end
+    else
+        print("  Error: " .. tostring(err2))
+    end
+
+    -- Test magazine cache
+    print("\n[Magazine Recipe Cache]")
+    local magToRecipes = BurdJournals.buildMagazineToRecipesCache()
+    local magCount = 0
+    for _ in pairs(magToRecipes) do magCount = magCount + 1 end
+    print("  Total magazine types: " .. magCount)
+
+    -- Show a sample magazine
+    local sampleCount = 0
+    for magType, recipes in pairs(magToRecipes) do
+        if sampleCount < 3 then
+            print("  " .. magType .. ": " .. #recipes .. " recipes")
+            sampleCount = sampleCount + 1
+        end
+    end
+
+    -- Test specific recipe check
+    print("\n[Testing Sample Recipe Check]")
+    -- Pick a magazine recipe to test
+    for magType, recipes in pairs(magToRecipes) do
+        if #recipes > 0 then
+            local testRecipe = recipes[1]
+            print("  Testing: " .. testRecipe .. " (from " .. magType .. ")")
+
+            -- Test isRecipeKnown
+            if player.isRecipeKnown then
+                local ok, result = pcall(function() return player:isRecipeKnown(testRecipe) end)
+                print("    isRecipeKnown: " .. tostring(ok and result))
+            end
+
+            -- Test our comprehensive check
+            local ourCheck = BurdJournals.playerKnowsRecipe(player, testRecipe)
+            print("    playerKnowsRecipe: " .. tostring(ourCheck))
+
+            -- Test pages read for this magazine
+            local pagesRead = 0
+            pcall(function() pagesRead = player:getAlreadyReadPages(magType) or 0 end)
+            print("    getAlreadyReadPages(" .. magType .. "): " .. pagesRead)
+
+            break  -- Only test one
+        end
+    end
+
+    -- Summary
+    print("\n[Recipe Recording Status]")
+    local enableRecording = BurdJournals.getSandboxOption("EnableRecipeRecording")
+    print("  EnableRecipeRecording sandbox option: " .. tostring(enableRecording))
+
+    local collectedRecipes = BurdJournals.collectPlayerMagazineRecipes(player)
+    local collectedCount = 0
+    for _ in pairs(collectedRecipes) do collectedCount = collectedCount + 1 end
+    print("  Total magazine recipes player knows: " .. collectedCount)
+
+    print("==================== END DEBUG ====================")
 end
 
 -- Get display name for a recipe
@@ -3435,6 +4021,84 @@ function BurdJournals.getTotalRecipeCount(item)
     local data = BurdJournals.getJournalData(item)
     if not data or not data.recipes then return 0 end
     return BurdJournals.countTable(data.recipes)
+end
+
+-- ==================== MAGAZINE RECIPE GENERATION ====================
+
+-- Get all available magazine recipes from the game's dynamic cache
+-- Returns a list of recipe names (internal PZ names)
+function BurdJournals.getAllMagazineRecipes()
+    local cache = BurdJournals.buildMagazineRecipeCache()
+    local recipes = {}
+    for recipeName, _ in pairs(cache) do
+        table.insert(recipes, recipeName)
+    end
+    return recipes
+end
+
+-- Generate random recipes for a journal
+-- count: number of recipes to generate
+-- Returns: table of {recipeName = {name = ..., source = ...}}
+-- Uses DYNAMICALLY DISCOVERED recipes from the game's magazine system
+function BurdJournals.generateRandomRecipes(count)
+    if not count or count <= 0 then return {} end
+
+    local recipes = {}
+
+    -- Get all available magazine recipes from the game cache
+    local available = BurdJournals.getAllMagazineRecipes()
+
+    if #available == 0 then
+        print("[BurdJournals] WARNING: No magazine recipes found in cache!")
+        return {}
+    end
+
+    -- Shuffle and pick
+    for i = #available, 2, -1 do
+        local j = ZombRand(i) + 1
+        available[i], available[j] = available[j], available[i]
+    end
+
+    for i = 1, math.min(count, #available) do
+        local recipeName = available[i]
+        recipes[recipeName] = true  -- Simplified: just mark recipe as known
+    end
+
+    return recipes
+end
+
+-- Generate random recipes using a seed (for OnZombieDead where ZombRand doesn't work)
+-- count: number of recipes to generate
+-- seed: number to use for pseudo-random generation
+-- Returns: table of {recipeName = {name = ..., source = ...}}
+-- Uses DYNAMICALLY DISCOVERED recipes from the game's magazine system
+function BurdJournals.generateRandomRecipesSeeded(count, seed)
+    if not count or count <= 0 then return {} end
+
+    local recipes = {}
+
+    -- Get all available magazine recipes from the game cache
+    local available = BurdJournals.getAllMagazineRecipes()
+
+    if #available == 0 then
+        print("[BurdJournals] WARNING: No magazine recipes found in cache for seeded generation!")
+        return {}
+    end
+
+    -- Use seed-based selection (deterministic but varied)
+    local seedVal = math.floor(seed * 31) % 1000
+    for i = 1, math.min(count, #available) do
+        -- Pick based on seed, varying by iteration
+        local idx = ((seedVal * (i + 7)) % #available) + 1
+        local recipeName = available[idx]
+        if recipeName and not recipes[recipeName] then
+            recipes[recipeName] = true  -- Simplified: just mark recipe as known
+            -- Remove to avoid duplicates
+            table.remove(available, idx)
+        end
+    end
+
+    return recipes
 end
 
 

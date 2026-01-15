@@ -174,6 +174,29 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
+    -- Count recipes
+    local recipeCount = 0
+    local unclaimedRecipes = 0
+    if journalData.recipes then
+        for recipeName, _ in pairs(journalData.recipes) do
+            recipeCount = recipeCount + 1
+            if not journalData.claimedRecipes or not journalData.claimedRecipes[recipeName] then
+                unclaimedRecipes = unclaimedRecipes + 1
+            end
+        end
+    end
+
+    -- Recipes line
+    if recipeCount > 0 then
+        local recipeText = string.format(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
+        if unclaimedRecipes > 0 then
+            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})  -- Teal/cyan for recipes
+        else
+            recipeText = recipeText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.5, b=0.5}})
+        end
+    end
+
     -- ==================== CONDITION & ORIGIN ====================
 
     -- Journal condition (physical state)
@@ -255,8 +278,9 @@ ISToolTipInv.render = function(self)
     -- Call original render first (this draws the base tooltip)
     originalRender(self)
 
-    -- Check if we have a journal item
+    -- Check if we have a valid journal item
     if not self.item then return end
+    if not self.item.getFullType then return end  -- Ensure method exists
 
     local fullType = self.item:getFullType()
     if not fullType or not string.find(fullType, "BurdJournals") then
@@ -283,6 +307,11 @@ ISToolTipInv.render = function(self)
     -- Use same colors as the original tooltip background
     local bgColor = self.backgroundColor
     local borderColor = self.borderColor
+
+    -- Guard against nil colors (some tooltip instances may not have them initialized)
+    if not bgColor or not borderColor then
+        return  -- Can't draw extension without colors
+    end
 
     -- Draw background extension (starting where original ended)
     self:drawRect(0, originalHeight, self:getWidth(), extraHeight, bgColor.a, bgColor.r, bgColor.g, bgColor.b)

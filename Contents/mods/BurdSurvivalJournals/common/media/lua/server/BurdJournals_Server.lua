@@ -23,6 +23,7 @@ BurdJournals.Server = BurdJournals.Server or {}
 
 -- Helper function to deep-copy journal data for sending to client
 -- This ensures the client gets the latest data after server-side changes
+-- NOTE: Only handles up to 3 levels of nesting (sufficient for journal data structure)
 function BurdJournals.Server.copyJournalData(journal)
     if not journal then return nil end
     local modData = journal:getModData()
@@ -101,6 +102,15 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         return
     end
 
+    -- Rate limiting: 100ms cooldown between commands per player to prevent spam
+    local playerModData = player:getModData()
+    local now = getTimestampMs()
+    local lastCmd = playerModData.BurdJournals_LastCommand or 0
+    if now - lastCmd < 100 then
+        return -- Too fast, ignore command
+    end
+    playerModData.BurdJournals_LastCommand = now
+
     if not BurdJournals.isEnabled() then
         -- Debug removed
         BurdJournals.Server.sendToClient(player, "error", {message = "Journals are disabled on this server."})
@@ -135,6 +145,8 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         BurdJournals.Server.handleClaimRecipe(player, args)
     elseif command == "absorbRecipe" then
         BurdJournals.Server.handleAbsorbRecipe(player, args)
+    elseif command == "eraseEntry" then
+        BurdJournals.Server.handleEraseEntry(player, args)
     end
 end
 
@@ -370,17 +382,14 @@ function BurdJournals.Server.handleInitializeJournal(player, args)
                         local idx = ZombRand(#availableTraits) + 1
                         local randomTrait = availableTraits[idx]
                         if randomTrait then
-                            traits[randomTrait] = {
-                                name = randomTrait,
-                                isPositive = true
-                            }
+                            traits[randomTrait] = true  -- Simplified: just mark trait as present
                             table.remove(availableTraits, idx)
                         end
                     end
                 end
                 modData.BurdJournals.traits = traits
                 modData.BurdJournals.claimedTraits = {}
-                modData.BurdJournals.bloodyOrigin = true
+                -- bloodyOrigin removed - wasFromBloody already tracks this
             end
         end
 
@@ -475,7 +484,6 @@ function BurdJournals.Server.handleLogSkills(player, args)
             -- Content
             skills = journalContent.skills,
             traits = journalContent.traits,
-            character = journalContent.character,
         }
         BurdJournals.updateJournalName(filledJournal)
         BurdJournals.updateJournalIcon(filledJournal)
@@ -547,6 +555,40 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     local traitNames = {}
     local recipeNames = {}
 
+    -- Validate payload size to prevent oversized data issues
+    local limits = BurdJournals.Limits or {}
+    local existingSkillCount = 0
+    local existingTraitCount = 0
+    local existingRecipeCount = 0
+    for _ in pairs(modData.BurdJournals.skills) do existingSkillCount = existingSkillCount + 1 end
+    for _ in pairs(modData.BurdJournals.traits) do existingTraitCount = existingTraitCount + 1 end
+    for _ in pairs(modData.BurdJournals.recipes) do existingRecipeCount = existingRecipeCount + 1 end
+
+    local incomingSkillCount = 0
+    local incomingTraitCount = 0
+    local incomingRecipeCount = 0
+    if args.skills then for _ in pairs(args.skills) do incomingSkillCount = incomingSkillCount + 1 end end
+    if args.traits then for _ in pairs(args.traits) do incomingTraitCount = incomingTraitCount + 1 end end
+    if args.recipes then for _ in pairs(args.recipes) do incomingRecipeCount = incomingRecipeCount + 1 end end
+
+    -- Check against hard limits
+    local maxSkills = limits.MAX_SKILLS or 50
+    local maxTraits = limits.MAX_TRAITS or 100
+    local maxRecipes = limits.MAX_RECIPES or 200
+
+    if existingSkillCount + incomingSkillCount > maxSkills then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal skill limit reached (" .. maxSkills .. " max)."})
+        return
+    end
+    if existingTraitCount + incomingTraitCount > maxTraits then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal trait limit reached (" .. maxTraits .. " max)."})
+        return
+    end
+    if existingRecipeCount + incomingRecipeCount > maxRecipes then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal recipe limit reached (" .. maxRecipes .. " max)."})
+        return
+    end
+
     -- Apply skills from client
     if args.skills then
         for skillName, skillData in pairs(args.skills) do
@@ -563,13 +605,11 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     end
 
     -- Apply traits from client
+    -- Optimized storage: just store true (key is the trait ID, positivity looked up at display time)
     if args.traits then
-        for traitId, traitData in pairs(args.traits) do
+        for traitId, _ in pairs(args.traits) do
             if not modData.BurdJournals.traits[traitId] then
-                modData.BurdJournals.traits[traitId] = {
-                    name = traitId,
-                    isPositive = traitData.isPositive ~= false
-                }
+                modData.BurdJournals.traits[traitId] = true  -- Simplified: just mark trait as present
                 traitsRecorded = traitsRecorded + 1
                 table.insert(traitNames, traitId)
             end
@@ -577,28 +617,23 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     end
 
     -- Apply stats from client
+    -- Optimized storage: only store value (owner tracked at journal level)
     if args.stats then
         for statId, statData in pairs(args.stats) do
             -- Stats can always be updated (overwrite with current value)
             modData.BurdJournals.stats[statId] = {
-                value = statData.value,
-                recordedBy = player:getUsername(),
-                timestamp = getGameTime():getWorldAgeHours()
+                value = statData.value
             }
             statsRecorded = statsRecorded + 1
         end
     end
 
     -- Apply recipes from client
+    -- Optimized storage: just store true (key is recipe name, source looked up at display time)
     if args.recipes then
-        for recipeName, recipeData in pairs(args.recipes) do
+        for recipeName, _ in pairs(args.recipes) do
             if not modData.BurdJournals.recipes[recipeName] then
-                modData.BurdJournals.recipes[recipeName] = {
-                    name = recipeName,
-                    source = recipeData.source,
-                    recordedBy = player:getUsername(),
-                    timestamp = getGameTime():getWorldAgeHours()
-                }
+                modData.BurdJournals.recipes[recipeName] = true  -- Simplified: just mark recipe as known
                 recipesRecorded = recipesRecorded + 1
                 table.insert(recipeNames, recipeName)
             end
@@ -686,7 +721,13 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     local journalData = nil
     local finalJournalId = newJournalId or (journal and journal:getID())
 
-    if finalJournal then
+    -- Determine if we should include full journalData in response
+    -- For large journals, skip it to reduce bandwidth - client will use transmitModData instead
+    local finalItemCount = existingSkillCount + existingTraitCount + existingRecipeCount +
+                           skillsRecorded + traitsRecorded + recipesRecorded
+    local includeJournalData = finalItemCount < 50  -- Only include full data for smaller journals
+
+    if includeJournalData and finalJournal then
         local modData = finalJournal:getModData()
         if modData and modData.BurdJournals then
             -- Deep copy the journal data to send to client
@@ -711,8 +752,8 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         end
     end
 
-    -- Send success response with feedback data AND the updated journal data
-    print("[BurdJournals] Sending recordSuccess response, newJournalId=" .. tostring(newJournalId) .. ", journalId=" .. tostring(finalJournalId))
+    -- Send success response with feedback data AND the updated journal data (if not too large)
+    print("[BurdJournals] Sending recordSuccess response, newJournalId=" .. tostring(newJournalId) .. ", journalId=" .. tostring(finalJournalId) .. ", includeJournalData=" .. tostring(includeJournalData))
     BurdJournals.Server.sendToClient(player, "recordSuccess", {
         skillsRecorded = skillsRecorded,
         traitsRecorded = traitsRecorded,
@@ -723,7 +764,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         recipeNames = recipeNames,
         newJournalId = newJournalId,
         journalId = finalJournalId,
-        journalData = journalData  -- Include the actual data so client can apply it directly
+        journalData = journalData  -- May be nil for large journals (client uses transmitModData)
     })
 end
 
@@ -1662,12 +1703,8 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
         return
     end
 
-    -- Learn the recipe
-    local recipeWasLearned = false
-    pcall(function()
-        player:learnRecipe(recipeName)
-        recipeWasLearned = true
-    end)
+    -- Use the comprehensive shared utility for learning recipes
+    local recipeWasLearned = BurdJournals.learnRecipeWithVerification(player, recipeName, "[BurdJournals Server]")
 
     if recipeWasLearned then
         -- Mark recipe as claimed
@@ -1681,8 +1718,10 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
             journal:transmitModData()
         end
 
-        -- Sync player fields (recipes)
-        sendSyncPlayerFields(player, 0x00000007)
+        -- Sync player fields (recipes) - bit flags for recipe sync
+        if sendSyncPlayerFields then
+            sendSyncPlayerFields(player, 0x00000007)
+        end
 
         -- Send success response with journal data for UI update
         BurdJournals.Server.sendToClient(player, "claimSuccess", {
@@ -1768,12 +1807,8 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
         return
     end
 
-    -- Learn the recipe
-    local recipeWasLearned = false
-    pcall(function()
-        player:learnRecipe(recipeName)
-        recipeWasLearned = true
-    end)
+    -- Use the comprehensive shared utility for learning recipes
+    local recipeWasLearned = BurdJournals.learnRecipeWithVerification(player, recipeName, "[BurdJournals Server]")
 
     if recipeWasLearned then
         -- Mark recipe as claimed
@@ -1784,8 +1819,10 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
             journal:transmitModData()
         end
 
-        -- Sync player fields (recipes)
-        sendSyncPlayerFields(player, 0x00000007)
+        -- Sync player fields (recipes) - bit flags for recipe sync
+        if sendSyncPlayerFields then
+            sendSyncPlayerFields(player, 0x00000007)
+        end
 
         -- Get updated journal data for client
         local updatedJournalData = BurdJournals.Server.copyJournalData(journal)
@@ -1811,6 +1848,100 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
         end
     else
         BurdJournals.Server.sendToClient(player, "error", {message = "Could not learn recipe."})
+    end
+end
+
+-- ==================== ERASE ENTRY HANDLER ====================
+
+function BurdJournals.Server.handleEraseEntry(player, args)
+    if not args then
+        print("[BurdJournals] Server: EraseEntry - No args provided")
+        return
+    end
+
+    local journalId = args.journalId
+    local entryType = args.entryType  -- "skill", "trait", or "recipe"
+    local entryName = args.entryName
+
+    if not journalId or not entryType or not entryName then
+        print("[BurdJournals] Server: EraseEntry - Missing required args")
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid erase request."})
+        return
+    end
+
+    print("[BurdJournals] Server: Processing erase request - type: " .. entryType .. ", name: " .. entryName)
+
+    -- Find journal by ID
+    local journal = BurdJournals.findItemById(player, journalId)
+    if not journal then
+        print("[BurdJournals] Server: EraseEntry - Journal not found: " .. tostring(journalId))
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
+        return
+    end
+
+    -- Get journal data
+    local modData = journal:getModData()
+    if not modData or not modData.BurdJournals then
+        print("[BurdJournals] Server: EraseEntry - No journal data")
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal has no data."})
+        return
+    end
+
+    local journalData = modData.BurdJournals
+    local erased = false
+
+    -- Remove entry based on type
+    if entryType == "skill" then
+        if journalData.skills and journalData.skills[entryName] then
+            journalData.skills[entryName] = nil
+            erased = true
+            print("[BurdJournals] Server: Erased skill entry: " .. entryName)
+        end
+        -- Also remove from claimed skills if present
+        if journalData.claimedSkills and journalData.claimedSkills[entryName] then
+            journalData.claimedSkills[entryName] = nil
+        end
+    elseif entryType == "trait" then
+        if journalData.traits and journalData.traits[entryName] then
+            journalData.traits[entryName] = nil
+            erased = true
+            print("[BurdJournals] Server: Erased trait entry: " .. entryName)
+        end
+        -- Also remove from claimed traits if present
+        if journalData.claimedTraits and journalData.claimedTraits[entryName] then
+            journalData.claimedTraits[entryName] = nil
+        end
+    elseif entryType == "recipe" then
+        if journalData.recipes and journalData.recipes[entryName] then
+            journalData.recipes[entryName] = nil
+            erased = true
+            print("[BurdJournals] Server: Erased recipe entry: " .. entryName)
+        end
+        -- Also remove from claimed recipes if present
+        if journalData.claimedRecipes and journalData.claimedRecipes[entryName] then
+            journalData.claimedRecipes[entryName] = nil
+        end
+    end
+
+    if erased then
+        -- Sync modData
+        if journal.transmitModData then
+            journal:transmitModData()
+        end
+
+        -- Get updated journal data for client
+        local updatedJournalData = BurdJournals.Server.copyJournalData(journal)
+
+        BurdJournals.Server.sendToClient(player, "eraseSuccess", {
+            entryType = entryType,
+            entryName = entryName,
+            journalId = journal:getID(),
+            journalData = updatedJournalData
+        })
+        print("[BurdJournals] Server: Erase successful, sent confirmation to client")
+    else
+        print("[BurdJournals] Server: Entry not found to erase: " .. entryType .. " - " .. entryName)
+        BurdJournals.Server.sendToClient(player, "error", {message = "Entry not found."})
     end
 end
 

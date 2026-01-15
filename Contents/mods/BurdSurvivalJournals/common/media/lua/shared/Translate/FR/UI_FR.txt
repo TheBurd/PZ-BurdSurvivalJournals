@@ -4,7 +4,12 @@ UI_FR = {
     UI_BurdJournals_FilledJournal = "Journal de survie rempli",
     UI_BurdJournals_WornJournal = "Journal de survie usé",
     UI_BurdJournals_BloodyJournal = "Journal de survie ensanglanté",
-    
+
+    -- Journal Name States (for dynamic item names)
+    UI_BurdJournals_StateWorn = "Usé",
+    UI_BurdJournals_StateBloody = "Ensanglanté",
+    UI_BurdJournals_PreviousProfession = "Ancien %s",
+
     -- Journal Info
     UI_BurdJournals_Author = "Auteur",
     UI_BurdJournals_Written = "Écrit le",
@@ -40,6 +45,18 @@ UI_FR = {
     UI_BurdJournals_JournalRenamed = "Journal renommé.",
     UI_BurdJournals_JournalConverted = "Journal converti en journal vierge propre.",
     UI_BurdJournals_JournalDissolved = "Le journal tombe en lambeaux entre tes mains...",
+
+    -- Dissolution Messages (random spoken text when journal is fully consumed)
+    UI_BurdJournals_Dissolve1 = "On dirait que ce journal était à sa dernière lecture...",
+    UI_BurdJournals_Dissolve2 = "Les pages tombent en poussière entre tes mains...",
+    UI_BurdJournals_Dissolve3 = "Il avait donné tout ce qu'il pouvait...",
+    UI_BurdJournals_Dissolve4 = "Le journal se désagrège en le refermant...",
+    UI_BurdJournals_Dissolve5 = "Il ne reste que des lambeaux...",
+    UI_BurdJournals_Dissolve6 = "La reliure finit par céder...",
+    UI_BurdJournals_Dissolve7 = "Il a rempli son rôle...",
+    UI_BurdJournals_Dissolve8 = "L'encre s'efface complètement après la lecture...",
+    UI_BurdJournals_Dissolve9 = "Les pages usées se désintègrent...",
+    UI_BurdJournals_Dissolve10 = "Savoir absorbé, le journal s'évanouit...",
     
     -- Condition States
     UI_BurdJournals_ConditionPristine = "Impeccable",
@@ -96,11 +113,14 @@ UI_FR = {
     UI_BurdJournals_BtnQueue = "FILE",
     UI_BurdJournals_BtnClaim = "RÉCUPÉRER",
     UI_BurdJournals_BtnRecord = "CONSIGNER",
+    UI_BurdJournals_BtnErase = "Effacer",
 
     -- Button States
     UI_BurdJournals_StateReading = "Lecture...",
     UI_BurdJournals_StateClaiming = "Récupération...",
     UI_BurdJournals_StateRecording = "Enregistrement...",
+    UI_BurdJournals_StateErasing = "Effacement...",
+    UI_BurdJournals_ErasingProgress = "Effacement... %d%%",
 
     -- Feedback Messages
     UI_BurdJournals_AlreadyReading = "Déjà en train de lire...",
@@ -120,8 +140,10 @@ UI_FR = {
     UI_BurdJournals_GainedTrait = "Trait obtenu : %s",
     UI_BurdJournals_FailedToAddTrait = "Échec de l'obtention du trait : %s",
     UI_BurdJournals_BaselineReset = "Base réinitialisée !",
+    UI_BurdJournals_BaselineInitializing = "Veuillez patienter - initialisation des données du personnage...",
     UI_BurdJournals_GainedXP = "+%s %s",
     UI_BurdJournals_JournalSyncFailed = "Erreur : Échec de la synchronisation du journal",
+    UI_BurdJournals_EntryErased = "Entrée effacée : %s",
 
     -- Empty States
     UI_BurdJournals_NoRewardsAvailable = "Aucune récompense disponible",
@@ -158,15 +180,28 @@ UI_FR = {
     -- Headers
     UI_BurdJournals_YourSkills = "TES COMPÉTENCES",
     UI_BurdJournals_Skills = "COMPÉTENCES",
+    UI_BurdJournals_Traits = "TRAITS",
     UI_BurdJournals_Available = "(%d disponible)",
     UI_BurdJournals_Recordable = "(%d consignable)",
+    UI_BurdJournals_Claimable = "(%d récupérable)",
 
     -- Progress Format
     UI_BurdJournals_ReadingAllProgress = "Lecture complète : %d%% (%s restant)",
     UI_BurdJournals_ReadingProgress = "Lecture... %d%%",
     UI_BurdJournals_RecordingProgress = "Consignation... %d%%",
+    UI_BurdJournals_AbsorbingProgress = "Absorption... %d%%",
+    UI_BurdJournals_LearningProgress = "Apprentissage... %d%%",
+    UI_BurdJournals_RecordingAllProgress = "Consignation complète : %d%% (%s restant)",
+    UI_BurdJournals_ClaimingAllProgress = "Récupération complète : %d%% (%s restant)",
+    UI_BurdJournals_AbsorbingAllProgress = "Absorption complète : %d%% (%s restant)",
     UI_BurdJournals_ItemCount = "%d élément",
     UI_BurdJournals_ItemCountPlural = "%d éléments",
+    UI_BurdJournals_RewardQueued = "%d récompense en file",
+    UI_BurdJournals_RewardsQueued = "%d récompenses en file",
+    UI_BurdJournals_SummaryTotalXP = "Total : +%s XP",
+    UI_BurdJournals_SummaryTrait = "%d trait",
+    UI_BurdJournals_SummaryTraits = "%d traits",
+    UI_BurdJournals_SummarySeparator = "  |  ",
 
     -- Skill/Trait Row Labels
     UI_BurdJournals_LevelFormat = "Niv %d",
@@ -177,6 +212,7 @@ UI_FR = {
     UI_BurdJournals_RecordedLevel = "Consigné : Niv %d",
     UI_BurdJournals_RecordedXP = "Consigné : %s XP",
     UI_BurdJournals_RecordedWas = "%s XP (auparavant %s)",
+    UI_BurdJournals_WasSuffix = " (auparavant %s)",
     UI_BurdJournals_SpawnedWith = "Acquis au départ",
     UI_BurdJournals_YourTrait = "Ton trait",
     UI_BurdJournals_QueuedNumber = "En file #%d",
@@ -264,4 +300,51 @@ UI_FR = {
     UI_BurdJournals_ConfirmCancelLearning = "Annuler la lecture et fermer ?",
     UI_BurdJournals_RecordedTrait = "Trait consigné",
     UI_BurdJournals_RecordedRecipe = "Recette consignée",
+
+    -- Profession Names (for journal item names)
+    UI_BurdJournals_ProfSurvivor = "Survivant",
+    UI_BurdJournals_UnknownSurvivor = "Survivant inconnu",
+    -- WorldSpawn professions
+    UI_BurdJournals_ProfFireOfficer = "Pompier",
+    UI_BurdJournals_ProfPoliceOfficer = "Policier",
+    UI_BurdJournals_ProfParkRanger = "Garde forestier",
+    UI_BurdJournals_ProfConstructionWorker = "Ouvrier du bâtiment",
+    UI_BurdJournals_ProfSecurityGuard = "Agent de sécurité",
+    UI_BurdJournals_ProfCarpenter = "Menuisier",
+    UI_BurdJournals_ProfBurglar = "Cambrioleur",
+    UI_BurdJournals_ProfChef = "Chef cuisinier",
+    UI_BurdJournals_ProfRepairman = "Réparateur",
+    UI_BurdJournals_ProfFarmer = "Fermier",
+    UI_BurdJournals_ProfFisherman = "Pêcheur",
+    UI_BurdJournals_ProfDoctor = "Médecin",
+    UI_BurdJournals_ProfNurse = "Infirmier",
+    UI_BurdJournals_ProfLumberjack = "Bûcheron",
+    UI_BurdJournals_ProfFitnessInstructor = "Coach sportif",
+    UI_BurdJournals_ProfBurgerFlipper = "Employé de fast-food",
+    UI_BurdJournals_ProfElectrician = "Électricien",
+    UI_BurdJournals_ProfEngineer = "Ingénieur",
+    UI_BurdJournals_ProfMetalworker = "Métallurgiste",
+    UI_BurdJournals_ProfMechanic = "Mécanicien",
+    UI_BurdJournals_ProfVeteran = "Vétéran",
+    UI_BurdJournals_ProfUnemployed = "Sans emploi",
+    -- ZombieLoot professions (Former X)
+    UI_BurdJournals_ProfFormerFarmer = "Ancien Fermier",
+    UI_BurdJournals_ProfFormerMechanic = "Ancien Mécanicien",
+    UI_BurdJournals_ProfFormerDoctor = "Ancien Médecin",
+    UI_BurdJournals_ProfFormerCarpenter = "Ancien Menuisier",
+    UI_BurdJournals_ProfFormerHunter = "Ancien Chasseur",
+    UI_BurdJournals_ProfFormerSoldier = "Ancien Soldat",
+    UI_BurdJournals_ProfFormerChef = "Ancien Chef cuisinier",
+    UI_BurdJournals_ProfFormerAthlete = "Ancien Athlète",
+    UI_BurdJournals_ProfFormerBurglar = "Ancien Cambrioleur",
+    UI_BurdJournals_ProfFormerLumberjack = "Ancien Bûcheron",
+    UI_BurdJournals_ProfFormerFisherman = "Ancien Pêcheur",
+    UI_BurdJournals_ProfFormerTailor = "Ancien Tailleur",
+    UI_BurdJournals_ProfFormerElectrician = "Ancien Électricien",
+    UI_BurdJournals_ProfFormerMetalworker = "Ancien Métallurgiste",
+    UI_BurdJournals_ProfFormerSurvivalist = "Ancien Survivaliste",
+    UI_BurdJournals_ProfFormerFighter = "Ancien Combattant",
+
+    -- New UI Keys (v2.x)
+    UI_BurdJournals_TraitAlreadyKnownCount = "%d trait déjà connu",
 }

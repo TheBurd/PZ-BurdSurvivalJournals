@@ -71,6 +71,16 @@ Sandbox_FR = {
     Sandbox_BurdJournals_LearningTimePerRecipe = "Temps d'apprentissage par recette (sec)",
     Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "Temps de base en secondes pour apprendre chaque recette d'un journal.",
 
+    -- Journal Capacity Limits
+    Sandbox_BurdJournals_MaxSkillsPerJournal = "Max. de compétences par journal",
+    Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip = "Nombre maximum de compétences pouvant être consignées dans un seul journal. Le jeu de base a environ 30 compétences. Augmenter pour les parties avec beaucoup de mods.",
+
+    Sandbox_BurdJournals_MaxTraitsPerJournal = "Max. de traits par journal",
+    Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip = "Nombre maximum de traits pouvant être consignés dans un seul journal. Le jeu de base a environ 50 traits attribuables. Augmenter pour les parties avec beaucoup de mods.",
+
+    Sandbox_BurdJournals_MaxRecipesPerJournal = "Max. de recettes par journal",
+    Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip = "Nombre maximum de recettes pouvant être consignées dans un seul journal. Les parties très moddées peuvent avoir plus de 400 recettes de magazines. Augmenter si vous recevez des avertissements de capacité.",
+
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
     -- ============================================================
@@ -93,7 +103,13 @@ Sandbox_FR = {
     
     Sandbox_BurdJournals_WornJournalMaxXP = "XP max. par compétence (Usés)",
     Sandbox_BurdJournals_WornJournalMaxXP_tooltip = "XP maximum par compétence dans les journaux usés.",
-    
+
+    Sandbox_BurdJournals_WornJournalRecipeChance = "% de chance de recette dans journal usé",
+    Sandbox_BurdJournals_WornJournalRecipeChance_tooltip = "Chance qu'un journal usé contienne une recette de magazine (0-100%). Les journaux usés ont moins de chance que les ensanglantés.",
+
+    Sandbox_BurdJournals_WornJournalMaxRecipes = "Max. de recettes par journal usé",
+    Sandbox_BurdJournals_WornJournalMaxRecipes_tooltip = "Nombre maximum de recettes de magazine pouvant apparaître dans un journal usé (1-5).",
+
     -- Bloody Journals (Zombie Corpses)
     Sandbox_BurdJournals_EnableBloodyJournalSpawns = "Activer l'apparition de journaux ensanglantés",
     Sandbox_BurdJournals_EnableBloodyJournalSpawns_tooltip = "Autorise les zombies à laisser tomber des journaux ensanglantés. Ils offrent de meilleures récompenses et des traits rares.",
@@ -118,7 +134,13 @@ Sandbox_FR = {
     
     Sandbox_BurdJournals_BloodyJournalMaxTraits = "Max. de traits par journal ensanglanté",
     Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip = "Nombre maximum de traits pouvant apparaître sur un seul journal ensanglanté (0-5).",
-    
+
+    Sandbox_BurdJournals_BloodyJournalRecipeChance = "% de chance de recette dans journal ensanglanté",
+    Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip = "Chance qu'un journal ensanglanté contienne des recettes de magazine (0-100%). Les journaux ensanglantés ont plus de chance que les usés.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes = "Max. de recettes par journal ensanglanté",
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip = "Nombre maximum de recettes de magazine pouvant apparaître dans un journal ensanglanté (1-5).",
+
     -- ============================================================
     -- TAB 3: ADVANCED SETTINGS
     -- ============================================================

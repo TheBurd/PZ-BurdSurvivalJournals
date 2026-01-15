@@ -109,8 +109,7 @@ function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
             isWorn = false,
             isBloody = false,
             isWritten = false,
-            createdBy = player and player:getUsername() or "World",
-            createdTimestamp = getGameTime():getWorldAgeHours()
+            timestamp = getGameTime():getWorldAgeHours()
         }
 
         if BurdJournals and BurdJournals.updateJournalName then
@@ -139,7 +138,7 @@ function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
             isWorn = true,
             isBloody = false,
             isWritten = false,
-            createdTimestamp = getGameTime():getWorldAgeHours()
+            timestamp = getGameTime():getWorldAgeHours()
         }
 
         if BurdJournals and BurdJournals.updateJournalName then
@@ -168,7 +167,7 @@ function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
             isWorn = false,
             isBloody = true,
             isWritten = false,
-            createdTimestamp = getGameTime():getWorldAgeHours()
+            timestamp = getGameTime():getWorldAgeHours()
         }
 
         if BurdJournals and BurdJournals.updateJournalName then
@@ -270,18 +269,31 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         local maxSkills = 2
         local minXP = 25
         local maxXP = 75
+        local recipeChance = 15
+        local maxRecipes = 1
 
         if BurdJournals and BurdJournals.getSandboxOption then
             minSkills = BurdJournals.getSandboxOption("WornJournalMinSkills") or minSkills
             maxSkills = BurdJournals.getSandboxOption("WornJournalMaxSkills") or maxSkills
             minXP = BurdJournals.getSandboxOption("WornJournalMinXP") or minXP
             maxXP = BurdJournals.getSandboxOption("WornJournalMaxXP") or maxXP
+            recipeChance = BurdJournals.getSandboxOption("WornJournalRecipeChance") or recipeChance
+            maxRecipes = BurdJournals.getSandboxOption("WornJournalMaxRecipes") or maxRecipes
         end
 
         -- Get random profession for the previous owner (with fallback)
-        local professionId, professionName = "unemployed", "Survivor"
-        if BurdJournals and BurdJournals.WorldSpawn and BurdJournals.WorldSpawn.getRandomProfession then
-            professionId, professionName = BurdJournals.WorldSpawn.getRandomProfession()
+        local professionId, professionName, flavorKey = "unemployed", "Survivor", nil
+        if BurdJournals and BurdJournals.getRandomProfession then
+            professionId, professionName, flavorKey = BurdJournals.getRandomProfession()
+        end
+
+        -- Generate recipes (lower chance for worn journals)
+        local recipes = nil
+        if ZombRand(100) < recipeChance then
+            local numRecipes = ZombRand(1, maxRecipes + 1)
+            if BurdJournals and BurdJournals.generateRandomRecipes then
+                recipes = BurdJournals.generateRandomRecipes(numRecipes)
+            end
         end
 
         local modData = item:getModData()
@@ -296,12 +308,15 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
             author = safeGenerateSurvivorName(),
             profession = professionId,
             professionName = professionName,
+            flavorKey = flavorKey,
             timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
             readCount = 0,
             skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
+            recipes = recipes,
             traits = {}, -- Worn journals from world don't have traits
             claimedSkills = {},
-            claimedTraits = {}
+            claimedTraits = {},
+            claimedRecipes = {}
         }
 
         -- Update name/icon (with safety check)
@@ -349,9 +364,9 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
         end
 
         -- Get random profession for the previous owner (with fallback)
-        local professionId, professionName = "unemployed", "Survivor"
-        if BurdJournals and BurdJournals.WorldSpawn and BurdJournals.WorldSpawn.getRandomProfession then
-            professionId, professionName = BurdJournals.WorldSpawn.getRandomProfession()
+        local professionId, professionName, flavorKey = "unemployed", "Survivor", nil
+        if BurdJournals and BurdJournals.getRandomProfession then
+            professionId, professionName, flavorKey = BurdJournals.getRandomProfession()
         end
 
         -- Generate traits if lucky (1-4 random traits)
@@ -375,10 +390,7 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
                     local idx = ZombRand(#availableTraits) + 1
                     local randomTrait = availableTraits[idx]
                     if randomTrait then
-                        traits[randomTrait] = {
-                            name = randomTrait,
-                            isPositive = true
-                        }
+                        traits[randomTrait] = true  -- Simplified: just mark trait as present
                         -- Remove from available to avoid duplicates
                         table.remove(availableTraits, idx)
                     end
@@ -398,12 +410,14 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             author = safeGenerateSurvivorName(),
             profession = professionId,
             professionName = professionName,
+            flavorKey = flavorKey,
             timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
             readCount = 0,
             skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
             traits = traits,
             claimedSkills = {},
-            claimedTraits = {}
+            claimedTraits = {},
+            claimedRecipes = {}
         }
 
         if BurdJournals and BurdJournals.updateJournalName then
@@ -464,7 +478,7 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
             resultModData.BurdJournals = {
                 uuid = safeGenerateUUID(),
                 author = journalData.author,
-                flavorText = journalData.flavorText,
+                flavorKey = journalData.flavorKey,
                 timestamp = journalData.timestamp,
                 readCount = journalData.readCount or 0,
                 skills = journalData.skills,
@@ -476,7 +490,6 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
                 wasRestored = true,
                 wasFromBloody = journalData.wasFromBloody or journalData.isBloody,
                 restoredBy = player and player:getUsername() or "Unknown",
-                restoredTimestamp = getGameTime():getWorldAgeHours(),
                 claimedSkills = journalData.claimedSkills or {},
                 claimedTraits = journalData.claimedTraits or {}
             }
@@ -526,7 +539,7 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
                 resultModData.BurdJournals = {
                     uuid = journalData.uuid or safeGenerateUUID(),
                     author = journalData.author,
-                    flavorText = journalData.flavorText,
+                    flavorKey = journalData.flavorKey,
                     timestamp = journalData.timestamp,
                     readCount = journalData.readCount or 0,
                     skills = journalData.skills or {},
@@ -534,13 +547,12 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
                     isWritten = true,
                     isWorn = false,
                     isBloody = false,
-                    bloodyOrigin = journalData.bloodyOrigin,
+                    wasFromBloody = journalData.wasFromBloody or journalData.isBloody,
                     isPlayerCreated = journalData.isPlayerCreated,
                     claimedSkills = journalData.claimedSkills or {},
                     claimedTraits = journalData.claimedTraits or {},
                     wasRestored = true,
                     restoredBy = player and player:getUsername() or "Unknown",
-                    restoredTimestamp = getGameTime():getWorldAgeHours(),
                 }
 
                 if BurdJournals and BurdJournals.updateJournalName then
@@ -595,7 +607,7 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
                 resultModData.BurdJournals = {
                     uuid = journalData.uuid or safeGenerateUUID(),
                     author = journalData.author,
-                    flavorText = journalData.flavorText,
+                    flavorKey = journalData.flavorKey,
                     timestamp = journalData.timestamp,
                     readCount = journalData.readCount or 0,
                     skills = journalData.skills or {},
@@ -603,13 +615,12 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
                     isWritten = true,
                     isWorn = true,
                     isBloody = false,
-                    bloodyOrigin = true,
+                    wasFromBloody = true,
                     isPlayerCreated = false,
                     claimedSkills = journalData.claimedSkills or {},
                     claimedTraits = journalData.claimedTraits or {},
                     wasCleaned = true,
                     cleanedBy = player and player:getUsername() or "Unknown",
-                    cleanedTimestamp = getGameTime():getWorldAgeHours(),
                 }
 
                 if BurdJournals and BurdJournals.updateJournalName then
@@ -663,7 +674,7 @@ function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4
                 resultModData.BurdJournals = {
                     uuid = journalData.uuid or safeGenerateUUID(),
                     author = journalData.author,
-                    flavorText = journalData.flavorText,
+                    flavorKey = journalData.flavorKey,
                     timestamp = journalData.timestamp,
                     readCount = journalData.readCount or 0,
                     skills = journalData.skills or {},
@@ -671,13 +682,12 @@ function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4
                     isWritten = true,
                     isWorn = false,
                     isBloody = false,
-                    bloodyOrigin = wasBloodySouce or journalData.bloodyOrigin,
+                    wasFromBloody = wasBloodySouce or journalData.wasFromBloody or journalData.isBloody,
                     isPlayerCreated = journalData.isPlayerCreated,
                     claimedSkills = journalData.claimedSkills or {},
                     claimedTraits = journalData.claimedTraits or {},
                     wasRestored = true,
                     restoredBy = player and player:getUsername() or "Unknown",
-                    restoredTimestamp = getGameTime():getWorldAgeHours(),
                 }
 
                 if BurdJournals and BurdJournals.updateJournalName then
@@ -732,7 +742,7 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
                 resultModData.BurdJournals = {
                     uuid = journalData.uuid or safeGenerateUUID(),
                     author = journalData.author,
-                    flavorText = journalData.flavorText,
+                    flavorKey = journalData.flavorKey,
                     timestamp = journalData.timestamp,
                     readCount = journalData.readCount or 0,
                     skills = journalData.skills or {},
@@ -740,14 +750,13 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
                     isWritten = true,
                     isWorn = false,
                     isBloody = false,
-                    bloodyOrigin = true,
+                    wasFromBloody = true,
                     isPlayerCreated = false,
                     claimedSkills = journalData.claimedSkills or {},
                     claimedTraits = journalData.claimedTraits or {},
                     wasRestored = true,
                     wasCleaned = true,
                     restoredBy = player and player:getUsername() or "Unknown",
-                    restoredTimestamp = getGameTime():getWorldAgeHours(),
                 }
 
                 if BurdJournals and BurdJournals.updateJournalName then

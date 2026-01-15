@@ -1,4 +1,4 @@
-RecipesEN {
+Recipes_EN = {
     -- Erase/Reset (both formats for compatibility)
     EraseFilledJournal = "Erase Filled Journal",
     Recipe_EraseFilledJournal = "Erase Filled Journal",

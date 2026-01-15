@@ -1,0 +1,116 @@
+Tooltip_KO = {
+    -- Item Tooltips
+    Tooltip_BlankSurvivalJournal = "생존 지식을 기록할 수 있는 빈 일지.",
+    Tooltip_FilledSurvivalJournal = "생존 기술이 기록된 일지. 우클릭하여 읽기.",
+
+    -- Skill Info
+    Tooltip_BurdJournals_ContainsSkills = "%d개 기술 기록됨",
+    Tooltip_BurdJournals_RewardsRemaining = "남은 보상",
+    Tooltip_BurdJournals_SetModeDesc = "읽으면 기록된 레벨 (더 높은 경우)로 XP가 설정됩니다.\n\n",
+
+    -- Tool Requirements
+    Tooltip_BurdJournals_NeedPen = "글쓰기에 펜이나 연필이 필요합니다.",
+    Tooltip_BurdJournals_NeedEraser = "내용을 지우려면 지우개가 필요합니다.",
+
+    -- Bloody Journal
+    Tooltip_BurdJournals_BloodyJournal = "피투성이 일지",
+    Tooltip_BurdJournals_BloodyJournalDesc = "쓰러진 생존자의 일지. 흡수 가능한 기술과 특성이 담겨 있습니다.",
+    Tooltip_BurdJournals_BloodyDesc = "희귀 발견! 귀중한 특성이 포함되어 있을 수 있습니다.",
+    Tooltip_BurdJournals_ConvertBloodyToClean = "클린 일지로 변환",
+    Tooltip_BurdJournals_ConvertBloodyToCleanDesc = "제작을 통해 이 피투성이 일지를 깨끗한 개인 일지로 변환합니다.",
+
+    -- Worn Journal
+    Tooltip_BurdJournals_WornJournal = "낡은 일지",
+    Tooltip_BurdJournals_NeedsCleaning = "이 일지는 너무 낡아서 읽을 수 없습니다.",
+    Tooltip_BurdJournals_NeedsCleaningDesc = "비누와 천으로 청소하거나, 덕트 테이프로 수리하거나, 가죽 끈으로 재제본하세요.",
+    Tooltip_BurdJournals_AbsorbAll = "모두 흡수",
+    Tooltip_BurdJournals_AbsorbAllDesc = "남은 모든 기술과 특성을 한 번에 습득합니다. 일지는 사라집니다.",
+
+    -- Personal Journal (Clean)
+    Tooltip_BurdJournals_PersonalJournal = "개인 생존 일지",
+    Tooltip_BurdJournals_BlankJournal = "빈 생존 일지",
+    Tooltip_BurdJournals_BlankJournalDesc = "생존 진행 상황을 기록하기 위해 일지를 엽니다.\n필기구가 필요합니다.",
+    Tooltip_BurdJournals_RecordProgress = "진행 상황 기록",
+    Tooltip_BurdJournals_RecordProgressDesc = "현재 기술과 특성을 기록하기 위해 일지를 엽니다.\n현재 레벨이 더 높은 경우에만 기록된 값이 업데이트됩니다.",
+    Tooltip_BurdJournals_ClaimAll = "모든 기술 습득",
+    Tooltip_BurdJournals_ClaimAllDesc = "일지를 열고 사용 가능한 모든 기술을 습득합니다.\n읽기 속도에 따라 시간이 걸립니다.",
+    Tooltip_BurdJournals_Disassemble = "일지 분해",
+    Tooltip_BurdJournals_DisassembleDesc = "재료를 얻기 위해 이 일지를 분해합니다.\n\n획득 재료:\n  종이 2장\n  가죽 끈 1개",
+
+    -- Tooltip Dynamic Text
+    Tooltip_BurdJournals_SkillsAvailable = "기술: %d/%d 사용 가능",
+    Tooltip_BurdJournals_TraitsAvailable = "특성: %d/%d 사용 가능",
+    Tooltip_BurdJournals_RecipesAvailable = "레시피: %d/%d 사용 가능",
+    Tooltip_BurdJournals_NoRewardsFound = "보상 없음",
+    Tooltip_BurdJournals_AbsorbAllRewards = "모든 보상 흡수",
+    Tooltip_BurdJournals_AbsorbAllSkillsTraits = "모두 흡수 (%d개 기술, %d개 특성)",
+    Tooltip_BurdJournals_AbsorbAllSkills = "모두 흡수 (%d개 기술)",
+    Tooltip_BurdJournals_CraftingRequired = "제작 필요",
+    Tooltip_BurdJournals_ConvertBloodyDesc = "제작 메뉴 (B)를 열어 '피투성이 일지 청소 및 변환'을 찾으세요.\n필요 재료: 비누, 천, 가죽, 실, 바늘, 재봉술 Lv1.\n경고: 남은 보상이 모두 파괴됩니다!",
+    Tooltip_BurdJournals_WrittenBy = "작성자: %s",
+    Tooltip_BurdJournals_RecordedItem = "%d개 항목 기록됨",
+    Tooltip_BurdJournals_RecordedItems = "%d개 항목 기록됨",
+    Tooltip_BurdJournals_ClaimableRewards = "습득 가능한 보상:",
+    Tooltip_BurdJournals_SkillCount = "  - %d개 기술",
+    Tooltip_BurdJournals_SkillsCount = "  - %d개 기술",
+    Tooltip_BurdJournals_TraitCount = "  - %d개 특성",
+    Tooltip_BurdJournals_TraitsCount = "  - %d개 특성",
+    Tooltip_BurdJournals_ViewOnly = "보기 전용",
+    Tooltip_BurdJournals_CannotClaimDefault = "이 일지에서 습득할 수 없습니다.",
+    Tooltip_BurdJournals_NoNewRewards = "새로운 보상 없음.",
+    Tooltip_BurdJournals_ClaimingInfo = "습득하면 기록된 레벨 (더 높은 경우)로 XP가 설정됩니다.",
+    Tooltip_BurdJournals_UpdateRecords = "일지 기록 업데이트",
+    Tooltip_BurdJournals_UpdateRecordsDesc = "기록된 기술을 업데이트하기 위해 일지를 엽니다.\n현재 레벨이 더 높은 경우에만 기록된 값이 업데이트됩니다.",
+    Tooltip_BurdJournals_CannotClaim = "습득 불가",
+    Tooltip_BurdJournals_NoPermissionClaim = "이 일지에서 습득할 권한이 없습니다.",
+    Tooltip_BurdJournals_AvailableSkill = "사용 가능: %d개 기술",
+    Tooltip_BurdJournals_AvailableSkills = "사용 가능: %d개 기술",
+    Tooltip_BurdJournals_AndTrait = ", %d개 특성",
+    Tooltip_BurdJournals_AndTraits = ", %d개 특성",
+    Tooltip_BurdJournals_ReadingSpeedNote = "읽기 속도에 따라 시간이 걸립니다.",
+    Tooltip_BurdJournals_EraseContents = "모든 내용 지우기",
+    Tooltip_BurdJournals_EraseContentsDesc = "기록된 모든 데이터를 삭제하여 일지를 빈 상태로 되돌립니다.\n지우개가 필요합니다.",
+    Tooltip_BurdJournals_CannotOpen = "열 수 없음",
+
+    -- Conversion
+    Tooltip_BurdJournals_ConvertToClean = "개인 생존 일지로 재제본",
+    Tooltip_BurdJournals_ConvertToCleanDesc = "이 낡은 일지를 개인용 깨끗한 빈 생존 일지로 재제본합니다. 재봉 재료가 필요합니다.",
+    Tooltip_BurdJournals_CannotConvert = "변환 불가",
+    Tooltip_BurdJournals_NeedsConvertMaterials = "필요 재료: 가죽 끈 + 실 + 바늘 + 재봉술 Lv1",
+
+    -- Materials
+    Tooltip_BurdJournals_MissingMaterials = "재료 부족",
+    Tooltip_BurdJournals_NeedsSoapCloth = "필요 재료: 비누 + 찢어진 시트 또는 행주",
+    Tooltip_BurdJournals_NeedsTape = "필요 재료: 덕트 테이프",
+    Tooltip_BurdJournals_NeedsLeatherBinding = "필요 재료: 가죽 끈 + 실 + 바늘",
+    Tooltip_BurdJournals_NeedsGluePaper = "필요 재료: 접착제 + 종이",
+
+    -- Illiterate Trait Block
+    Tooltip_BurdJournals_IlliterateName = "문맹",
+    Tooltip_BurdJournals_IlliterateDesc = "글을 읽거나 쓸 수 없습니다. 일지는 당신에게 쓸모없습니다.",
+
+    -- Inventory Tooltip Labels
+    Tooltip_BurdJournals_Owner = "소유자: %s",
+    Tooltip_BurdJournals_OwnerYou = "(나)",
+    Tooltip_BurdJournals_Author = "작성자: %s",
+    Tooltip_BurdJournals_Profession = "직업: %s",
+    Tooltip_BurdJournals_SkillsLine = "기술: %d/%d",
+    Tooltip_BurdJournals_SkillsLineXP = "기술: %d/%d (%s XP)",
+    Tooltip_BurdJournals_AllClaimed = "(모두 습득됨)",
+    Tooltip_BurdJournals_TraitsLine = "특성: %d/%d",
+    Tooltip_BurdJournals_RecipesLine = "레시피: %d/%d",
+    Tooltip_BurdJournals_ConditionBloody = "상태: 피투성이",
+    Tooltip_BurdJournals_ConditionWorn = "상태: 낡음",
+    Tooltip_BurdJournals_ConditionRestored = "상태: 복원됨",
+    Tooltip_BurdJournals_ConditionClean = "상태: 깨끗함",
+    Tooltip_BurdJournals_OriginZombie = "출처: 좀비에서 회수",
+    Tooltip_BurdJournals_OriginWorld = "출처: 월드에서 발견",
+    Tooltip_BurdJournals_OriginCrafted = "출처: 제작됨",
+    Tooltip_BurdJournals_OriginFound = "출처: 발견됨",
+    Tooltip_BurdJournals_OriginPersonal = "출처: 개인",
+    Tooltip_BurdJournals_Created = "생성일: %s",
+    Tooltip_BurdJournals_LastUpdated = "최종 업데이트: %s",
+    Tooltip_BurdJournals_AgeToday = "오늘",
+    Tooltip_BurdJournals_Age1Day = "1일 전",
+    Tooltip_BurdJournals_AgeDays = "%d일 전",
+}

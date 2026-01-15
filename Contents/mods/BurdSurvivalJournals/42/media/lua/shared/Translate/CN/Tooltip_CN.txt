@@ -40,6 +40,7 @@ Tooltip_CN = {
     -- Tooltip Dynamic Text
     Tooltip_BurdJournals_SkillsAvailable = "技能：%d/%d 可用",
     Tooltip_BurdJournals_TraitsAvailable = "特质：%d/%d 可用",
+    Tooltip_BurdJournals_RecipesAvailable = "配方：%d/%d 可用",
     Tooltip_BurdJournals_NoRewardsFound = "未发现奖励",
     Tooltip_BurdJournals_AbsorbAllRewards = "领悟所有奖励",
     Tooltip_BurdJournals_AbsorbAllSkillsTraits = "全部领悟（%d项技能，%d项特质）",
@@ -97,6 +98,7 @@ Tooltip_CN = {
     Tooltip_BurdJournals_SkillsLineXP = "技能：%d/%d（%s 经验）",
     Tooltip_BurdJournals_AllClaimed = "（已全部获取）",
     Tooltip_BurdJournals_TraitsLine = "特质：%d/%d",
+    Tooltip_BurdJournals_RecipesLine = "配方：%d/%d",
     Tooltip_BurdJournals_ConditionBloody = "状况：血迹斑斑",
     Tooltip_BurdJournals_ConditionWorn = "状况：磨损",
     Tooltip_BurdJournals_ConditionRestored = "状况：已修复",

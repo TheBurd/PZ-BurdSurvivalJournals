@@ -1,0 +1,88 @@
+IG_UI_KO = {
+    -- Context Menu - Main Options
+    ContextMenu_BurdJournals_OpenJournal = "일지 열기...",
+    ContextMenu_BurdJournals_Read = "읽기",
+    ContextMenu_BurdJournals_Rename = "이름 변경",
+    ContextMenu_BurdJournals_EraseJournal = "일지 지우기",
+    ContextMenu_BurdJournals_RecordProgress = "진행 상황 기록",
+
+    -- Context Menu - Clean/Repair
+    ContextMenu_BurdJournals_CleanRepair = "청소/수리",
+    ContextMenu_BurdJournals_CleanSoap = "비누와 천으로 청소",
+    ContextMenu_BurdJournals_RepairTape = "덕트 테이프로 수리",
+    ContextMenu_BurdJournals_RepairLeather = "가죽으로 재제본",
+    ContextMenu_BurdJournals_RepairGlue = "페이지 접착",
+
+    -- UI Panel Titles
+    UI_BurdJournals_BlankJournal = "빈 생존 일지",
+    UI_BurdJournals_FilledJournal = "작성된 생존 일지",
+    UI_BurdJournals_WornJournal = "낡은 생존 일지",
+
+    -- Data Category Headers
+    UI_BurdJournals_CategoryCharacter = "캐릭터 정보",
+    UI_BurdJournals_CategorySurvival = "생존 기록",
+    UI_BurdJournals_CategoryKills = "처치 기록",
+    UI_BurdJournals_CategoryTraits = "성격 특성",
+    UI_BurdJournals_CategorySkills = "습득한 기술",
+
+    -- UI Panel Labels
+    UI_BurdJournals_Author = "작성자",
+    UI_BurdJournals_Written = "작성일",
+    UI_BurdJournals_TimesRead = "읽은 횟수",
+    UI_BurdJournals_Condition = "상태",
+    UI_BurdJournals_NeedsCleaning = "청소 필요",
+
+    -- UI Buttons
+    UI_BurdJournals_SelectAll = "모두 선택",
+    UI_BurdJournals_DeselectAll = "모두 선택 해제",
+    UI_BurdJournals_Log = "기술 기록",
+    UI_BurdJournals_Learn = "배우기",
+    UI_BurdJournals_Update = "업데이트",
+    UI_BurdJournals_Erase = "지우기",
+    UI_BurdJournals_Close = "닫기",
+
+    -- Confirmation Dialogs
+    UI_BurdJournals_ConfirmErase = "정말로 이 일지를 지우시겠습니까? 기록된 모든 기술이 영구적으로 삭제됩니다.",
+    UI_BurdJournals_ConfirmOverwrite = "이 작업은 기존 일지 내용을 현재 기술로 덮어씁니다. 계속하시겠습니까?",
+    UI_BurdJournals_RenamePrompt = "이 일지의 새 이름을 입력하세요:",
+    UI_BurdJournals_NoSkillsSelected = "먼저 최소 한 가지 기술을 선택하세요.",
+    UI_BurdJournals_NoSkillsInJournal = "이 일지에는 배울 기술이 없습니다.",
+
+    -- Condition States
+    UI_BurdJournals_ConditionPristine = "깨끗함",
+    UI_BurdJournals_ConditionGood = "양호",
+    UI_BurdJournals_ConditionWorn = "낡음",
+    UI_BurdJournals_ConditionDamaged = "손상됨",
+    UI_BurdJournals_ConditionCritical = "심각",
+
+    -- Inspect Messages
+    UI_BurdJournals_InspectBlank = "상태가 %1인 빈 일지입니다.",
+    UI_BurdJournals_InspectFilled = "%1이(가) 작성한 일지. 상태: %2",
+
+    -- Tooltips - Journal Info
+    Tooltip_BlankSurvivalJournal = "생존 지식을 기록할 수 있는 빈 일지.",
+    Tooltip_FilledSurvivalJournal = "생존 기술이 기록된 일지. 우클릭하여 읽기.",
+    Tooltip_BurdJournals_ContainsSkills = "%1개 기술 기록됨",
+
+    -- Tooltips - Requirements
+    Tooltip_BurdJournals_NeedPen = "글쓰기에 펜이나 연필이 필요합니다.",
+    Tooltip_BurdJournals_NeedEraser = "내용을 지우려면 지우개가 필요합니다.",
+    Tooltip_BurdJournals_NeedsCleaning = "이 일지는 너무 낡아서 읽을 수 없습니다.",
+    Tooltip_BurdJournals_NeedsCleaningDesc = "비누와 천으로 청소하거나, 덕트 테이프로 수리하거나, 가죽 끈으로 재제본하세요.",
+
+    -- Tooltips - Cleaning Materials
+    Tooltip_BurdJournals_MissingMaterials = "재료 부족",
+    Tooltip_BurdJournals_NeedsSoapCloth = "필요 재료: 비누 + 찢어진 시트 또는 행주",
+    Tooltip_BurdJournals_NeedsTape = "필요 재료: 덕트 테이프",
+    Tooltip_BurdJournals_NeedsLeatherBinding = "필요 재료: 가죽 끈 + 실 + 바늘",
+    Tooltip_BurdJournals_NeedsGluePaper = "필요 재료: 접착제 + 종이",
+
+    -- Feedback Messages
+    UI_BurdJournals_SkillsLogged = "기술이 일지에 기록되었습니다.",
+    UI_BurdJournals_SkillsLearned = "일지에서 지식을 흡수했습니다!",
+    UI_BurdJournals_JournalErased = "일지 내용이 삭제되었습니다.",
+    UI_BurdJournals_JournalCleaned = "일지가 청소되어 이제 읽을 수 있습니다.",
+    UI_BurdJournals_JournalUpdated = "일지 기술이 업데이트되었습니다.",
+    UI_BurdJournals_JournalRenamed = "일지 이름이 변경되었습니다.",
+}
+

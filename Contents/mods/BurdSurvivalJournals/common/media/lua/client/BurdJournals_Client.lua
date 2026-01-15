@@ -28,50 +28,32 @@ BurdJournals.Client = BurdJournals.Client or {}
 -- This allows automatic recalculation when users update the mod
 BurdJournals.Client.BASELINE_VERSION = 2  -- v2: Fixed existing save detection and trait baseline
 
-function BurdJournals.Client.init()
-    -- Try to capture baseline for existing characters that don't have it yet
-    -- This handles:
-    -- 1. Existing saves (characters created before the mod update)
-    -- 2. Characters where OnCreatePlayer might have been missed
-    -- 3. Saves with outdated baseline data that needs recalculation
-    local player = getPlayer()
-    if player then
-        local modData = player:getModData()
-        local needsBaseline = not modData.BurdJournals or not modData.BurdJournals.baselineCaptured
+-- Track current language to detect changes and re-localize item names
+BurdJournals.Client._currentLanguage = nil
 
-        -- Check if baseline was captured with an older version
-        if modData.BurdJournals and modData.BurdJournals.baselineCaptured then
-            local currentVersion = modData.BurdJournals.baselineVersion or 1
-            if currentVersion < BurdJournals.Client.BASELINE_VERSION then
-                print("[BurdJournals] Baseline version " .. currentVersion .. " is outdated (current: " .. BurdJournals.Client.BASELINE_VERSION .. ")")
-                -- Only recalculate for existing saves (players who have played for a while)
-                local hoursAlive = player:getHoursSurvived() or 0
-                if hoursAlive > 1 then
-                    print("[BurdJournals] Existing save detected (" .. hoursAlive .. " hours survived), will recalculate baseline")
-                    -- Clear old baseline to allow recapture
-                    modData.BurdJournals.baselineCaptured = nil
-                    modData.BurdJournals.skillBaseline = nil
-                    modData.BurdJournals.traitBaseline = nil
-                    needsBaseline = true
-                end
-            end
-        end
+-- Check if language changed and clear localization cache if so
+function BurdJournals.Client.checkLanguageChange()
+    local newLanguage = nil
+    -- Try to get current language - different methods for different PZ versions
+    if Translator and Translator.getLanguage then
+        newLanguage = Translator.getLanguage()
+    elseif getCore and getCore().getLanguage then
+        newLanguage = getCore():getLanguage()
+    end
 
-        if needsBaseline then
-            -- Small delay to ensure player is fully loaded
-            local captureAfterDelay
-            local ticksWaited = 0
-            captureAfterDelay = function()
-                ticksWaited = ticksWaited + 1
-                if ticksWaited >= 10 then  -- Wait 10 ticks (~1 second) for game start
-                    Events.OnTick.Remove(captureAfterDelay)
-                    -- Pass false for isNewCharacter - calculate baseline from profession/traits
-                    BurdJournals.Client.captureBaseline(player, false)
-                end
-            end
-            Events.OnTick.Add(captureAfterDelay)
+    if newLanguage and BurdJournals.Client._currentLanguage and newLanguage ~= BurdJournals.Client._currentLanguage then
+        -- Language changed! Clear the localization cache so items get re-localized
+        if BurdJournals.clearLocalizedItemsCache then
+            BurdJournals.clearLocalizedItemsCache()
         end
     end
+
+    BurdJournals.Client._currentLanguage = newLanguage
+end
+
+function BurdJournals.Client.init()
+    -- Initialize language tracking for localization
+    BurdJournals.Client.checkLanguageChange()
 end
 
 -- ==================== HALO TEXT UTILITIES ====================
@@ -80,7 +62,6 @@ end
 BurdJournals.Client.HaloColors = {
     XP_GAIN = {r=0.3, g=0.9, b=0.3, a=1},       -- Green for XP gain
     TRAIT_GAIN = {r=0.9, g=0.7, b=0.2, a=1},    -- Gold for traits
-    RECIPE_GAIN = {r=0.4, g=0.85, b=0.95, a=1}, -- Cyan/teal for recipes
     DISSOLVE = {r=0.7, g=0.5, b=0.3, a=1},      -- Brown for dissolution
     ERROR = {r=0.9, g=0.3, b=0.3, a=1},         -- Red for errors
     INFO = {r=1, g=1, b=1, a=1},                -- White for info
@@ -98,8 +79,6 @@ function BurdJournals.Client.showHaloMessage(player, message, color)
             haloColor = HaloTextHelper.getColorGreen()
         elseif color == BurdJournals.Client.HaloColors.TRAIT_GAIN then
             haloColor = HaloTextHelper.getColorGreen()
-        elseif color == BurdJournals.Client.HaloColors.RECIPE_GAIN then
-            haloColor = HaloTextHelper.getColorBlue()  -- Closest to cyan/teal
         elseif color == BurdJournals.Client.HaloColors.ERROR then
             haloColor = HaloTextHelper.getColorRed()
         end
@@ -141,20 +120,20 @@ function BurdJournals.Client.onServerCommand(module, command, args)
         BurdJournals.Client.handleClaimSuccess(player, args)
 
     elseif command == "logSuccess" then
-        BurdJournals.Client.showHaloMessage(player, getText("UI_BurdJournals_SkillsRecorded") or "Skills recorded!", BurdJournals.Client.HaloColors.INFO)
+        BurdJournals.Client.showHaloMessage(player, "Skills recorded!", BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "recordSuccess" then
         BurdJournals.Client.handleRecordSuccess(player, args)
 
     elseif command == "eraseSuccess" then
-        BurdJournals.Client.showHaloMessage(player, getText("UI_BurdJournals_JournalErased") or "Journal erased", BurdJournals.Client.HaloColors.INFO)
+        BurdJournals.Client.showHaloMessage(player, "Journal erased", BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "cleanSuccess" then
-        local message = args and args.message or (getText("UI_BurdJournals_JournalCleaned") or "Journal cleaned")
+        local message = args and args.message or "Journal cleaned"
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "convertSuccess" then
-        local message = args and args.message or (getText("UI_BurdJournals_JournalRebound") or "Journal rebound")
+        local message = args and args.message or "Journal rebound"
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.INFO)
 
     elseif command == "removeJournal" then
@@ -162,9 +141,6 @@ function BurdJournals.Client.onServerCommand(module, command, args)
 
     elseif command == "journalInitialized" then
         BurdJournals.Client.handleJournalInitialized(player, args)
-
-    elseif command == "recipeAlreadyKnown" then
-        BurdJournals.Client.handleRecipeAlreadyKnown(player, args)
 
     elseif command == "error" then
         if args and args.message then
@@ -217,44 +193,18 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
 
     print("[BurdJournals] Client: handleRecordSuccess received, newJournalId=" .. tostring(args.newJournalId) .. ", journalId=" .. tostring(args.journalId))
 
-    -- Build specific feedback message with actual names
-    local recordedItems = {}
-
-    -- Add skill names (get display names)
-    if args.skillNames then
-        for _, skillName in ipairs(args.skillNames) do
-            local displayName = BurdJournals.getPerkDisplayName(skillName) or skillName
-            table.insert(recordedItems, displayName)
-        end
+    -- Build feedback message
+    local feedbackParts = {}
+    if args.skillsRecorded and args.skillsRecorded > 0 then
+        table.insert(feedbackParts, args.skillsRecorded .. " skill" .. (args.skillsRecorded > 1 and "s" or ""))
+    end
+    if args.traitsRecorded and args.traitsRecorded > 0 then
+        table.insert(feedbackParts, args.traitsRecorded .. " trait" .. (args.traitsRecorded > 1 and "s" or ""))
     end
 
-    -- Add trait names (get display names using shared helper)
-    if args.traitNames then
-        for _, traitId in ipairs(args.traitNames) do
-            local traitName = BurdJournals.getTraitDisplayName(traitId)
-            table.insert(recordedItems, traitName)
-        end
-    end
-
-    -- Add recipe names (get display names)
-    if args.recipeNames then
-        for _, recipeName in ipairs(args.recipeNames) do
-            local displayName = BurdJournals.getRecipeDisplayName and BurdJournals.getRecipeDisplayName(recipeName) or recipeName
-            table.insert(recordedItems, displayName)
-        end
-    end
-
-    -- Create concise message
-    local message
-    if #recordedItems == 0 then
-        message = getText("UI_BurdJournals_ProgressSaved") or "Progress saved!"
-    elseif #recordedItems == 1 then
-        message = string.format(getText("UI_BurdJournals_RecordedItem") or "Recorded %s", recordedItems[1])
-    elseif #recordedItems <= 3 then
-        message = string.format(getText("UI_BurdJournals_RecordedItems") or "Recorded %s", table.concat(recordedItems, ", "))
-    else
-        -- More than 3 items, abbreviate
-        message = string.format(getText("UI_BurdJournals_RecordedItemsMore") or "Recorded %s, %s +%d more", recordedItems[1], recordedItems[2], #recordedItems - 2)
+    local message = "Progress saved!"
+    if #feedbackParts > 0 then
+        message = "Recorded: " .. table.concat(feedbackParts, ", ")
     end
 
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
@@ -314,14 +264,10 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
         end
 
         -- Refresh the UI to show updated data
-        -- Pass journalData directly to populateRecordList to bypass getModData() timing issues in SP
         if panel.refreshJournalData then
             panel:refreshJournalData()
         end
-        if panel.populateRecordList and args.journalData then
-            print("[BurdJournals] Client: Calling populateRecordList with server journalData")
-            pcall(function() panel:populateRecordList(args.journalData) end)
-        elseif panel.populateRecordList then
+        if panel.populateRecordList then
             pcall(function() panel:populateRecordList() end)
         end
     end
@@ -348,23 +294,24 @@ function BurdJournals.Client.handleApplyXP(player, args)
             local xpToApply = data.xp or 0
             local skillMode = data.mode or mode
 
+            -- Debug removed
+
             local beforeXP = player:getXp():getXP(perk)
 
             if skillMode == "add" then
-                -- ADD mode: Add XP to current value
-                -- Use sendAddXp - works in both SP and MP (like Skill Recovery Journal does)
+                -- ADD mode: Use sendAddXp - the vanilla MP-safe function
+                -- This is what ISPlayerStatsUI uses for the debug panel
                 if sendAddXp then
-                    sendAddXp(player, perk, xpToApply, true)
+                    sendAddXp(player, perk, xpToApply, true)  -- true = noMultiplier
                     skillsApplied = skillsApplied + 1
                     totalXPGained = totalXPGained + xpToApply
-                    print("[BurdJournals] Applied +" .. tostring(xpToApply) .. " XP to " .. tostring(skillName))
                 else
-                    -- Fallback: direct AddXP (should rarely happen)
-                    player:getXp():AddXP(perk, xpToApply)
+                    -- Fallback for single player
+                    player:getXp():AddXP(perk, xpToApply, true, true)
                     local afterXP = player:getXp():getXP(perk)
                     totalXPGained = totalXPGained + (afterXP - beforeXP)
                     skillsApplied = skillsApplied + 1
-                    print("[BurdJournals] Fallback: Applied XP to " .. tostring(skillName))
+                    -- Debug removed
                 end
             else
                 -- SET mode: Only apply if journal XP is higher
@@ -372,14 +319,16 @@ function BurdJournals.Client.handleApplyXP(player, args)
                     local xpDiff = xpToApply - beforeXP
                     if sendAddXp then
                         sendAddXp(player, perk, xpDiff, true)
-                        print("[BurdJournals] Set " .. tostring(skillName) .. " to " .. tostring(xpToApply) .. " (added " .. tostring(xpDiff) .. ")")
+                        -- Debug removed
                     else
-                        player:getXp():AddXP(perk, xpDiff)
+                        player:getXp():AddXP(perk, xpDiff, true, true)
                     end
                     totalXPGained = totalXPGained + xpDiff
                     skillsApplied = skillsApplied + 1
+                    -- Debug removed
                 end
             end
+        else
         end
     end
 
@@ -395,7 +344,7 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
 
     print("[BurdJournals] Client: handleAbsorbSuccess received, journalId=" .. tostring(args.journalId))
 
-    -- Show halo text feedback for skill absorption
+    -- Show halo text feedback for skill absorption AND apply the reward
     if args.skillName and args.xpGained then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
         local xpGained = args.xpGained or 0
@@ -403,10 +352,24 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
         -- Show halo text above player's head
         local message = "+" .. BurdJournals.formatXP(xpGained) .. " " .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
+        -- Note: XP is applied via separate applyXP command from server
+    elseif args.traitId then
+        local traitName = BurdJournals.getTraitDisplayName(args.traitId)
+        local message = "Learned: " .. traitName
+        BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
+        -- CRITICAL: Also add trait on client side for MP sync
+        pcall(function()
+            BurdJournals.safeAddTrait(player, args.traitId)
+        end)
     elseif args.recipeName then
         local displayName = BurdJournals.getRecipeDisplayName(args.recipeName)
         local message = "+" .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.RECIPE_GAIN)
+        -- CRITICAL: Learn recipe on client side for MP sync
+        pcall(function()
+            player:learnRecipe(args.recipeName)
+            print("[BurdJournals] Client: Learned recipe '" .. args.recipeName .. "' on absorb")
+        end)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -444,7 +407,7 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
             end
         end
     elseif args.journalId then
-        -- Fallback: Mark skill/trait/recipe as claimed locally if no journalData provided
+        -- Fallback: Mark skill/trait as claimed locally if no journalData provided
         local journal = BurdJournals.findItemById(player, args.journalId)
         if journal then
             if args.skillName then
@@ -452,9 +415,6 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
             end
             if args.traitId then
                 BurdJournals.claimTrait(journal, args.traitId)
-            end
-            if args.recipeName then
-                BurdJournals.claimRecipe(journal, args.recipeName)
             end
         end
 
@@ -467,9 +427,6 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
                 end
                 if args.traitId then
                     BurdJournals.claimTrait(panel.journal, args.traitId)
-                end
-                if args.recipeName then
-                    BurdJournals.claimRecipe(panel.journal, args.recipeName)
                 end
             end
         end
@@ -499,19 +456,37 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
 
     print("[BurdJournals] Client: handleClaimSuccess received, journalId=" .. tostring(args.journalId))
 
-    -- Show halo text feedback
+    -- Show halo text feedback AND apply the actual reward on client
     if args.skillName and args.xpGained then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
-        local message = string.format(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(args.xpGained))
+        local message = "Claimed: " .. displayName .. " (+" .. BurdJournals.formatXP(args.xpGained) .. " XP)"
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
+        -- Note: XP is applied via separate applyXP command from server
     elseif args.traitId then
-        local traitName = BurdJournals.getTraitDisplayName(args.traitId)
-        local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
+        local traitName = args.traitId
+        pcall(function()
+            if TraitFactory and TraitFactory.getTrait then
+                local trait = TraitFactory.getTrait(args.traitId)
+                if trait and trait.getLabel then
+                    traitName = trait:getLabel()
+                end
+            end
+        end)
+        local message = "Learned: " .. traitName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
+        -- CRITICAL: Also add trait on client side for MP sync
+        pcall(function()
+            BurdJournals.safeAddTrait(player, args.traitId)
+        end)
     elseif args.recipeName then
         local displayName = BurdJournals.getRecipeDisplayName(args.recipeName)
         local message = "+" .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.RECIPE_GAIN)
+        -- CRITICAL: Learn recipe on client side for MP sync
+        pcall(function()
+            player:learnRecipe(args.recipeName)
+            print("[BurdJournals] Client: Learned recipe '" .. args.recipeName .. "' on client")
+        end)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -540,16 +515,29 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
         end
     end
 
-    -- Refresh UI if open
+    -- Refresh UI if open - in SP mode, refresh immediately since server response is synchronous
+    -- In MP, we still delay slightly to allow applyXP to process first
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-        local panel = BurdJournals.UI.MainPanel.instance
-        -- Use refreshJournalData which handles both absorption and log UIs
-        -- In SP, this is synchronous. In MP, sendAddXp is async but should still work.
-        print("[BurdJournals] Client: Refreshing UI for claimSuccess")
-        if panel.refreshJournalData then
-            panel:refreshJournalData()
-        elseif panel.refreshAbsorptionList then
-            panel:refreshAbsorptionList()
+        -- In single player, isClient() and isServer() are both true, and our SP workaround
+        -- calls handlers synchronously, so no delay needed
+        if isClient() and isServer() then
+            -- Single player: refresh immediately
+            print("[BurdJournals] Client: SP mode - refreshing UI immediately for claimSuccess")
+            BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+        else
+            -- Multiplayer: delay to allow applyXP async processing
+            local ticksWaited = 0
+            local refreshAfterXP
+            refreshAfterXP = function()
+                ticksWaited = ticksWaited + 1
+                if ticksWaited >= 2 then
+                    Events.OnTick.Remove(refreshAfterXP)
+                    if BurdJournals.UI.MainPanel.instance then
+                        BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
+                    end
+                end
+            end
+            Events.OnTick.Add(refreshAfterXP)
         end
     end
 end
@@ -612,8 +600,16 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     if not args or not args.traitId then return end
 
     local traitId = args.traitId
-    -- Get trait display name using shared helper
-    local traitName = BurdJournals.getTraitDisplayName(traitId)
+    -- Safely get trait name (TraitFactory may not exist in Build 42)
+    local traitName = traitId
+    pcall(function()
+        if TraitFactory and TraitFactory.getTrait then
+            local trait = TraitFactory.getTrait(traitId)
+            if trait and trait.getLabel then
+                traitName = trait:getLabel()
+            end
+        end
+    end)
 
     -- Grant the trait using EXACT pattern from ISPlayerStatsUI:onAddTrait
     -- This is the CLIENT-side authoritative way to add traits mid-game
@@ -720,7 +716,7 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     end
 
     -- Show halo text feedback
-    local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
+    local message = "Learned: " .. traitName
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -773,11 +769,19 @@ function BurdJournals.Client.handleTraitAlreadyKnown(player, args)
     if not args or not args.traitId then return end
 
     local traitId = args.traitId
-    -- Get trait display name using shared helper
-    local traitName = BurdJournals.getTraitDisplayName(traitId)
+    -- Safely get trait name (TraitFactory may not exist in Build 42)
+    local traitName = traitId
+    pcall(function()
+        if TraitFactory and TraitFactory.getTrait then
+            local trait = TraitFactory.getTrait(traitId)
+            if trait and trait.getLabel then
+                traitName = trait:getLabel()
+            end
+        end
+    end)
 
     -- Show feedback that player already has this trait (as speech bubble)
-    player:Say(string.format(getText("UI_BurdJournals_AlreadyKnowTrait") or "Already know: %s", traitName))
+    player:Say("Already know: " .. traitName)
 
     -- Refresh UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
@@ -792,49 +796,11 @@ function BurdJournals.Client.handleSkillMaxed(player, args)
     local displayName = BurdJournals.getPerkDisplayName(skillName)
 
     -- Show feedback that skill is already maxed (as speech bubble)
-    player:Say(string.format(getText("UI_BurdJournals_SkillAlreadyMaxedMsg") or "%s is already maxed!", displayName))
+    player:Say(displayName .. " is already maxed!")
 
     -- Refresh UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
         BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
-    end
-end
-
-function BurdJournals.Client.handleRecipeAlreadyKnown(player, args)
-    if not args or not args.recipeName then return end
-
-    local recipeName = args.recipeName
-    local displayName = BurdJournals.getRecipeDisplayName(recipeName)
-
-    -- Show feedback that recipe is already known (as speech bubble)
-    player:Say(string.format(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName))
-
-    -- Apply journal data if provided (for worn/bloody journals - marks as claimed)
-    if args.journalId and args.journalData then
-        local journal = BurdJournals.findItemById(player, args.journalId)
-        if journal then
-            local modData = journal:getModData()
-            modData.BurdJournals = args.journalData
-        end
-
-        -- Also update UI panel if matching
-        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-            local panel = BurdJournals.UI.MainPanel.instance
-            if panel.journal and panel.journal:getID() == args.journalId then
-                local panelModData = panel.journal:getModData()
-                panelModData.BurdJournals = args.journalData
-            end
-        end
-    end
-
-    -- Refresh UI if open
-    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
-        local panel = BurdJournals.UI.MainPanel.instance
-        if panel.refreshJournalData then
-            panel:refreshJournalData()
-        elseif panel.refreshAbsorptionList then
-            panel:refreshAbsorptionList()
-        end
     end
 end
 
@@ -1068,6 +1034,20 @@ end
 function BurdJournals.Client.onCreatePlayer(playerIndex)
     local player = getSpecificPlayer(playerIndex)
     if player then
+        -- CRITICAL: Clear any existing baseline data to ensure fresh capture
+        -- This handles respawn case where old baseline might persist
+        local modData = player:getModData()
+        if modData then
+            if not modData.BurdJournals then
+                modData.BurdJournals = {}
+            end
+            -- Force baseline recapture for this new/respawned character
+            modData.BurdJournals.baselineCaptured = false
+            modData.BurdJournals.skillBaseline = nil
+            modData.BurdJournals.traitBaseline = nil
+            modData.BurdJournals.recipeBaseline = nil
+        end
+
         -- Small delay to ensure player is fully initialized
         local captureAfterDelay
         local ticksWaited = 0
@@ -1083,10 +1063,59 @@ function BurdJournals.Client.onCreatePlayer(playerIndex)
     end
 end
 
+-- ==================== PLAYER DEATH CLEANUP ====================
+
+-- Clean up on player death to prevent orphaned tick handlers and UI issues
+function BurdJournals.Client.onPlayerDeath(player)
+    -- Close UI and clean up all tick handlers
+    if BurdJournals.UI and BurdJournals.UI.MainPanel then
+        -- Remove all possible tick handlers defensively
+        pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onLearningTickStatic) end)
+        pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onRecordingTickStatic) end)
+        pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onPendingJournalRetryStatic) end)
+        
+        -- Close the UI panel if open
+        if BurdJournals.UI.MainPanel.instance then
+            pcall(function() 
+                BurdJournals.UI.MainPanel.instance:setVisible(false)
+                BurdJournals.UI.MainPanel.instance:removeFromUIManager()
+                BurdJournals.UI.MainPanel.instance = nil
+            end)
+        end
+    end
+    
+    -- Clear timed action queue for this player
+    if ISTimedActionQueue and player then
+        pcall(function() ISTimedActionQueue.clear(player) end)
+    end
+
+    -- CRITICAL: Clear baseline so it gets recaptured for new character after respawn
+    -- This prevents balance mode bypass where old character's skills/traits are used as baseline
+    if player then
+        local modData = player:getModData()
+        if modData and modData.BurdJournals then
+            modData.BurdJournals.baselineCaptured = false
+            modData.BurdJournals.skillBaseline = nil
+            modData.BurdJournals.traitBaseline = nil
+            modData.BurdJournals.recipeBaseline = nil
+            print("[BurdJournals] Baseline cleared for respawn")
+        end
+    end
+
+    print("[BurdJournals] Player death cleanup completed")
+end
+
 -- ==================== EVENT REGISTRATION ====================
 
 Events.OnServerCommand.Add(BurdJournals.Client.onServerCommand)
 Events.OnGameStart.Add(BurdJournals.Client.init)
 Events.OnCreatePlayer.Add(BurdJournals.Client.onCreatePlayer)
+Events.OnPlayerDeath.Add(BurdJournals.Client.onPlayerDeath)
+
+-- Periodic language check (runs every game minute, approximately 1 real second)
+-- Clears localization cache if player changes language in options
+if Events.EveryOneMinute then
+    Events.EveryOneMinute.Add(BurdJournals.Client.checkLanguageChange)
+end
 
 

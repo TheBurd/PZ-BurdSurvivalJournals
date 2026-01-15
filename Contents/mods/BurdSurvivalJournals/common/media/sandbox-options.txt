@@ -141,21 +141,33 @@ option BurdJournals.EnableBaselineRestriction = {
     translation = BurdJournals_EnableBaselineRestriction,
 }
 
-/* Recipe Recording */
-option BurdJournals.EnableRecipeRecording = {
-    type = boolean,
-    default = true,
+/* Journal Capacity Limits */
+/* Controls max items that can be stored in player journals */
+option BurdJournals.MaxSkillsPerJournal = {
+    type = integer,
+    min = 10,
+    max = 100,
+    default = 50,
     page = BurdJournals_Player,
-    translation = BurdJournals_EnableRecipeRecording,
+    translation = BurdJournals_MaxSkillsPerJournal,
 }
 
-option BurdJournals.LearningTimePerRecipe = {
-    type = double,
-    min = 0.5,
-    max = 30.0,
-    default = 5.0,
+option BurdJournals.MaxTraitsPerJournal = {
+    type = integer,
+    min = 20,
+    max = 200,
+    default = 100,
     page = BurdJournals_Player,
-    translation = BurdJournals_LearningTimePerRecipe,
+    translation = BurdJournals_MaxTraitsPerJournal,
+}
+
+option BurdJournals.MaxRecipesPerJournal = {
+    type = integer,
+    min = 100,
+    max = 1000,
+    default = 500,
+    page = BurdJournals_Player,
+    translation = BurdJournals_MaxRecipesPerJournal,
 }
 
 /* ============================================================ */
@@ -214,6 +226,25 @@ option BurdJournals.WornJournalMaxXP = {
     default = 75,
     page = BurdJournals_Loot,
     translation = BurdJournals_WornJournalMaxXP,
+}
+
+/* Worn Journal Recipe Chance */
+option BurdJournals.WornJournalRecipeChance = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 15,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalRecipeChance,
+}
+
+option BurdJournals.WornJournalMaxRecipes = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 1,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_WornJournalMaxRecipes,
 }
 
 /* BLOODY JOURNALS (Zombie Corpses - Better Rewards + Traits) */
@@ -285,6 +316,25 @@ option BurdJournals.BloodyJournalMaxTraits = {
     default = 2,
     page = BurdJournals_Loot,
     translation = BurdJournals_BloodyJournalMaxTraits,
+}
+
+/* BLOODY JOURNAL RECIPE SPAWNS */
+option BurdJournals.BloodyJournalRecipeChance = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 35,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalRecipeChance,
+}
+
+option BurdJournals.BloodyJournalMaxRecipes = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 2,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_BloodyJournalMaxRecipes,
 }
 
 /* ============================================================ */

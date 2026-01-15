@@ -219,44 +219,136 @@ BurdJournals.WorldSpawn.SurvivorNames = {
 
 -- ==================== PROFESSIONS FOR RANDOM JOURNALS ====================
 
--- Profession IDs and their display names for random journal generation
+-- Profession IDs, display names, and translation keys for flavor text
 BurdJournals.WorldSpawn.Professions = {
-    {id = "fireofficer", name = "Fire Officer"},
-    {id = "policeofficer", name = "Police Officer"},
-    {id = "parkranger", name = "Park Ranger"},
-    {id = "constructionworker", name = "Construction Worker"},
-    {id = "securityguard", name = "Security Guard"},
-    {id = "carpenter", name = "Carpenter"},
-    {id = "burglar", name = "Burglar"},
-    {id = "chef", name = "Chef"},
-    {id = "repairman", name = "Repairman"},
-    {id = "farmer", name = "Farmer"},
-    {id = "fisherman", name = "Fisherman"},
-    {id = "doctor", name = "Doctor"},
-    {id = "nurse", name = "Nurse"},
-    {id = "lumberjack", name = "Lumberjack"},
-    {id = "fitnessInstructor", name = "Fitness Instructor"},
-    {id = "burgerflipper", name = "Burger Flipper"},
-    {id = "electrician", name = "Electrician"},
-    {id = "engineer", name = "Engineer"},
-    {id = "metalworker", name = "Metalworker"},
-    {id = "mechanics", name = "Mechanic"},
-    {id = "veteran", name = "Veteran"},
-    {id = "unemployed", name = "Unemployed"},
+    {id = "fireofficer", name = "Fire Officer", nameKey = "UI_BurdJournals_ProfFireOfficer", flavorKey = "UI_BurdJournals_FlavorFireOfficer"},
+    {id = "policeofficer", name = "Police Officer", nameKey = "UI_BurdJournals_ProfPoliceOfficer", flavorKey = "UI_BurdJournals_FlavorPoliceOfficer"},
+    {id = "parkranger", name = "Park Ranger", nameKey = "UI_BurdJournals_ProfParkRanger", flavorKey = "UI_BurdJournals_FlavorParkRanger"},
+    {id = "constructionworker", name = "Construction Worker", nameKey = "UI_BurdJournals_ProfConstructionWorker", flavorKey = "UI_BurdJournals_FlavorConstructionWorker"},
+    {id = "securityguard", name = "Security Guard", nameKey = "UI_BurdJournals_ProfSecurityGuard", flavorKey = "UI_BurdJournals_FlavorSecurityGuard"},
+    {id = "carpenter", name = "Carpenter", nameKey = "UI_BurdJournals_ProfCarpenter", flavorKey = "UI_BurdJournals_FlavorCarpenter"},
+    {id = "burglar", name = "Burglar", nameKey = "UI_BurdJournals_ProfBurglar", flavorKey = "UI_BurdJournals_FlavorBurglar"},
+    {id = "chef", name = "Chef", nameKey = "UI_BurdJournals_ProfChef", flavorKey = "UI_BurdJournals_FlavorChef"},
+    {id = "repairman", name = "Repairman", nameKey = "UI_BurdJournals_ProfRepairman", flavorKey = "UI_BurdJournals_FlavorMechanic"},
+    {id = "farmer", name = "Farmer", nameKey = "UI_BurdJournals_ProfFarmer", flavorKey = "UI_BurdJournals_FlavorFarmer"},
+    {id = "fisherman", name = "Fisherman", nameKey = "UI_BurdJournals_ProfFisherman", flavorKey = "UI_BurdJournals_FlavorFisherman"},
+    {id = "doctor", name = "Doctor", nameKey = "UI_BurdJournals_ProfDoctor", flavorKey = "UI_BurdJournals_FlavorDoctor"},
+    {id = "nurse", name = "Nurse", nameKey = "UI_BurdJournals_ProfNurse", flavorKey = "UI_BurdJournals_FlavorNurse"},
+    {id = "lumberjack", name = "Lumberjack", nameKey = "UI_BurdJournals_ProfLumberjack", flavorKey = "UI_BurdJournals_FlavorLumberjack"},
+    {id = "fitnessInstructor", name = "Fitness Instructor", nameKey = "UI_BurdJournals_ProfFitnessInstructor", flavorKey = "UI_BurdJournals_FlavorFitnessInstructor"},
+    {id = "burgerflipper", name = "Burger Flipper", nameKey = "UI_BurdJournals_ProfBurgerFlipper", flavorKey = "UI_BurdJournals_FlavorBurgerFlipper"},
+    {id = "electrician", name = "Electrician", nameKey = "UI_BurdJournals_ProfElectrician", flavorKey = "UI_BurdJournals_FlavorElectrician"},
+    {id = "engineer", name = "Engineer", nameKey = "UI_BurdJournals_ProfEngineer", flavorKey = "UI_BurdJournals_FlavorEngineer"},
+    {id = "metalworker", name = "Metalworker", nameKey = "UI_BurdJournals_ProfMetalworker", flavorKey = "UI_BurdJournals_FlavorMetalworker"},
+    {id = "mechanics", name = "Mechanic", nameKey = "UI_BurdJournals_ProfMechanic", flavorKey = "UI_BurdJournals_FlavorMechanic"},
+    {id = "veteran", name = "Veteran", nameKey = "UI_BurdJournals_ProfVeteran", flavorKey = "UI_BurdJournals_FlavorVeteran"},
+    {id = "unemployed", name = "Unemployed", nameKey = "UI_BurdJournals_ProfUnemployed", flavorKey = "UI_BurdJournals_FlavorUnemployed"},
 }
+
+-- Skill-to-profession mapping for intelligent profession inference
+-- Maps skill names to professions that would logically have those skills
+BurdJournals.WorldSpawn.SkillProfessionMap = {
+    -- Combat skills
+    Aiming = {"policeofficer", "veteran", "securityguard", "parkranger"},
+    Reloading = {"policeofficer", "veteran", "securityguard"},
+    -- Blade/melee
+    Axe = {"lumberjack", "fireofficer", "parkranger"},
+    Blunt = {"constructionworker", "securityguard", "burglar"},
+    SmallBlunt = {"burglar", "securityguard"},
+    SmallBlade = {"chef", "burglar", "doctor"},
+    LongBlade = {"veteran", "securityguard"},
+    Spear = {"parkranger", "fisherman"},
+    -- Construction/crafting
+    Carpentry = {"carpenter", "constructionworker", "lumberjack"},
+    Woodwork = {"carpenter", "lumberjack"},
+    Metalworking = {"metalworker", "engineer", "mechanics"},
+    Electricity = {"electrician", "engineer"},
+    Mechanics = {"mechanics", "repairman", "engineer"},
+    -- Survival
+    Farming = {"farmer", "parkranger"},
+    Fishing = {"fisherman", "parkranger"},
+    Trapping = {"parkranger", "farmer"},
+    Foraging = {"parkranger", "farmer", "fisherman"},
+    PlantScavenging = {"farmer", "parkranger"},
+    -- Medical
+    Doctor = {"doctor", "nurse", "fireofficer"},
+    FirstAid = {"doctor", "nurse", "fireofficer", "policeofficer"},
+    -- Cooking
+    Cooking = {"chef", "burgerflipper", "farmer"},
+    -- Fitness
+    Fitness = {"fitnessInstructor", "fireofficer", "policeofficer", "veteran"},
+    Strength = {"fitnessInstructor", "constructionworker", "lumberjack", "fireofficer"},
+    Sprinting = {"fitnessInstructor", "burglar", "policeofficer"},
+    -- Stealth/misc
+    Lightfoot = {"burglar", "parkranger"},
+    Nimble = {"burglar", "fitnessInstructor"},
+    Sneak = {"burglar", "parkranger", "veteran"},
+    -- Tailoring
+    Tailoring = {"unemployed", "nurse"},  -- Generic, many could have this
+    -- Maintenance
+    Maintenance = {"repairman", "mechanics", "constructionworker"},
+}
+
+-- Infer the best profession based on journal skills
+-- Returns profession id, name, and flavorKey
+function BurdJournals.WorldSpawn.inferProfessionFromSkills(skills)
+    if not skills then
+        return BurdJournals.WorldSpawn.getRandomProfession()
+    end
+
+    -- Count how many times each profession appears as a match
+    local professionScores = {}
+
+    for skillName, _ in pairs(skills) do
+        local matchingProfessions = BurdJournals.WorldSpawn.SkillProfessionMap[skillName]
+        if matchingProfessions then
+            for i, profId in ipairs(matchingProfessions) do
+                -- Weight earlier entries higher (more relevant match)
+                local weight = #matchingProfessions - i + 1
+                professionScores[profId] = (professionScores[profId] or 0) + weight
+            end
+        end
+    end
+
+    -- Find the profession with the highest score
+    local bestProfId = nil
+    local bestScore = 0
+    for profId, score in pairs(professionScores) do
+        if score > bestScore then
+            bestScore = score
+            bestProfId = profId
+        end
+    end
+
+    -- If we found a match, return that profession
+    if bestProfId then
+        for _, prof in ipairs(BurdJournals.WorldSpawn.Professions) do
+            if prof.id == bestProfId then
+                -- Use translated name if available, fallback to English
+                local profName = prof.nameKey and getText(prof.nameKey) or prof.name
+                return prof.id, profName, prof.flavorKey
+            end
+        end
+    end
+
+    -- Fallback to random if no skills matched
+    return BurdJournals.WorldSpawn.getRandomProfession()
+end
 
 -- Get a random profession
 function BurdJournals.WorldSpawn.getRandomProfession()
     local professions = BurdJournals.WorldSpawn.Professions
     local prof = professions[ZombRand(#professions) + 1]
-    return prof.id, prof.name
+    -- Use translated name if available, fallback to English
+    local profName = prof.nameKey and getText(prof.nameKey) or prof.name
+    return prof.id, profName, prof.flavorKey
 end
 
 -- ==================== GENERATE WORN JOURNAL DATA ====================
 
 function BurdJournals.WorldSpawn.generateWornJournalData()
     local survivorName = BurdJournals.WorldSpawn.SurvivorNames[ZombRand(#BurdJournals.WorldSpawn.SurvivorNames) + 1]
-    local professionId, professionName = BurdJournals.WorldSpawn.getRandomProfession()
+    local professionId, professionName, flavorKey = BurdJournals.WorldSpawn.getRandomProfession()
 
     -- Get sandbox settings for worn journals (light rewards)
     local minXP = BurdJournals.getSandboxOption("WornJournalMinXP") or 25
@@ -307,14 +399,25 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
         }
     end
 
+    -- Generate recipes (lower chance for worn journals - 15% chance, 1-X recipes based on setting)
+    local recipes = nil
+    local recipeChance = BurdJournals.getSandboxOption("WornJournalRecipeChance") or 15
+    if ZombRand(100) < recipeChance then
+        local maxRecipes = BurdJournals.getSandboxOption("WornJournalMaxRecipes") or 1
+        local numRecipes = ZombRand(1, maxRecipes + 1)
+        recipes = BurdJournals.generateRandomRecipes(numRecipes)
+    end
+
     -- Build journal data structure
     local journalData = {
         uuid = BurdJournals.generateUUID(),
         author = survivorName,
         profession = professionId,
         professionName = professionName,
+        flavorKey = flavorKey,  -- Translation key for flavor text
         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
         skills = skills,
+        recipes = recipes,
         -- Worn journal state
         isWorn = true,
         isBloody = false,
@@ -325,6 +428,7 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
         -- Claim tracking (starts empty)
         claimedSkills = {},
         claimedTraits = {},
+        claimedRecipes = {},
     }
 
     return journalData
@@ -334,7 +438,7 @@ end
 
 function BurdJournals.WorldSpawn.generateBloodyJournalData()
     local survivorName = BurdJournals.generateRandomSurvivorName()
-    local professionId, professionName = BurdJournals.WorldSpawn.getRandomProfession()
+    local professionId, professionName, flavorKey = BurdJournals.WorldSpawn.getRandomProfession()
 
     -- Get sandbox settings for bloody journals (better rewards)
     local minXP = BurdJournals.getSandboxOption("BloodyJournalMinXP") or 50
@@ -403,15 +507,21 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
                 local idx = ZombRand(#availableTraits) + 1
                 local randomTrait = availableTraits[idx]
                 if randomTrait then
-                    traits[randomTrait] = {
-                        name = randomTrait,
-                        isPositive = true
-                    }
+                    traits[randomTrait] = true  -- Simplified: just mark trait as present
                     -- Remove from available to avoid duplicates
                     table.remove(availableTraits, idx)
                 end
             end
         end
+    end
+
+    -- Generate recipes (higher chance for bloody journals - 35% chance, 1-2 recipes)
+    local recipes = nil
+    local recipeChance = BurdJournals.getSandboxOption("BloodyJournalRecipeChance") or 35
+    if ZombRand(100) < recipeChance then
+        local maxRecipes = BurdJournals.getSandboxOption("BloodyJournalMaxRecipes") or 2
+        local numRecipes = ZombRand(1, maxRecipes + 1)
+        recipes = BurdJournals.generateRandomRecipes(numRecipes)
     end
 
     -- Build journal data structure
@@ -420,9 +530,11 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
         author = survivorName,
         profession = professionId,
         professionName = professionName,
+        flavorKey = flavorKey,  -- Translation key for flavor text
         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
         skills = skills,
         traits = traits,
+        recipes = recipes,
         -- Bloody journal state
         isWorn = false,
         isBloody = true,
@@ -432,6 +544,7 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
         -- Claim tracking (starts empty)
         claimedSkills = {},
         claimedTraits = {},
+        claimedRecipes = {},
     }
 
     return journalData
@@ -456,13 +569,31 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
                         modData.BurdJournals.author or
                         modData.BurdJournals.isWritten ~= nil
         if hasData then
+            local needsTransmit = false
+
             -- Add UUID if missing (migrate old journals)
             if not modData.BurdJournals.uuid then
                 modData.BurdJournals.uuid = BurdJournals.generateUUID()
-                -- Debug removed
-                if item.transmitModData then
-                    item:transmitModData()
+                needsTransmit = true
+            end
+
+            -- MIGRATION: Add profession info to old worn/bloody journals that are missing it
+            -- This fixes journals that were spawned before profession flavor was added
+            if not modData.BurdJournals.professionName and modData.BurdJournals.skills then
+                -- Only add profession to filled journals (worn/bloody), not blank or player journals
+                if not modData.BurdJournals.isPlayerCreated then
+                    -- Infer profession from the journal's skills for contextual consistency
+                    local professionId, professionName, flavorKey = BurdJournals.WorldSpawn.inferProfessionFromSkills(modData.BurdJournals.skills)
+                    modData.BurdJournals.profession = professionId
+                    modData.BurdJournals.professionName = professionName
+                    modData.BurdJournals.flavorKey = flavorKey
+                    needsTransmit = true
+                    print("[BurdJournals] Migrated journal with inferred profession: " .. professionName)
                 end
+            end
+
+            if needsTransmit and item.transmitModData then
+                item:transmitModData()
             end
             return false
         end
@@ -487,9 +618,13 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
         -- Clean filled journal - generate as a "restored" found journal for dev testing
         -- Use profession-based name like worn/bloody journals
         local survivorName = BurdJournals.WorldSpawn.SurvivorNames[ZombRand(#BurdJournals.WorldSpawn.SurvivorNames) + 1]
+        local professionId, professionName, flavorKey = BurdJournals.WorldSpawn.getRandomProfession()
         journalData = {
             uuid = BurdJournals.generateUUID(),
             author = survivorName,
+            profession = professionId,
+            professionName = professionName,
+            flavorKey = flavorKey,  -- Translation key for flavor text
             timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
             skills = BurdJournals.generateRandomSkills(2, 4, 50, 150),
             traits = {},

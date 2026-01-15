@@ -22,6 +22,15 @@ ContextMenu_PTBR = {
     ContextMenu_BurdJournals_AbsorbAll = "Receber Todas as Recompensas",
     ContextMenu_BurdJournals_ConvertToClean = "Reencadernar como Diário Pessoal",
 
+    -- Absorb All Dynamic Labels (for context menu)
+    ContextMenu_BurdJournals_AbsorbAllFormat = "Absorver Tudo (%s)",
+    ContextMenu_BurdJournals_SkillCount = "%d habilidade",
+    ContextMenu_BurdJournals_SkillsCount = "%d habilidades",
+    ContextMenu_BurdJournals_TraitCount = "%d traço",
+    ContextMenu_BurdJournals_TraitsCount = "%d traços",
+    ContextMenu_BurdJournals_RecipeCount = "%d receita",
+    ContextMenu_BurdJournals_RecipesCount = "%d receitas",
+
     -- Personal Journal (Clean)
     ContextMenu_BurdJournals_RecordAll = "Gravar Todo o Progresso",
     ContextMenu_BurdJournals_Disassemble = "Desmontar Diário",

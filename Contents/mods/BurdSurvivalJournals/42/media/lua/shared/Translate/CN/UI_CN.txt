@@ -46,6 +46,18 @@ UI_CN = {
     UI_BurdJournals_JournalConverted = "日志已转换为干净的空白日志。",
     UI_BurdJournals_JournalDissolved = "日志在你手中化为碎片……",
 
+    -- Dissolution Messages (random spoken text when journal is fully consumed)
+    UI_BurdJournals_Dissolve1 = "看来这本日志已经油尽灯枯了……",
+    UI_BurdJournals_Dissolve2 = "书页在手中化为尘埃……",
+    UI_BurdJournals_Dissolve3 = "这是它所能给予的一切了……",
+    UI_BurdJournals_Dissolve4 = "合上时日志就散架了……",
+    UI_BurdJournals_Dissolve5 = "只剩下一些碎片了……",
+    UI_BurdJournals_Dissolve6 = "书脊终于散开了……",
+    UI_BurdJournals_Dissolve7 = "它已完成使命……",
+    UI_BurdJournals_Dissolve8 = "读完后，墨迹完全消褪了……",
+    UI_BurdJournals_Dissolve9 = "破旧的书页分解了……",
+    UI_BurdJournals_Dissolve10 = "知识已被吸收，日志随之消逝……",
+
     -- Condition States
     UI_BurdJournals_ConditionPristine = "完好如初",
     UI_BurdJournals_ConditionGood = "状态良好",
@@ -101,11 +113,14 @@ UI_CN = {
     UI_BurdJournals_BtnQueue = "排队",
     UI_BurdJournals_BtnClaim = "领取",
     UI_BurdJournals_BtnRecord = "记录",
+    UI_BurdJournals_BtnErase = "清空",
 
     -- Button States
     UI_BurdJournals_StateReading = "阅读中...",
     UI_BurdJournals_StateClaiming = "领取中...",
     UI_BurdJournals_StateRecording = "记录中...",
+    UI_BurdJournals_StateErasing = "擦除中...",
+    UI_BurdJournals_ErasingProgress = "擦除中... %d%%",
 
     -- Feedback Messages
     UI_BurdJournals_AlreadyReading = "正在阅读中...",
@@ -125,8 +140,10 @@ UI_CN = {
     UI_BurdJournals_GainedTrait = "获得特质：%s",
     UI_BurdJournals_FailedToAddTrait = "添加特质失败：%s",
     UI_BurdJournals_BaselineReset = "基准已重置！",
+    UI_BurdJournals_BaselineInitializing = "请稍候 - 角色数据初始化中...",
     UI_BurdJournals_GainedXP = "+%s %s",
     UI_BurdJournals_JournalSyncFailed = "错误：日志同步失败",
+    UI_BurdJournals_EntryErased = "已擦除条目：%s",
 
     -- Empty States
     UI_BurdJournals_NoRewardsAvailable = "没有可用奖励",
@@ -195,6 +212,7 @@ UI_CN = {
     UI_BurdJournals_RecordedLevel = "已记录：%d 级",
     UI_BurdJournals_RecordedXP = "已记录：%s 经验",
     UI_BurdJournals_RecordedWas = "%s 经验（原为 %s）",
+    UI_BurdJournals_WasSuffix = "（原为 %s）",
     UI_BurdJournals_SpawnedWith = "初始携带",
     UI_BurdJournals_YourTrait = "你的特质",
     UI_BurdJournals_QueuedNumber = "排队 #%d",
@@ -282,4 +300,59 @@ UI_CN = {
     UI_BurdJournals_ConfirmCancelLearning = "取消阅读并关闭？",
     UI_BurdJournals_RecordedTrait = "已记录的特质",
     UI_BurdJournals_RecordedRecipe = "已记录的配方",
+
+    -- Profession Names (for journal item names)
+    UI_BurdJournals_ProfSurvivor = "幸存者",
+    UI_BurdJournals_UnknownSurvivor = "未知幸存者",
+    -- WorldSpawn professions
+    UI_BurdJournals_ProfFireOfficer = "消防员",
+    UI_BurdJournals_ProfPoliceOfficer = "警察",
+    UI_BurdJournals_ProfParkRanger = "护林员",
+    UI_BurdJournals_ProfConstructionWorker = "建筑工人",
+    UI_BurdJournals_ProfSecurityGuard = "保安",
+    UI_BurdJournals_ProfCarpenter = "木匠",
+    UI_BurdJournals_ProfBurglar = "窃贼",
+    UI_BurdJournals_ProfChef = "厨师",
+    UI_BurdJournals_ProfRepairman = "修理工",
+    UI_BurdJournals_ProfFarmer = "农民",
+    UI_BurdJournals_ProfFisherman = "渔夫",
+    UI_BurdJournals_ProfDoctor = "医生",
+    UI_BurdJournals_ProfNurse = "护士",
+    UI_BurdJournals_ProfLumberjack = "伐木工",
+    UI_BurdJournals_ProfFitnessInstructor = "健身教练",
+    UI_BurdJournals_ProfBurgerFlipper = "快餐店员工",
+    UI_BurdJournals_ProfElectrician = "电工",
+    UI_BurdJournals_ProfEngineer = "工程师",
+    UI_BurdJournals_ProfMetalworker = "金属工",
+    UI_BurdJournals_ProfMechanic = "机械师",
+    UI_BurdJournals_ProfVeteran = "退伍军人",
+    UI_BurdJournals_ProfUnemployed = "无业者",
+    -- ZombieLoot professions (Former X)
+    UI_BurdJournals_ProfFormerFarmer = "前农民",
+    UI_BurdJournals_ProfFormerMechanic = "前机械师",
+    UI_BurdJournals_ProfFormerDoctor = "前医生",
+    UI_BurdJournals_ProfFormerCarpenter = "前木匠",
+    UI_BurdJournals_ProfFormerHunter = "前猎人",
+    UI_BurdJournals_ProfFormerSoldier = "前士兵",
+    UI_BurdJournals_ProfFormerChef = "前厨师",
+    UI_BurdJournals_ProfFormerAthlete = "前运动员",
+    UI_BurdJournals_ProfFormerBurglar = "前窃贼",
+    UI_BurdJournals_ProfFormerLumberjack = "前伐木工",
+    UI_BurdJournals_ProfFormerFisherman = "前渔夫",
+    UI_BurdJournals_ProfFormerTailor = "前裁缝",
+    UI_BurdJournals_ProfFormerElectrician = "前电工",
+    UI_BurdJournals_ProfFormerMetalworker = "前金属工",
+    UI_BurdJournals_ProfFormerSurvivalist = "前生存主义者",
+    UI_BurdJournals_ProfFormerFighter = "前格斗家",
+
+    -- New UI Keys (v2.x)
+    UI_BurdJournals_RecipeKnowledge = "配方知识",
+    UI_BurdJournals_RecipeKnowledgeQueued = "配方知识 - 已排队",
+    UI_BurdJournals_RecipeKnowledgeQueuedNum = "配方知识 - 已排队 #%d",
+    UI_BurdJournals_UnknownTrait = "未知特性",
+    UI_BurdJournals_ApproachingCapacity = "日志即将达到容量：%s",
+    UI_BurdJournals_CapacitySkills = "技能：%d/%d",
+    UI_BurdJournals_CapacityTraits = "特性：%d/%d",
+    UI_BurdJournals_CapacityRecipes = "配方：%d/%d",
+    UI_BurdJournals_TraitAlreadyKnownCount = "%d 个特性已知",
 }

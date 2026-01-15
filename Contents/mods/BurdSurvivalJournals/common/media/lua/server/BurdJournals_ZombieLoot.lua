@@ -26,83 +26,99 @@ BurdJournals.ZombieLoot = BurdJournals.ZombieLoot or {}
 BurdJournals.ZombieLoot.Professions = {
     {
         name = "Former Farmer",
+        nameKey = "UI_BurdJournals_ProfFormerFarmer",
         skills = {"Farming", "Cooking", "Foraging", "Trapping"},
-        flavorText = "Notes scrawled by a farmer before the outbreak."
+        flavorKey = "UI_BurdJournals_FlavorFarmer"
     },
     {
         name = "Former Mechanic",
+        nameKey = "UI_BurdJournals_ProfFormerMechanic",
         skills = {"Mechanics", "Electricity", "MetalWelding"},
-        flavorText = "Grease-stained pages from a mechanic's workbook."
+        flavorKey = "UI_BurdJournals_FlavorMechanic"
     },
     {
         name = "Former Doctor",
+        nameKey = "UI_BurdJournals_ProfFormerDoctor",
         skills = {"Doctor", "Cooking"},
-        flavorText = "Medical notes written in precise handwriting."
+        flavorKey = "UI_BurdJournals_FlavorDoctor"
     },
     {
         name = "Former Carpenter",
+        nameKey = "UI_BurdJournals_ProfFormerCarpenter",
         skills = {"Carpentry", "Maintenance"},
-        flavorText = "Woodworking tips from someone who knew their craft."
+        flavorKey = "UI_BurdJournals_FlavorCarpenter"
     },
     {
         name = "Former Hunter",
+        nameKey = "UI_BurdJournals_ProfFormerHunter",
         skills = {"Aiming", "Reloading", "Sneak", "Trapping", "Foraging"},
-        flavorText = "A hunter's journal, worn from the wilderness."
+        flavorKey = "UI_BurdJournals_FlavorHunter"
     },
     {
         name = "Former Soldier",
+        nameKey = "UI_BurdJournals_ProfFormerSoldier",
         skills = {"Aiming", "Reloading", "Fitness", "Strength", "Sneak"},
-        flavorText = "Military field notes, discipline evident in every line."
+        flavorKey = "UI_BurdJournals_FlavorSoldier"
     },
     {
         name = "Former Chef",
+        nameKey = "UI_BurdJournals_ProfFormerChef",
         skills = {"Cooking", "Farming", "Foraging"},
-        flavorText = "Recipes and cooking tips from a professional kitchen."
+        flavorKey = "UI_BurdJournals_FlavorChef"
     },
     {
         name = "Former Athlete",
+        nameKey = "UI_BurdJournals_ProfFormerAthlete",
         skills = {"Fitness", "Strength", "Sprinting", "Nimble"},
-        flavorText = "Training notes from someone who pushed their limits."
+        flavorKey = "UI_BurdJournals_FlavorAthlete"
     },
     {
         name = "Former Burglar",
+        nameKey = "UI_BurdJournals_ProfFormerBurglar",
         skills = {"Lightfoot", "Sneak", "Nimble", "SmallBlade"},
-        flavorText = "Cryptic notes on moving unseen..."
+        flavorKey = "UI_BurdJournals_FlavorBurglar"
     },
     {
         name = "Former Lumberjack",
+        nameKey = "UI_BurdJournals_ProfFormerLumberjack",
         skills = {"Axe", "Strength", "Fitness", "Carpentry"},
-        flavorText = "Rough notes from someone used to hard labor."
+        flavorKey = "UI_BurdJournals_FlavorLumberjack"
     },
     {
         name = "Former Fisherman",
+        nameKey = "UI_BurdJournals_ProfFormerFisherman",
         skills = {"Fishing", "Cooking", "Trapping"},
-        flavorText = "Water-stained pages with fishing secrets."
+        flavorKey = "UI_BurdJournals_FlavorFisherman"
     },
     {
         name = "Former Tailor",
+        nameKey = "UI_BurdJournals_ProfFormerTailor",
         skills = {"Tailoring"},
-        flavorText = "Neat stitching diagrams and fabric notes."
+        flavorKey = "UI_BurdJournals_FlavorTailor"
     },
     {
         name = "Former Electrician",
+        nameKey = "UI_BurdJournals_ProfFormerElectrician",
         skills = {"Electricity", "Mechanics"},
-        flavorText = "Wiring diagrams and electrical safety tips."
+        flavorKey = "UI_BurdJournals_FlavorElectrician"
     },
     {
         name = "Former Metalworker",
+        nameKey = "UI_BurdJournals_ProfFormerMetalworker",
         skills = {"MetalWelding", "Mechanics", "Strength"},
-        flavorText = "Notes on welding and metalcraft."
+        flavorKey = "UI_BurdJournals_FlavorMetalworker"
     },
     {
         name = "Former Survivalist",
+        nameKey = "UI_BurdJournals_ProfFormerSurvivalist",
         skills = {"Foraging", "Trapping", "Fishing", "Carpentry", "Farming"},
-        flavorText = "Detailed survival strategies from a prepared mind."
+        flavorKey = "UI_BurdJournals_FlavorSurvivalist"
     },
     {
         name = "Former Fighter",
+        nameKey = "UI_BurdJournals_ProfFormerFighter",
         skills = {"Axe", "Blunt", "SmallBlunt", "LongBlade", "SmallBlade", "Spear", "Maintenance"},
-        flavorText = "Combat techniques scribbled in a tattered notebook."
+        flavorKey = "UI_BurdJournals_FlavorFighter"
     },
 }
 
@@ -190,53 +206,92 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
     end
     
     -- Maybe include rare trait rewards (1 to maxTraits based on sandbox setting)
+    -- IMPORTANT: During OnZombieDead callbacks, many functions behave unexpectedly
+    -- We use the simplest possible approach - pick traits by index based on world age
     local traits = nil
     if ZombRand(100) < traitChance then
-        -- Pick random grantable traits
-        local availableTraits = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or BurdJournals.GRANTABLE_TRAITS
-        if availableTraits and #availableTraits > 0 then
-            -- Respect BloodyJournalMaxTraits sandbox setting
-            local maxTraits = SandboxVars.BurdJournals and SandboxVars.BurdJournals.BloodyJournalMaxTraits or 2
-            local numTraits = ZombRand(1, maxTraits + 1)  -- 1 to maxTraits
+        local traitList = BurdJournals.GRANTABLE_TRAITS
+        if traitList and type(traitList) == "table" then
+            local listSize = #traitList
+            if listSize > 0 then
+                -- Get max traits from sandbox (default 2)
+                local maxTraits = BurdJournals.getSandboxOption("BloodyJournalMaxTraits") or 2
+                if maxTraits < 1 then maxTraits = 1 end
+                if maxTraits > listSize then maxTraits = listSize end
 
-            -- Build list of available traits to pick from
-            local traitPool = {}
-            for _, t in ipairs(availableTraits) do
-                table.insert(traitPool, t)
-            end
-
-            traits = {}
-            for i = 1, numTraits do
-                if #traitPool == 0 then break end
-                local idx = ZombRand(#traitPool) + 1
-                local traitId = traitPool[idx]
-                if traitId then
-                    -- Just use the trait ID as the name - we'll look up the display name when showing UI
-                    -- Avoids calling TraitFactory.getTrait during zombie death (can cause crashes)
-                    traits[traitId] = {
-                        name = traitId,  -- Will be resolved to display name in UI
-                        id = traitId,
-                    }
-                    -- Remove from pool to avoid duplicates
-                    table.remove(traitPool, idx)
+                -- Determine how many traits (1 to maxTraits) using world age
+                local worldAge = 12345  -- fallback
+                if getGameTime and getGameTime().getWorldAgeHours then
+                    local ageResult = getGameTime():getWorldAgeHours()
+                    if type(ageResult) == "number" then
+                        worldAge = ageResult
+                    end
                 end
-            end
 
-            -- If no traits were added, set back to nil
-            if next(traits) == nil then
-                traits = nil
+                -- Calculate number of traits (varies based on world age)
+                local numTraits = (math.floor(worldAge * 777) % maxTraits) + 1
+
+                -- Select unique traits using different multipliers for each slot
+                traits = {}
+                local usedIndices = {}
+                local multipliers = {1000, 1337, 2718, 3141, 4242}  -- Different multipliers for variety
+
+                for i = 1, numTraits do
+                    local mult = multipliers[i] or (1000 + i * 137)
+                    local idx = (math.floor(worldAge * mult) % listSize) + 1
+
+                    -- Find unused index (simple linear probe)
+                    local attempts = 0
+                    while usedIndices[idx] and attempts < listSize do
+                        idx = (idx % listSize) + 1
+                        attempts = attempts + 1
+                    end
+
+                    if not usedIndices[idx] and idx >= 1 and idx <= listSize then
+                        usedIndices[idx] = true
+                        local traitId = traitList[idx]
+                        if traitId and type(traitId) == "string" then
+                            traits[traitId] = true  -- Simplified: just mark trait as present
+                        end
+                    end
+                end
+
+                -- If no traits were added, set to nil
+                -- Use a simple count check instead of next() which can behave unexpectedly in OnZombieDead
+                local traitCount = 0
+                for _ in pairs(traits) do
+                    traitCount = traitCount + 1
+                    break  -- Just need to know if there's at least one
+                end
+                if traitCount == 0 then
+                    traits = nil
+                end
             end
         end
     end
-    
+
+    -- Generate recipes (higher chance for bloody journals - uses sandbox setting)
+    -- Use ZombRand for proper randomness per zombie (same as trait chance above)
+    local recipes = nil
+    local recipeChance = BurdJournals.getSandboxOption("BloodyJournalRecipeChance") or 35
+    if ZombRand(100) < recipeChance then
+        local maxRecipes = BurdJournals.getSandboxOption("BloodyJournalMaxRecipes") or 2
+        local numRecipes = ZombRand(1, maxRecipes + 1)
+        local worldAge = getGameTime():getWorldAgeHours()
+        recipes = BurdJournals.generateRandomRecipesSeeded(numRecipes, worldAge)
+    end
+
     -- Build journal data structure (consistent with WorldSpawn format)
+    -- Use translated profession name if available, fallback to English
+    local professionName = profession.nameKey and getText(profession.nameKey) or profession.name
     local journalData = {
         author = survivorName,
-        professionName = profession.name,  -- e.g., "Former Farmer"
-        flavorText = profession.flavorText,
+        professionName = professionName,  -- e.g., "Former Farmer" (translated)
+        flavorKey = profession.flavorKey,  -- Translation key for flavor text
         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
         skills = skills,
         traits = traits, -- May be nil or contain one trait
+        recipes = recipes,
         -- Bloody journal state
         isBloody = true,
         isWorn = false,
@@ -247,6 +302,7 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
         -- Claim tracking (starts empty)
         claimedSkills = {},
         claimedTraits = {},
+        claimedRecipes = {},
     }
 
     return journalData
@@ -415,9 +471,9 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
                 -- Fallback initialization if WorldSpawn isn't loaded
                 modData.BurdJournals = {
                     uuid = BurdJournals.generateUUID and BurdJournals.generateUUID() or tostring(ZombRand(999999)),
-                    author = "Unknown Survivor",
+                    author = getText("UI_BurdJournals_UnknownSurvivor") or "Unknown Survivor",
                     profession = "unemployed",
-                    professionName = "Survivor",
+                    professionName = getText("UI_BurdJournals_ProfSurvivor") or "Survivor",
                     timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
                     skills = BurdJournals.generateRandomSkills and BurdJournals.generateRandomSkills(1, 2, 25, 75) or {},
                     isWorn = true,

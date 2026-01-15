@@ -1,0 +1,180 @@
+Sandbox_KO = {
+    -- TAB NAMES
+    Sandbox_BurdJournals_Player = "일지 - 플레이어",
+    Sandbox_BurdJournals_Loot = "일지 - 전리품",
+
+    -- ============================================================
+    -- TAB 1: PLAYER SETTINGS
+    -- ============================================================
+
+    -- Master Toggle
+    Sandbox_BurdJournals_EnableJournals = "생존 일지 활성화",
+    Sandbox_BurdJournals_EnableJournals_tooltip = "전체 생존 일지 시스템을 위한 마스터 토글.",
+
+    -- XP Recovery (Clean Journals)
+    Sandbox_BurdJournals_XPRecoveryMode = "클린 일지 XP 모드",
+    Sandbox_BurdJournals_XPRecoveryMode_tooltip = "클린 일지(SET 모드)를 읽을 때 회수되는 XP의 양. 낡은 일지나 피투성이 일지에는 영향을 미치지 않습니다.",
+    Sandbox_BurdJournals_XPRecoveryMode_option1 = "완전 복구 (100%)",
+    Sandbox_BurdJournals_XPRecoveryMode_option2 = "수확 체감의 법칙",
+
+    Sandbox_BurdJournals_DiminishingFirstRead = "첫 번째 읽기 XP %",
+    Sandbox_BurdJournals_DiminishingFirstRead_tooltip = "첫 읽기 시 경험치 획득률 비율 (50-100%). 수확 체감의 법칙이 적용되는 경우에만 해당됩니다.",
+
+    Sandbox_BurdJournals_DiminishingDecayRate = "읽기당 감소율 %",
+    Sandbox_BurdJournals_DiminishingDecayRate_tooltip = "후속 읽기마다 XP 감소량 (5-50%).",
+
+    Sandbox_BurdJournals_DiminishingMinimum = "최소 XP %",
+    Sandbox_BurdJournals_DiminishingMinimum_tooltip = "회복률이 떨어질 수 없는 최저 비율 (0-50%).",
+
+    -- XP Multiplier
+    Sandbox_BurdJournals_JournalXPMultiplier = "일지 XP 배율",
+    Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "일지에서 얻는 경험치 배율 (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). 낡은 일지와 피투성이 일지 모두에 적용됩니다.",
+
+    -- Writing Requirements
+    Sandbox_BurdJournals_RequirePenToWrite = "글쓰기에 펜 필요",
+    Sandbox_BurdJournals_RequirePenToWrite_tooltip = "클린 일지에 기술을 기록하려면 펜이나 연필이 필요합니다.",
+
+    Sandbox_BurdJournals_PenUsesPerLog = "로그당 펜 사용 횟수",
+    Sandbox_BurdJournals_PenUsesPerLog_tooltip = "기술 로깅 시 펜 내구도 소모량 (1-10).",
+
+    Sandbox_BurdJournals_RequireEraserToErase = "지우기에 지우개 필요",
+    Sandbox_BurdJournals_RequireEraserToErase_tooltip = "일지 내용을 지우려면 지우개가 필요합니다.",
+
+    -- Learning Time Settings
+    Sandbox_BurdJournals_LearningTimePerSkill = "기술당 학습 시간 (초)",
+    Sandbox_BurdJournals_LearningTimePerSkill_tooltip = "일지에서 각 기술을 익히는 데 걸리는 기본 시간 (초). 읽기/공부를 시뮬레이션합니다.",
+
+    Sandbox_BurdJournals_LearningTimePerTrait = "특성당 학습 시간 (초)",
+    Sandbox_BurdJournals_LearningTimePerTrait_tooltip = "일지에서 각 특성을 습득하는 데 걸리는 기본 시간 (초).",
+
+    Sandbox_BurdJournals_LearningTimeMultiplier = "학습 시간 배율",
+    Sandbox_BurdJournals_LearningTimeMultiplier_tooltip = "모든 학습 시간에 적용되는 전역 배율. 0.5는 두 배 빠른 학습, 2.0은 두 배 느린 학습.",
+
+    -- Player Stats Recording
+    Sandbox_BurdJournals_EnableStatRecording = "통계 기록 활성화",
+    Sandbox_BurdJournals_EnableStatRecording_tooltip = "개인 일지에 플레이어 통계 (킬 수, 생존 시간 등) 기록을 위한 마스터 토글.",
+
+    Sandbox_BurdJournals_RecordZombieKills = "좀비 처치 기록",
+    Sandbox_BurdJournals_RecordZombieKills_tooltip = "플레이어가 일지에 좀비 처치 횟수를 기록할 수 있도록 허용합니다.",
+
+    Sandbox_BurdJournals_RecordHoursSurvived = "생존 시간 기록",
+    Sandbox_BurdJournals_RecordHoursSurvived_tooltip = "플레이어가 생존 시간을 일지에 기록할 수 있도록 허용합니다.",
+
+    -- Baseline Restriction (Anti-Exploit)
+    Sandbox_BurdJournals_EnableBaselineRestriction = "획득한 진행 상황만 기록",
+    Sandbox_BurdJournals_EnableBaselineRestriction_tooltip = "활성화하면 게임 플레이를 통해 획득한 XP만 기록되고, 직업 시작 보너스나 특성으로 인한 기술 향상은 기록되지 않습니다. 여러 캐릭터를 생성하여 직업 기술을 파밍하는 악용을 방지합니다. 멀티플레이어 서버에서는 활성화를 권장합니다.",
+
+    -- Recipe Recording
+    Sandbox_BurdJournals_EnableRecipeRecording = "레시피 기록 활성화",
+    Sandbox_BurdJournals_EnableRecipeRecording_tooltip = "플레이어가 잡지에서 배운 레시피를 일지에 기록할 수 있도록 합니다. 잡지에서 배운 레시피는 다른 사람과 공유할 수 있습니다.",
+
+    Sandbox_BurdJournals_LearningTimePerRecipe = "레시피당 학습 시간 (초)",
+    Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "일지에서 각 레시피를 익히는 데 걸리는 기본 시간 (초).",
+
+    -- Journal Capacity Limits
+    Sandbox_BurdJournals_MaxSkillsPerJournal = "일지당 최대 기술 수",
+    Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip = "단일 일지에 기록할 수 있는 최대 기술 수. 바닐라 게임은 약 30개의 기술이 있습니다. 모드가 많은 게임에서는 이 값을 높이세요.",
+
+    Sandbox_BurdJournals_MaxTraitsPerJournal = "일지당 최대 특성 수",
+    Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip = "단일 일지에 기록할 수 있는 최대 특성 수. 바닐라 게임은 약 50개의 허용 가능한 특성이 있습니다. 모드가 많은 게임에서는 이 값을 높이세요.",
+
+    Sandbox_BurdJournals_MaxRecipesPerJournal = "일지당 최대 레시피 수",
+    Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip = "단일 일지에 기록할 수 있는 최대 레시피 수. 모드가 많은 게임은 400개 이상의 잡지 레시피를 가질 수 있습니다. 용량 경고가 표시되면 이 값을 높이세요.",
+
+    -- ============================================================
+    -- TAB 2: LOOT SETTINGS
+    -- ============================================================
+
+    -- Worn Journals (World Containers)
+    Sandbox_BurdJournals_EnableWornJournalSpawns = "낡은 일지 생성 활성화",
+    Sandbox_BurdJournals_EnableWornJournalSpawns_tooltip = "낡은 일지가 월드 컨테이너 (선반, 책상, 캐비닛)에 생성되도록 허용합니다. 소량의 XP 보상을 제공합니다.",
+
+    Sandbox_BurdJournals_WornJournalSpawnChance = "낡은 일지 생성 확률 %",
+    Sandbox_BurdJournals_WornJournalSpawnChance_tooltip = "낡은 일지가 월드 컨테이너에 나타날 확률 (0.1-100%).",
+
+    Sandbox_BurdJournals_WornJournalMinSkills = "낡은 일지 최소 기술",
+    Sandbox_BurdJournals_WornJournalMinSkills_tooltip = "월드에서 발견된 낡은 일지의 최소 기술 수.",
+
+    Sandbox_BurdJournals_WornJournalMaxSkills = "낡은 일지 최대 기술",
+    Sandbox_BurdJournals_WornJournalMaxSkills_tooltip = "월드에서 발견된 낡은 일지의 최대 기술 수.",
+
+    Sandbox_BurdJournals_WornJournalMinXP = "낡은 일지 최소 XP/기술",
+    Sandbox_BurdJournals_WornJournalMinXP_tooltip = "낡은 일지의 기술당 최소 XP.",
+
+    Sandbox_BurdJournals_WornJournalMaxXP = "낡은 일지 최대 XP/기술",
+    Sandbox_BurdJournals_WornJournalMaxXP_tooltip = "낡은 일지의 기술당 최대 XP.",
+
+    -- Bloody Journals (Zombie Corpses)
+    Sandbox_BurdJournals_EnableBloodyJournalSpawns = "피투성이 일지 드롭 활성화",
+    Sandbox_BurdJournals_EnableBloodyJournalSpawns_tooltip = "좀비가 피투성이 일지를 드롭할 수 있도록 합니다. 더 나은 보상과 희귀 특성을 제공합니다.",
+
+    Sandbox_BurdJournals_BloodyJournalSpawnChance = "피투성이 일지 드롭 확률 %",
+    Sandbox_BurdJournals_BloodyJournalSpawnChance_tooltip = "좀비가 피투성이 일지를 드롭할 확률 (0.1-100%).",
+
+    Sandbox_BurdJournals_BloodyJournalMinSkills = "피투성이 일지 최소 기술",
+    Sandbox_BurdJournals_BloodyJournalMinSkills_tooltip = "좀비가 드롭한 피투성이 일지의 최소 기술 수.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxSkills = "피투성이 일지 최대 기술",
+    Sandbox_BurdJournals_BloodyJournalMaxSkills_tooltip = "좀비가 드롭한 피투성이 일지의 최대 기술 수.",
+
+    Sandbox_BurdJournals_BloodyJournalMinXP = "피투성이 일지 최소 XP/기술",
+    Sandbox_BurdJournals_BloodyJournalMinXP_tooltip = "피투성이 일지의 기술당 최소 XP.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxXP = "피투성이 일지 최대 XP/기술",
+    Sandbox_BurdJournals_BloodyJournalMaxXP_tooltip = "피투성이 일지의 기술당 최대 XP.",
+
+    Sandbox_BurdJournals_BloodyJournalTraitChance = "희귀 특성 확률 %",
+    Sandbox_BurdJournals_BloodyJournalTraitChance_tooltip = "피투성이 일지에 허용 가능한 특성 (용감함, 체계적 등)이 포함될 확률.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxTraits = "피투성이 일지당 최대 특성",
+    Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip = "피투성이 일지에 생성될 수 있는 최대 특성 수 (0-5).",
+
+    -- Recipe/Magazine Spawns
+    Sandbox_BurdJournals_WornJournalRecipeChance = "낡은 일지 레시피 확률 %",
+    Sandbox_BurdJournals_WornJournalRecipeChance_tooltip = "낡은 일지에 잡지 레시피가 포함될 확률 (0-100%). 낡은 일지는 피투성이 일지보다 확률이 낮습니다.",
+
+    Sandbox_BurdJournals_WornJournalMaxRecipes = "낡은 일지당 최대 레시피",
+    Sandbox_BurdJournals_WornJournalMaxRecipes_tooltip = "낡은 일지에 생성될 수 있는 최대 잡지 레시피 수 (1-5).",
+
+    Sandbox_BurdJournals_BloodyJournalRecipeChance = "피투성이 일지 레시피 확률 %",
+    Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip = "피투성이 일지에 잡지 레시피가 포함될 확률 (0-100%). 피투성이 일지는 낡은 일지보다 확률이 높습니다.",
+
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes = "피투성이 일지당 최대 레시피",
+    Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip = "피투성이 일지에 생성될 수 있는 최대 잡지 레시피 수 (1-5).",
+
+    -- ============================================================
+    -- TAB 3: ADVANCED SETTINGS
+    -- ============================================================
+
+    Sandbox_BurdJournals_Advanced = "일지 - 고급",
+
+    -- Feature Toggles
+    Sandbox_BurdJournals_EnablePlayerJournals = "플레이어 일지 활성화",
+    Sandbox_BurdJournals_EnablePlayerJournals_tooltip = "플레이어가 기술 기록/복구를 위해 개인 일지를 제작하고 사용할 수 있도록 합니다. 비활성화하면 전리품 일지만 허용됩니다.",
+
+    -- Reading Skill Integration
+    Sandbox_BurdJournals_ReadingSkillAffectsSpeed = "읽기 능력이 속도에 영향",
+    Sandbox_BurdJournals_ReadingSkillAffectsSpeed_tooltip = "읽기 능력 레벨이 높을수록 일지에서 정보를 습득하는 데 걸리는 시간이 단축됩니다.",
+
+    Sandbox_BurdJournals_ReadingSpeedBonus = "읽기 속도 보너스",
+    Sandbox_BurdJournals_ReadingSpeedBonus_tooltip = "읽기 능력 레벨당 속도 보너스 (0.1 = 레벨당 10% 빠름, 레벨 10에서 최대 100%).",
+
+    -- Erase/Convert Times
+    Sandbox_BurdJournals_EraseTime = "지우기 시간 (초)",
+    Sandbox_BurdJournals_EraseTime_tooltip = "일지 내용을 지우는 데 걸리는 시간 (초).",
+
+    Sandbox_BurdJournals_ConvertTime = "변환 시간 (초)",
+    Sandbox_BurdJournals_ConvertTime_tooltip = "낡은 일지를 클린 일지로 변환하는 데 걸리는 시간 (초).",
+
+    -- Multiplayer Sharing Settings
+    Sandbox_BurdJournals_AllowOthersToOpenJournals = "다른 플레이어가 개인 일지 열기 허용",
+    Sandbox_BurdJournals_AllowOthersToOpenJournals_tooltip = "활성화하면 다른 플레이어가 자신이 작성하지 않은 개인 일지를 열어볼 수 있습니다. 비활성화하면 일지 작성자만 열 수 있습니다.",
+
+    Sandbox_BurdJournals_AllowOthersToClaimFromJournals = "다른 플레이어가 개인 일지에서 습득 허용",
+    Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip = "활성화하면 다른 플레이어가 자신이 작성하지 않은 개인 일지에서 기술/특성을 습득할 수 있습니다. '다른 플레이어가 열기 허용'이 활성화되어야 합니다. 비활성화하면 작성자만 자신의 일지에서 습득할 수 있습니다.",
+
+    -- Trait Settings
+    Sandbox_BurdJournals_AllowNegativeTraits = "부정적 특성 허용",
+    Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "활성화하면 부정적 특성 (서투름, 느린 학습자 등)이 일지에 나타나고 기록될 수 있습니다. 모드 특성이나 챌린지 런에 유용합니다. 기본값: 꺼짐 (긍정적 특성만).",
+
+}

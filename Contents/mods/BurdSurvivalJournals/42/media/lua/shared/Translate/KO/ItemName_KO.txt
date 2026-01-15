@@ -1,0 +1,11 @@
+ItemName_KO = {
+    -- Blank Journals
+    ItemName_BurdJournals.BlankSurvivalJournal = "빈 생존 일지",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "낡은 빈 일지",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "피투성이 빈 일지",
+
+    -- Filled Journals
+    ItemName_BurdJournals.FilledSurvivalJournal = "작성된 생존 일지",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "낡은 생존 일지",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "피투성이 생존 일지",
+}

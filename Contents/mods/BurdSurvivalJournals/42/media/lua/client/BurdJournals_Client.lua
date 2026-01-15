@@ -28,7 +28,33 @@ BurdJournals.Client = BurdJournals.Client or {}
 -- This allows automatic recalculation when users update the mod
 BurdJournals.Client.BASELINE_VERSION = 2  -- v2: Fixed existing save detection and trait baseline
 
+-- Track current language to detect changes and re-localize item names
+BurdJournals.Client._currentLanguage = nil
+
+-- Check if language changed and clear localization cache if so
+function BurdJournals.Client.checkLanguageChange()
+    local newLanguage = nil
+    -- Try to get current language - different methods for different PZ versions
+    if Translator and Translator.getLanguage then
+        newLanguage = Translator.getLanguage()
+    elseif getCore and getCore().getLanguage then
+        newLanguage = getCore():getLanguage()
+    end
+
+    if newLanguage and BurdJournals.Client._currentLanguage and newLanguage ~= BurdJournals.Client._currentLanguage then
+        -- Language changed! Clear the localization cache so items get re-localized
+        if BurdJournals.clearLocalizedItemsCache then
+            BurdJournals.clearLocalizedItemsCache()
+        end
+    end
+
+    BurdJournals.Client._currentLanguage = newLanguage
+end
+
 function BurdJournals.Client.init()
+    -- Initialize language tracking for localization
+    BurdJournals.Client.checkLanguageChange()
+
     -- Try to capture baseline for existing characters that don't have it yet
     -- This handles:
     -- 1. Existing saves (characters created before the mod update)
@@ -395,7 +421,7 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
 
     print("[BurdJournals] Client: handleAbsorbSuccess received, journalId=" .. tostring(args.journalId))
 
-    -- Show halo text feedback for skill absorption
+    -- Show halo text feedback for skill absorption AND apply the reward
     if args.skillName and args.xpGained then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
         local xpGained = args.xpGained or 0
@@ -403,10 +429,24 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
         -- Show halo text above player's head
         local message = "+" .. BurdJournals.formatXP(xpGained) .. " " .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
+        -- Note: XP is applied via separate applyXP command from server
+    elseif args.traitId then
+        local traitName = BurdJournals.getTraitDisplayName(args.traitId)
+        local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
+        BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
+        -- CRITICAL: Also add trait on client side for MP sync
+        pcall(function()
+            BurdJournals.safeAddTrait(player, args.traitId)
+        end)
     elseif args.recipeName then
         local displayName = BurdJournals.getRecipeDisplayName(args.recipeName)
         local message = "+" .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.RECIPE_GAIN)
+        -- CRITICAL: Learn recipe on client side for MP sync
+        pcall(function()
+            player:learnRecipe(args.recipeName)
+            print("[BurdJournals] Client: Learned recipe '" .. args.recipeName .. "' on absorb")
+        end)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -499,19 +539,31 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
 
     print("[BurdJournals] Client: handleClaimSuccess received, journalId=" .. tostring(args.journalId))
 
-    -- Show halo text feedback
+    -- Show halo text feedback AND apply the actual reward on client
     if args.skillName and args.xpGained then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
         local message = string.format(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(args.xpGained))
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
+        -- Note: XP is applied via separate applyXP command from server
     elseif args.traitId then
         local traitName = BurdJournals.getTraitDisplayName(args.traitId)
         local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
+        -- CRITICAL: Also add trait on client side for MP sync
+        -- Server already added it, but client needs to know too
+        pcall(function()
+            BurdJournals.safeAddTrait(player, args.traitId)
+        end)
     elseif args.recipeName then
         local displayName = BurdJournals.getRecipeDisplayName(args.recipeName)
         local message = "+" .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.RECIPE_GAIN)
+        -- CRITICAL: Learn recipe on client side for MP sync
+        -- Server already learned it, but client needs to apply it too
+        pcall(function()
+            player:learnRecipe(args.recipeName)
+            print("[BurdJournals] Client: Learned recipe '" .. args.recipeName .. "' on client")
+        end)
     end
 
     -- CRITICAL: Apply full journal data from server response (bypasses transmitModData timing issues)
@@ -1068,6 +1120,20 @@ end
 function BurdJournals.Client.onCreatePlayer(playerIndex)
     local player = getSpecificPlayer(playerIndex)
     if player then
+        -- CRITICAL: Clear any existing baseline data to ensure fresh capture
+        -- This handles respawn case where old baseline might persist
+        local modData = player:getModData()
+        if modData then
+            if not modData.BurdJournals then
+                modData.BurdJournals = {}
+            end
+            -- Force baseline recapture for this new/respawned character
+            modData.BurdJournals.baselineCaptured = false
+            modData.BurdJournals.skillBaseline = nil
+            modData.BurdJournals.traitBaseline = nil
+            modData.BurdJournals.recipeBaseline = nil
+        end
+
         -- Small delay to ensure player is fully initialized
         local captureAfterDelay
         local ticksWaited = 0
@@ -1083,10 +1149,59 @@ function BurdJournals.Client.onCreatePlayer(playerIndex)
     end
 end
 
+-- ==================== PLAYER DEATH CLEANUP ====================
+
+-- Clean up on player death to prevent orphaned tick handlers and UI issues
+function BurdJournals.Client.onPlayerDeath(player)
+    -- Close UI and clean up all tick handlers
+    if BurdJournals.UI and BurdJournals.UI.MainPanel then
+        -- Remove all possible tick handlers defensively
+        pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onLearningTickStatic) end)
+        pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onRecordingTickStatic) end)
+        pcall(function() Events.OnTick.Remove(BurdJournals.UI.MainPanel.onPendingJournalRetryStatic) end)
+        
+        -- Close the UI panel if open
+        if BurdJournals.UI.MainPanel.instance then
+            pcall(function() 
+                BurdJournals.UI.MainPanel.instance:setVisible(false)
+                BurdJournals.UI.MainPanel.instance:removeFromUIManager()
+                BurdJournals.UI.MainPanel.instance = nil
+            end)
+        end
+    end
+    
+    -- Clear timed action queue for this player
+    if ISTimedActionQueue and player then
+        pcall(function() ISTimedActionQueue.clear(player) end)
+    end
+
+    -- CRITICAL: Clear baseline so it gets recaptured for new character after respawn
+    -- This prevents balance mode bypass where old character's skills/traits are used as baseline
+    if player then
+        local modData = player:getModData()
+        if modData and modData.BurdJournals then
+            modData.BurdJournals.baselineCaptured = false
+            modData.BurdJournals.skillBaseline = nil
+            modData.BurdJournals.traitBaseline = nil
+            modData.BurdJournals.recipeBaseline = nil
+            print("[BurdJournals] Baseline cleared for respawn")
+        end
+    end
+
+    print("[BurdJournals] Player death cleanup completed")
+end
+
 -- ==================== EVENT REGISTRATION ====================
 
 Events.OnServerCommand.Add(BurdJournals.Client.onServerCommand)
 Events.OnGameStart.Add(BurdJournals.Client.init)
 Events.OnCreatePlayer.Add(BurdJournals.Client.onCreatePlayer)
+Events.OnPlayerDeath.Add(BurdJournals.Client.onPlayerDeath)
+
+-- Periodic language check (runs every game minute, approximately 1 real second)
+-- Clears localization cache if player changes language in options
+if Events.EveryOneMinute then
+    Events.EveryOneMinute.Add(BurdJournals.Client.checkLanguageChange)
+end
 
 
