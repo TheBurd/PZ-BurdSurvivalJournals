@@ -41,14 +41,14 @@ Category_XX = {
 | File | Keys | Purpose |
 |------|------|---------|
 | Sandbox_EN.txt | ~51 | Sandbox/server options |
-| UI_EN.txt | ~172 | UI labels, buttons, messages, feedback, stats |
+| UI_EN.txt | ~210 | UI labels, buttons, messages, feedback, stats, profession names |
 | IG_UI_EN.txt | ~60 | In-game UI elements (legacy) |
 | ContextMenu_EN.txt | ~31 | Right-click menu options |
 | Tooltip_EN.txt | ~80 | Item hover tooltips + inventory tooltip labels |
-| Items_EN.txt | 6 | Item display names |
+| ItemName_EN.txt | 6 | Item display names (module-prefixed keys) |
 | Recipes_EN.txt | ~10 | Crafting recipe names |
 
-**Total: ~400+ translation keys**
+**Total: ~450+ translation keys**
 
 > **Note:** UI_EN.txt was significantly expanded in recent updates to support the new MainPanel UI, timed actions, recipe tab, search bar, and improved feedback messages.
 
@@ -559,6 +559,80 @@ Main UI labels, buttons, messages, feedback, and condition states. This file was
 | `UI_BurdJournals_RecordedTrait` | Recorded trait |
 | `UI_BurdJournals_RecordedRecipe` | Recorded recipe |
 
+### Recipe Knowledge Labels
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_RecipeKnowledge` | Recipe knowledge |
+| `UI_BurdJournals_RecipeKnowledgeQueued` | Recipe knowledge - Queued |
+| `UI_BurdJournals_RecipeKnowledgeQueuedNum` | Recipe knowledge - Queued #%d |
+
+### Fallback Text
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_UnknownTrait` | Unknown Trait |
+
+### Capacity Warnings
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_ApproachingCapacity` | Journal approaching capacity: %s |
+| `UI_BurdJournals_CapacitySkills` | Skills: %d/%d |
+| `UI_BurdJournals_CapacityTraits` | Traits: %d/%d |
+| `UI_BurdJournals_CapacityRecipes` | Recipes: %d/%d |
+
+### Profession Names (Dynamic Journal Names)
+These keys are used for journal item names that include profession information (e.g., "Filled Survival Journal (Bloody - Former Mechanic)").
+
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_ProfSurvivor` | Survivor |
+| `UI_BurdJournals_UnknownSurvivor` | Unknown Survivor |
+
+**WorldSpawn Professions** (found in world containers):
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_ProfFireOfficer` | Fire Officer |
+| `UI_BurdJournals_ProfPoliceOfficer` | Police Officer |
+| `UI_BurdJournals_ProfParkRanger` | Park Ranger |
+| `UI_BurdJournals_ProfConstructionWorker` | Construction Worker |
+| `UI_BurdJournals_ProfSecurityGuard` | Security Guard |
+| `UI_BurdJournals_ProfCarpenter` | Carpenter |
+| `UI_BurdJournals_ProfBurglar` | Burglar |
+| `UI_BurdJournals_ProfChef` | Chef |
+| `UI_BurdJournals_ProfRepairman` | Repairman |
+| `UI_BurdJournals_ProfFarmer` | Farmer |
+| `UI_BurdJournals_ProfFisherman` | Fisherman |
+| `UI_BurdJournals_ProfDoctor` | Doctor |
+| `UI_BurdJournals_ProfNurse` | Nurse |
+| `UI_BurdJournals_ProfLumberjack` | Lumberjack |
+| `UI_BurdJournals_ProfFitnessInstructor` | Fitness Instructor |
+| `UI_BurdJournals_ProfBurgerFlipper` | Burger Flipper |
+| `UI_BurdJournals_ProfElectrician` | Electrician |
+| `UI_BurdJournals_ProfEngineer` | Engineer |
+| `UI_BurdJournals_ProfMetalworker` | Metalworker |
+| `UI_BurdJournals_ProfMechanic` | Mechanic |
+| `UI_BurdJournals_ProfVeteran` | Veteran |
+| `UI_BurdJournals_ProfUnemployed` | Unemployed |
+
+**ZombieLoot Professions** (dropped by zombies - "Former X" format):
+| Key | English Value |
+|-----|---------------|
+| `UI_BurdJournals_ProfFormerFarmer` | Former Farmer |
+| `UI_BurdJournals_ProfFormerMechanic` | Former Mechanic |
+| `UI_BurdJournals_ProfFormerDoctor` | Former Doctor |
+| `UI_BurdJournals_ProfFormerCarpenter` | Former Carpenter |
+| `UI_BurdJournals_ProfFormerHunter` | Former Hunter |
+| `UI_BurdJournals_ProfFormerSoldier` | Former Soldier |
+| `UI_BurdJournals_ProfFormerChef` | Former Chef |
+| `UI_BurdJournals_ProfFormerAthlete` | Former Athlete |
+| `UI_BurdJournals_ProfFormerBurglar` | Former Burglar |
+| `UI_BurdJournals_ProfFormerLumberjack` | Former Lumberjack |
+| `UI_BurdJournals_ProfFormerFisherman` | Former Fisherman |
+| `UI_BurdJournals_ProfFormerTailor` | Former Tailor |
+| `UI_BurdJournals_ProfFormerElectrician` | Former Electrician |
+| `UI_BurdJournals_ProfFormerMetalworker` | Former Metalworker |
+| `UI_BurdJournals_ProfFormerSurvivalist` | Former Survivalist |
+| `UI_BurdJournals_ProfFormerFighter` | Former Fighter |
+
 ---
 
 ## 3. IG_UI_EN.txt (60 keys)
@@ -898,43 +972,79 @@ Item hover tooltips, dynamic text, and requirement descriptions. Significantly e
 
 ---
 
-## 6. Items_EN.txt (6 keys)
+## 6. ItemName_EN.txt (6 keys)
 
 Item display names shown in inventory.
 
+> **IMPORTANT:** As of the recent update, item names use the `ItemName_XX.txt` filename format (not `Items_XX.txt`) with module-prefixed keys. This is the correct format required by Project Zomboid's translation system.
+
+**Correct File Format:**
+```lua
+ItemName_XX = {
+    -- Blank Journals
+    ItemName_BurdJournals.BlankSurvivalJournal = "Blank Survival Journal",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "Worn Blank Journal",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Bloody Blank Journal",
+
+    -- Filled Journals
+    ItemName_BurdJournals.FilledSurvivalJournal = "Filled Survival Journal",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Worn Survival Journal",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Bloody Survival Journal",
+}
+```
+
 | Key | English Value |
 |-----|---------------|
-| `DisplayName_BlankSurvivalJournal` | Blank Survival Journal |
-| `DisplayName_BlankSurvivalJournal_Worn` | Worn Blank Journal |
-| `DisplayName_BlankSurvivalJournal_Bloody` | Bloody Blank Journal |
-| `DisplayName_FilledSurvivalJournal` | Filled Survival Journal |
-| `DisplayName_FilledSurvivalJournal_Worn` | Worn Survival Journal |
-| `DisplayName_FilledSurvivalJournal_Bloody` | Bloody Survival Journal |
+| `ItemName_BurdJournals.BlankSurvivalJournal` | Blank Survival Journal |
+| `ItemName_BurdJournals.BlankSurvivalJournal_Worn` | Worn Blank Journal |
+| `ItemName_BurdJournals.BlankSurvivalJournal_Bloody` | Bloody Blank Journal |
+| `ItemName_BurdJournals.FilledSurvivalJournal` | Filled Survival Journal |
+| `ItemName_BurdJournals.FilledSurvivalJournal_Worn` | Worn Survival Journal |
+| `ItemName_BurdJournals.FilledSurvivalJournal_Bloody` | Bloody Survival Journal |
 
 ---
 
-## 7. Recipes_EN.txt (7 keys)
+## 7. Recipes_EN.txt (16 keys)
 
-Crafting recipe names.
+Crafting recipe names for binding and restoring survival journals.
 
-### Blank Journal Crafting
+### Erase/Reset
 | Key | English Value |
 |-----|---------------|
-| `Recipe_ConvertJournalToSurvivalJournal` | Convert to Survival Journal |
-| `Recipe_ConvertNotebookToSurvivalJournal` | Bind Notebook as Journal |
-| `Recipe_CraftBlankSurvivalJournal` | Craft Survival Journal |
+| `EraseFilledJournal` | Erase Filled Journal |
+| `Recipe_EraseFilledJournal` | Erase Filled Journal |
 
-### Journal Restoration/Cleaning
+### Bind Recipes (Thread-based)
 | Key | English Value |
 |-----|---------------|
-| `Recipe_RestoreWornBlankJournal` | Restore Worn Journal |
-| `Recipe_CleanBloodyBlankJournal` | Clean Bloody Blank Journal |
-| `Recipe_CleanBloodyFilledToClean` | Clean and Convert Bloody Journal |
+| `Bind_Thread_Leather` | Bind Survival Journal (Thread + Leather) |
+| `Recipe_Bind_Thread_Leather` | Bind Survival Journal (Thread + Leather) |
+| `Bind_Thread_AnyCover` | Bind Survival Journal (Thread + Fabric) |
+| `Recipe_Bind_Thread_AnyCover` | Bind Survival Journal (Thread + Fabric) |
 
-### Disassembly
+### Bind Recipes (Adhesive-based)
 | Key | English Value |
 |-----|---------------|
-| `Recipe_DisassembleBlankJournal` | Disassemble Blank Journal |
+| `Bind_Adhesive_Leather` | Bind Survival Journal (Adhesive + Leather) |
+| `Recipe_Bind_Adhesive_Leather` | Bind Survival Journal (Adhesive + Leather) |
+| `Bind_Adhesive_AnyCover` | Bind Survival Journal (Adhesive + Fabric) |
+| `Recipe_Bind_Adhesive_AnyCover` | Bind Survival Journal (Adhesive + Fabric) |
+
+### Restore Journal Recipes (Thread-based)
+| Key | English Value |
+|-----|---------------|
+| `RestoreJournal_Thread_Leather` | Restore Journal (Thread + Leather) |
+| `Recipe_RestoreJournal_Thread_Leather` | Restore Journal (Thread + Leather) |
+| `RestoreJournal_Thread_AnyCover` | Restore Journal (Thread + Fabric) |
+| `Recipe_RestoreJournal_Thread_AnyCover` | Restore Journal (Thread + Fabric) |
+
+### Restore Journal Recipes (Adhesive-based)
+| Key | English Value |
+|-----|---------------|
+| `RestoreJournal_Adhesive_Leather` | Restore Journal (Adhesive + Leather) |
+| `Recipe_RestoreJournal_Adhesive_Leather` | Restore Journal (Adhesive + Leather) |
+| `RestoreJournal_Adhesive_AnyCover` | Restore Journal (Adhesive + Fabric) |
+| `Recipe_RestoreJournal_Adhesive_AnyCover` | Restore Journal (Adhesive + Fabric) |
 
 ---
 
@@ -958,15 +1068,28 @@ Currently available translations:
 - Chinese Simplified (CN) - Complete
 - Portuguese Brazilian (PTBR) - Complete
 - French (FR) - Complete
+- Korean (KO) - Complete
+- Turkish (TR) - Complete
+- Russian (RU) - Complete
 
 ---
 
 ## Known Issues / Future Work
 
-Most strings are now properly localized. However, a few areas may still have hardcoded text:
+All user-facing strings are now properly localized.
 
-- Some `player:Say()` messages in `BurdJournals_Client.lua` and `BurdJournals_TimedActions.lua`
-- Debug/developer messages
+### Recent Fixes (v2.x)
+- **Recipe Knowledge Labels**: Added translation keys for recipe knowledge source text
+- **Capacity Warnings**: Added translation keys for journal capacity warning messages
+- **Unknown Trait Fallback**: Added fallback text translation key
+- **Hardcoded String Audit**: Comprehensive audit of all Lua source files to ensure all user-facing text uses `getText()` with proper fallbacks
+- **Tooltip System**: Fixed `common/` directory tooltips to use proper `getText()` calls matching `42/` version
+
+### Previous Fixes (v1.x)
+- **Item Names**: Fixed translation file format from `Items_XX.txt` (incorrect) to `ItemName_XX.txt` with module-prefixed keys like `ItemName_BurdJournals.BlankSurvivalJournal`
+- **Profession Names**: Journal names now properly translate profession information (e.g., "Former Mechanic" -> "Ancien Mécanicien" in French)
+- **Hardcoded "(was X)" text**: Fixed to use translation key `UI_BurdJournals_RecordedWas`
+- **Comment syntax**: Fixed invalid `/* */` C-style comments to proper Lua `--` comments in translation files
 
 If you notice untranslated text in-game, please report it so we can add the appropriate translation keys.
 

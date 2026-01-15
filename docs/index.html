@@ -1026,7 +1026,7 @@
             },
             items: {
                 name: "Item Names",
-                file: "Items",
+                file: "ItemName",
                 keys: {}
             },
             recipes: {
@@ -1115,7 +1115,7 @@
             "Sandbox_BurdJournals_BloodyJournalMaxRecipes": "Max Recipes Per Bloody",
             "Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip": "Maximum number of magazine recipes that can spawn on a single bloody journal (1-5).",
             "Sandbox_BurdJournals_EnablePlayerJournals": "Enable Player Journals",
-            "Sandbox_BurdJournals_EnablePlayerJournals_tooltip": "Allow players to craft and use personal journals for recording/recovering skills.",
+            "Sandbox_BurdJournals_EnablePlayerJournals_tooltip": "Allow players to craft and use personal journals for recording/recovering skills. Disable to only allow looted journals.",
             "Sandbox_BurdJournals_ReadingSkillAffectsSpeed": "Reading Skill Affects Speed",
             "Sandbox_BurdJournals_ReadingSkillAffectsSpeed_tooltip": "Higher reading skill levels reduce learning time when absorbing from journals.",
             "Sandbox_BurdJournals_ReadingSpeedBonus": "Reading Speed Bonus",
@@ -1125,11 +1125,18 @@
             "Sandbox_BurdJournals_ConvertTime": "Convert Time (seconds)",
             "Sandbox_BurdJournals_ConvertTime_tooltip": "Time in seconds to convert a worn journal to a clean journal.",
             "Sandbox_BurdJournals_AllowOthersToOpenJournals": "Allow Others to Open Personal Journals",
-            "Sandbox_BurdJournals_AllowOthersToOpenJournals_tooltip": "If enabled, other players can open and view personal journals they didn't create.",
+            "Sandbox_BurdJournals_AllowOthersToOpenJournals_tooltip": "If enabled, other players can open and view personal journals they didn't create. If disabled, only the journal's author can open it.",
             "Sandbox_BurdJournals_AllowOthersToClaimFromJournals": "Allow Others to Claim from Personal Journals",
-            "Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip": "If enabled, other players can claim skills/traits from personal journals they didn't create.",
+            "Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip": "If enabled, other players can claim skills/traits from personal journals they didn't create. Requires 'Allow Others to Open' to be enabled. If disabled, only the author can claim from their own journals.",
             "Sandbox_BurdJournals_AllowNegativeTraits": "Allow Negative Traits",
-            "Sandbox_BurdJournals_AllowNegativeTraits_tooltip": "If enabled, negative traits can appear in journals and be recorded.",
+            "Sandbox_BurdJournals_AllowNegativeTraits_tooltip": "If enabled, negative traits (like Clumsy, Slow Learner, etc.) can appear in journals and be recorded. Useful for modded traits or challenge runs. Default: OFF (only positive traits).",
+            // Journal Capacity Settings
+            "Sandbox_BurdJournals_MaxSkillsPerJournal": "Max Skills Per Journal",
+            "Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip": "Maximum number of skills that can be recorded in a single journal. Vanilla game has ~30 skills. Increase for heavily modded games.",
+            "Sandbox_BurdJournals_MaxTraitsPerJournal": "Max Traits Per Journal",
+            "Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip": "Maximum number of traits that can be recorded in a single journal. Vanilla game has ~50 grantable traits. Increase for heavily modded games.",
+            "Sandbox_BurdJournals_MaxRecipesPerJournal": "Max Recipes Per Journal",
+            "Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip": "Maximum number of recipes that can be recorded in a single journal. Heavily modded games can have 400+ magazine recipes. Increase if you get capacity warnings.",
 
             // UI Strings
             "UI_BurdJournals_BlankJournal": "Blank Survival Journal",
@@ -1167,8 +1174,8 @@
             "UI_BurdJournals_NoSkillsSelected": "Select at least one skill first.",
             "UI_BurdJournals_SkillsLogged": "Skills recorded in journal.",
             "UI_BurdJournals_SkillsLearned": "Knowledge absorbed from the journal!",
-            "UI_BurdJournals_JournalErased": "Journal contents erased.",
-            "UI_BurdJournals_JournalCleaned": "The journal has been cleaned and is now readable.",
+            "UI_BurdJournals_JournalErased": "Journal erased",
+            "UI_BurdJournals_JournalCleaned": "Journal cleaned",
             "UI_BurdJournals_JournalUpdated": "Journal skills updated.",
             "UI_BurdJournals_JournalRenamed": "Journal renamed.",
             "UI_BurdJournals_JournalConverted": "Journal converted to a clean blank journal.",
@@ -1279,6 +1286,7 @@
             "UI_BurdJournals_PlusTraits": ", +%d traits",
             "UI_BurdJournals_SkillAlreadyMaxed": "%d skill already maxed",
             "UI_BurdJournals_SkillsAlreadyMaxed": "%d skills already maxed",
+            "UI_BurdJournals_TraitAlreadyKnownCount": "%d trait already known",
             "UI_BurdJournals_TraitsAlreadyKnown": "%d traits already known",
             "UI_BurdJournals_NoRewardsAvailable": "No rewards available",
             "UI_BurdJournals_NoSkillsRecorded": "No skills recorded",
@@ -1327,7 +1335,7 @@
             "UI_BurdJournals_SummaryTotalXP": "Total: +%s XP",
             "UI_BurdJournals_SummaryTrait": "%d trait",
             "UI_BurdJournals_SummaryTraits": "%d traits",
-            "UI_BurdJournals_SummarySeparator": "|",
+            "UI_BurdJournals_SummarySeparator": "  |  ",
             "UI_BurdJournals_LevelFormat": "Lv %d",
             "UI_BurdJournals_XPFormat": "%d XP",
             "UI_BurdJournals_XPWithBaseline": "%s XP (+%s starting)",
@@ -1362,10 +1370,68 @@
             "UI_BurdJournals_ConfirmCancelLearning": "Cancel learning and close?",
             "UI_BurdJournals_RecordedTrait": "Recorded trait",
             "UI_BurdJournals_RecordedRecipe": "Recorded recipe",
+            "UI_BurdJournals_WasSuffix": " (was %s)",
+            "UI_BurdJournals_BaselineInitializing": "Please wait - character data initializing...",
+            // Recipe Knowledge Labels
+            "UI_BurdJournals_RecipeKnowledge": "Recipe knowledge",
+            "UI_BurdJournals_RecipeKnowledgeQueued": "Recipe knowledge - Queued",
+            "UI_BurdJournals_RecipeKnowledgeQueuedNum": "Recipe knowledge - Queued #%d",
+            // Fallback Text
+            "UI_BurdJournals_UnknownTrait": "Unknown Trait",
+            // Capacity Warnings
+            "UI_BurdJournals_ApproachingCapacity": "Journal approaching capacity: %s",
+            "UI_BurdJournals_CapacitySkills": "Skills: %d/%d",
+            "UI_BurdJournals_CapacityTraits": "Traits: %d/%d",
+            "UI_BurdJournals_CapacityRecipes": "Recipes: %d/%d",
+            // Inspect Messages
             "UI_BurdJournals_InspectBlank": "A blank journal in %1 condition.",
             "UI_BurdJournals_InspectFilled": "A journal written by %1. Condition: %2",
             "UI_BurdJournals_InspectWorn": "A worn journal from %1. Condition: %2. Needs cleaning.",
             "UI_BurdJournals_InspectBloody": "A bloody journal from a corpse. Contains skills and traits from the fallen survivor.",
+
+            // Profession Names (for dynamic journal item names)
+            "UI_BurdJournals_ProfSurvivor": "Survivor",
+            "UI_BurdJournals_UnknownSurvivor": "Unknown Survivor",
+            // WorldSpawn professions
+            "UI_BurdJournals_ProfFireOfficer": "Fire Officer",
+            "UI_BurdJournals_ProfPoliceOfficer": "Police Officer",
+            "UI_BurdJournals_ProfParkRanger": "Park Ranger",
+            "UI_BurdJournals_ProfConstructionWorker": "Construction Worker",
+            "UI_BurdJournals_ProfSecurityGuard": "Security Guard",
+            "UI_BurdJournals_ProfCarpenter": "Carpenter",
+            "UI_BurdJournals_ProfBurglar": "Burglar",
+            "UI_BurdJournals_ProfChef": "Chef",
+            "UI_BurdJournals_ProfRepairman": "Repairman",
+            "UI_BurdJournals_ProfFarmer": "Farmer",
+            "UI_BurdJournals_ProfFisherman": "Fisherman",
+            "UI_BurdJournals_ProfDoctor": "Doctor",
+            "UI_BurdJournals_ProfNurse": "Nurse",
+            "UI_BurdJournals_ProfLumberjack": "Lumberjack",
+            "UI_BurdJournals_ProfFitnessInstructor": "Fitness Instructor",
+            "UI_BurdJournals_ProfBurgerFlipper": "Burger Flipper",
+            "UI_BurdJournals_ProfElectrician": "Electrician",
+            "UI_BurdJournals_ProfEngineer": "Engineer",
+            "UI_BurdJournals_ProfMetalworker": "Metalworker",
+            "UI_BurdJournals_ProfMechanic": "Mechanic",
+            "UI_BurdJournals_ProfVeteran": "Veteran",
+            "UI_BurdJournals_ProfUnemployed": "Unemployed",
+            // ZombieLoot professions (Former X)
+            "UI_BurdJournals_ProfFormerFarmer": "Former Farmer",
+            "UI_BurdJournals_ProfFormerMechanic": "Former Mechanic",
+            "UI_BurdJournals_ProfFormerDoctor": "Former Doctor",
+            "UI_BurdJournals_ProfFormerCarpenter": "Former Carpenter",
+            "UI_BurdJournals_ProfFormerHunter": "Former Hunter",
+            "UI_BurdJournals_ProfFormerSoldier": "Former Soldier",
+            "UI_BurdJournals_ProfFormerChef": "Former Chef",
+            "UI_BurdJournals_ProfFormerAthlete": "Former Athlete",
+            "UI_BurdJournals_ProfFormerBurglar": "Former Burglar",
+            "UI_BurdJournals_ProfFormerLumberjack": "Former Lumberjack",
+            "UI_BurdJournals_ProfFormerFisherman": "Former Fisherman",
+            "UI_BurdJournals_ProfFormerTailor": "Former Tailor",
+            "UI_BurdJournals_ProfFormerElectrician": "Former Electrician",
+            "UI_BurdJournals_ProfFormerMetalworker": "Former Metalworker",
+            "UI_BurdJournals_ProfFormerSurvivalist": "Former Survivalist",
+            "UI_BurdJournals_ProfFormerFighter": "Former Fighter",
 
             // Context Menu
             "ContextMenu_BurdJournals_OpenJournal": "Open Journal...",
@@ -1404,7 +1470,7 @@
             "Tooltip_FilledSurvivalJournal": "A journal containing recorded survival skills. Right-click to read.",
             "Tooltip_BurdJournals_ContainsSkills": "Contains %d skill(s) recorded",
             "Tooltip_BurdJournals_RewardsRemaining": "rewards remaining",
-            "Tooltip_BurdJournals_SetModeDesc": "Reading will SET your XP to match recorded levels (if higher).",
+            "Tooltip_BurdJournals_SetModeDesc": "Reading will SET your XP to match recorded levels (if higher).\\n\\n",
             "Tooltip_BurdJournals_NeedPen": "Requires a pen or pencil to write.",
             "Tooltip_BurdJournals_NeedEraser": "Requires an eraser to wipe the contents.",
             "Tooltip_BurdJournals_BloodyJournal": "Bloody Journal",
@@ -1412,7 +1478,7 @@
             "Tooltip_BurdJournals_BloodyDesc": "Rare find! May contain valuable traits.",
             "Tooltip_BurdJournals_ConvertBloodyToClean": "Convert to Clean Journal",
             "Tooltip_BurdJournals_ConvertBloodyToCleanDesc": "Use crafting to convert this bloody journal to a clean personal journal.",
-            "Tooltip_BurdJournals_ConvertBloodyDesc": "Open the crafting menu (B) to find 'Clean and Convert Bloody Journal'.",
+            "Tooltip_BurdJournals_ConvertBloodyDesc": "Open the crafting menu (B) to find 'Clean and Convert Bloody Journal'.\\nRequires: Soap, Cloth, Leather, Thread, Needle, Tailoring Lv1.\\nWARNING: Destroys any remaining rewards!",
             "Tooltip_BurdJournals_CraftingRequired": "Crafting Required",
             "Tooltip_BurdJournals_WornJournal": "Worn Journal",
             "Tooltip_BurdJournals_NeedsCleaning": "This journal is too worn to read.",
@@ -1424,17 +1490,17 @@
             "Tooltip_BurdJournals_AbsorbAllSkills": "Absorb All (%d skills)",
             "Tooltip_BurdJournals_PersonalJournal": "Personal Survival Journal",
             "Tooltip_BurdJournals_BlankJournal": "Blank Survival Journal",
-            "Tooltip_BurdJournals_BlankJournalDesc": "Opens the journal to record your survival progress.",
+            "Tooltip_BurdJournals_BlankJournalDesc": "Opens the journal to record your survival progress.\\nRequires a writing tool.",
             "Tooltip_BurdJournals_RecordProgress": "Record Your Progress",
-            "Tooltip_BurdJournals_RecordProgressDesc": "Opens journal to record your current skills and traits.",
+            "Tooltip_BurdJournals_RecordProgressDesc": "Opens journal to record your current skills and traits.\\nRecorded values are only updated if your current level is higher.",
             "Tooltip_BurdJournals_ClaimAll": "Claim All Skills",
-            "Tooltip_BurdJournals_ClaimAllDesc": "Opens journal and claims all available skills.",
+            "Tooltip_BurdJournals_ClaimAllDesc": "Opens journal and claims all available skills.\\nThis will take time based on your reading speed.",
             "Tooltip_BurdJournals_UpdateRecords": "Update Journal Records",
-            "Tooltip_BurdJournals_UpdateRecordsDesc": "Opens journal to update your recorded skills.",
+            "Tooltip_BurdJournals_UpdateRecordsDesc": "Opens journal to update your recorded skills.\\nRecorded values are only updated if your current level is higher.",
             "Tooltip_BurdJournals_Disassemble": "Disassemble Journal",
-            "Tooltip_BurdJournals_DisassembleDesc": "Tear apart this journal for materials.",
+            "Tooltip_BurdJournals_DisassembleDesc": "Tear apart this journal for materials.\\n\\nYou will receive:\\n  2x Paper\\n  1x Leather Strips",
             "Tooltip_BurdJournals_EraseContents": "Erase All Contents",
-            "Tooltip_BurdJournals_EraseContentsDesc": "Erases all recorded data, returning the journal to a blank state.",
+            "Tooltip_BurdJournals_EraseContentsDesc": "Erases all recorded data, returning the journal to a blank state.\\nRequires an eraser.",
             "Tooltip_BurdJournals_SkillsAvailable": "Skills: %d/%d available",
             "Tooltip_BurdJournals_TraitsAvailable": "Traits: %d/%d available",
             "Tooltip_BurdJournals_NoRewardsFound": "No rewards found",
@@ -1459,7 +1525,7 @@
             "Tooltip_BurdJournals_NoPermissionClaim": "You don't have permission to claim from this journal.",
             "Tooltip_BurdJournals_CannotOpen": "Cannot Open",
             "Tooltip_BurdJournals_ConvertToClean": "Rebind as Personal Survival Journal",
-            "Tooltip_BurdJournals_ConvertToCleanDesc": "Rebind this worn journal into a clean blank survival journal for personal use.",
+            "Tooltip_BurdJournals_ConvertToCleanDesc": "Rebind this worn journal into a clean blank survival journal for personal use. Requires tailoring supplies.",
             "Tooltip_BurdJournals_CannotConvert": "Cannot Convert",
             "Tooltip_BurdJournals_NeedsConvertMaterials": "Requires: Leather Strips + Thread + Needle + Tailoring Lv1",
             "Tooltip_BurdJournals_MissingMaterials": "Missing Materials",
@@ -1477,6 +1543,8 @@
             "Tooltip_BurdJournals_SkillsLineXP": "Skills: %d/%d (%s XP)",
             "Tooltip_BurdJournals_AllClaimed": "(all claimed)",
             "Tooltip_BurdJournals_TraitsLine": "Traits: %d/%d",
+            "Tooltip_BurdJournals_RecipesLine": "Recipes: %d/%d",
+            "Tooltip_BurdJournals_RecipesAvailable": "Recipes: %d/%d available",
             "Tooltip_BurdJournals_ConditionBloody": "Condition: Bloody",
             "Tooltip_BurdJournals_ConditionWorn": "Condition: Worn",
             "Tooltip_BurdJournals_ConditionRestored": "Condition: Restored",
@@ -1492,22 +1560,37 @@
             "Tooltip_BurdJournals_Age1Day": "1 day ago",
             "Tooltip_BurdJournals_AgeDays": "%d days ago",
 
-            // Items
-            "DisplayName_BlankSurvivalJournal": "Blank Survival Journal",
-            "DisplayName_BlankSurvivalJournal_Worn": "Worn Blank Journal",
-            "DisplayName_BlankSurvivalJournal_Bloody": "Bloody Blank Journal",
-            "DisplayName_FilledSurvivalJournal": "Filled Survival Journal",
-            "DisplayName_FilledSurvivalJournal_Worn": "Worn Survival Journal",
-            "DisplayName_FilledSurvivalJournal_Bloody": "Bloody Survival Journal",
+            // Items (ItemName_XX.txt - module-prefixed keys)
+            "ItemName_BurdJournals.BlankSurvivalJournal": "Blank Survival Journal",
+            "ItemName_BurdJournals.BlankSurvivalJournal_Worn": "Worn Blank Journal",
+            "ItemName_BurdJournals.BlankSurvivalJournal_Bloody": "Bloody Blank Journal",
+            "ItemName_BurdJournals.FilledSurvivalJournal": "Filled Survival Journal",
+            "ItemName_BurdJournals.FilledSurvivalJournal_Worn": "Worn Survival Journal",
+            "ItemName_BurdJournals.FilledSurvivalJournal_Bloody": "Bloody Survival Journal",
 
-            // Recipes
-            "Recipe_ConvertJournalToSurvivalJournal": "Convert to Survival Journal",
-            "Recipe_ConvertNotebookToSurvivalJournal": "Bind Notebook as Journal",
-            "Recipe_CraftBlankSurvivalJournal": "Craft Survival Journal",
-            "Recipe_RestoreWornBlankJournal": "Restore Worn Journal",
-            "Recipe_CleanBloodyBlankJournal": "Clean Bloody Blank Journal",
-            "Recipe_CleanBloodyFilledToClean": "Clean and Convert Bloody Journal",
-            "Recipe_DisassembleBlankJournal": "Disassemble Blank Journal"
+            // Recipes - Erase/Reset
+            "EraseFilledJournal": "Erase Filled Journal",
+            "Recipe_EraseFilledJournal": "Erase Filled Journal",
+            // Bind Recipes (Thread-based)
+            "Bind_Thread_Leather": "Bind Survival Journal (Thread + Leather)",
+            "Recipe_Bind_Thread_Leather": "Bind Survival Journal (Thread + Leather)",
+            "Bind_Thread_AnyCover": "Bind Survival Journal (Thread + Fabric)",
+            "Recipe_Bind_Thread_AnyCover": "Bind Survival Journal (Thread + Fabric)",
+            // Bind Recipes (Adhesive-based)
+            "Bind_Adhesive_Leather": "Bind Survival Journal (Adhesive + Leather)",
+            "Recipe_Bind_Adhesive_Leather": "Bind Survival Journal (Adhesive + Leather)",
+            "Bind_Adhesive_AnyCover": "Bind Survival Journal (Adhesive + Fabric)",
+            "Recipe_Bind_Adhesive_AnyCover": "Bind Survival Journal (Adhesive + Fabric)",
+            // Restore Journal Recipes (Thread-based)
+            "RestoreJournal_Thread_Leather": "Restore Journal (Thread + Leather)",
+            "Recipe_RestoreJournal_Thread_Leather": "Restore Journal (Thread + Leather)",
+            "RestoreJournal_Thread_AnyCover": "Restore Journal (Thread + Fabric)",
+            "Recipe_RestoreJournal_Thread_AnyCover": "Restore Journal (Thread + Fabric)",
+            // Restore Journal Recipes (Adhesive-based)
+            "RestoreJournal_Adhesive_Leather": "Restore Journal (Adhesive + Leather)",
+            "Recipe_RestoreJournal_Adhesive_Leather": "Restore Journal (Adhesive + Leather)",
+            "RestoreJournal_Adhesive_AnyCover": "Restore Journal (Adhesive + Fabric)",
+            "Recipe_RestoreJournal_Adhesive_AnyCover": "Restore Journal (Adhesive + Fabric)"
         };
 
         // User translations storage
@@ -1521,7 +1604,7 @@
                 if (key.startsWith('Sandbox_')) category = 'sandbox';
                 else if (key.startsWith('ContextMenu_')) category = 'contextmenu';
                 else if (key.startsWith('Tooltip_')) category = 'tooltip';
-                else if (key.startsWith('DisplayName_')) category = 'items';
+                else if (key.startsWith('ItemName_')) category = 'items';
                 else if (key.startsWith('Recipe_')) category = 'recipes';
 
                 translationData[category].keys[key] = value;
