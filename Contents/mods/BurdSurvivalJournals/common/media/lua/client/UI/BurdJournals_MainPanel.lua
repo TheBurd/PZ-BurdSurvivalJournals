@@ -1975,6 +1975,11 @@ function BurdJournals.UI.MainPanel:startLearningTrait(traitId)
         return false
     end
 
+    -- SAFETY CHECK: Don't start learning if player already has the trait
+    if BurdJournals.playerHasTrait(self.player, traitId) then
+        return false
+    end
+
     -- Build rewards array
     local rewards = {{type = "trait", name = traitId}}
 
@@ -2112,6 +2117,30 @@ function BurdJournals.UI.MainPanel:startLearningAll()
 
             if shouldInclude then
                 table.insert(pendingRewards, {type = "trait", name = traitId})
+            end
+        end
+    end
+
+    -- Collect all unclaimed recipes
+    if journalData.recipes then
+        for recipeName, _ in pairs(journalData.recipes) do
+            local shouldInclude = false
+
+            if isPlayerJournal then
+                -- For player journals, check if player doesn't know the recipe
+                if not BurdJournals.playerKnowsRecipe(self.player, recipeName) then
+                    shouldInclude = true
+                end
+            else
+                -- Worn/bloody: Include if not claimed AND player doesn't already know recipe
+                if not BurdJournals.isRecipeClaimed(self.journal, recipeName) and
+                   not BurdJournals.playerKnowsRecipe(self.player, recipeName) then
+                    shouldInclude = true
+                end
+            end
+
+            if shouldInclude then
+                table.insert(pendingRewards, {type = "recipe", name = recipeName})
             end
         end
     end
@@ -3043,13 +3072,15 @@ function BurdJournals.UI.MainPanel:completeRecording()
         end
     end
 
-    -- Collect skills, traits, and stats to send to server
+    -- Collect skills, traits, stats, and recipes to send to server
     local skillsToRecord = {}
     local traitsToRecord = {}
     local statsToRecord = {}
+    local recipesToRecord = {}
     local skillCount = 0
     local traitCount = 0
     local statCount = 0
+    local recipeCount = 0
 
     for _, record in ipairs(self.recordingState.pendingRecords) do
         if record.type == "skill" then
@@ -3069,6 +3100,11 @@ function BurdJournals.UI.MainPanel:completeRecording()
                 value = record.value
             }
             statCount = statCount + 1
+        elseif record.type == "recipe" then
+            recipesToRecord[record.name] = {
+                name = record.name
+            }
+            recipeCount = recipeCount + 1
         end
     end
 
@@ -3076,7 +3112,8 @@ function BurdJournals.UI.MainPanel:completeRecording()
     self.pendingRecordFeedback = {
         skills = skillCount,
         traits = traitCount,
-        stats = statCount
+        stats = statCount,
+        recipes = recipeCount
     }
 
     -- Send to server - server handles modData update and journal conversion
@@ -3087,7 +3124,8 @@ function BurdJournals.UI.MainPanel:completeRecording()
         journalId = self.journal:getID(),
         skills = skillsToRecord,
         traits = traitsToRecord,
-        stats = statsToRecord
+        stats = statsToRecord,
+        recipes = recipesToRecord
     })
 
     -- Show pending feedback (will be updated when server responds via handleRecordSuccess)
@@ -3690,6 +3728,12 @@ function BurdJournals.UI.MainPanel:absorbSkill(skillName, xp)
 end
 
 function BurdJournals.UI.MainPanel:absorbTrait(traitId)
+    -- SAFETY CHECK: Don't allow claiming if player already has the trait
+    if BurdJournals.playerHasTrait(self.player, traitId) then
+        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", {r=0.7, g=0.5, b=0.3})
+        return
+    end
+
     -- If already learning (but not Absorb All), add to queue
     if self.learningState.active and not self.learningState.isAbsorbAll then
         if self:addToQueue("trait", traitId) then
@@ -3852,6 +3896,11 @@ end
 
 -- Add a reward to the queue
 function BurdJournals.UI.MainPanel:addToQueue(rewardType, name, xp)
+    -- SAFETY CHECK: Don't queue traits the player already has
+    if rewardType == "trait" and BurdJournals.playerHasTrait(self.player, name) then
+        return false  -- Player already has this trait
+    end
+
     -- Check if already in queue or currently learning
     if self.learningState.skillName == name or self.learningState.traitId == name or self.learningState.recipeName == name then
         return false  -- Already learning this one
@@ -4411,12 +4460,14 @@ function BurdJournals.UI.MainPanel:createLogUI()
     local journalData = BurdJournals.getJournalData(self.journal) or {}
     local recordedSkills = journalData.skills or {}
     local recordedTraits = journalData.traits or {}
-    
+    local recordedRecipes = journalData.recipes or {}
+
     -- Store for rendering
     self.isRecordMode = true
     self.recordedSkills = recordedSkills
     self.recordedTraits = recordedTraits
-    
+    self.recordedRecipes = recordedRecipes
+
     -- ============ HEADER STYLING (Blue/Teal for personal journals) ============
     local headerHeight = 52
     self.headerColor = {r=0.12, g=0.25, b=0.35}
@@ -4708,6 +4759,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
     end
     self.recordedSkills = journalData.skills or {}
     self.recordedTraits = journalData.traits or {}
+    self.recordedRecipes = journalData.recipes or {}
 
     local allowedSkills = BurdJournals.getAllowedSkills()
     local recordedSkills = self.recordedSkills
@@ -6507,6 +6559,12 @@ end
 
 -- Claim trait (same as absorb but from player journal)
 function BurdJournals.UI.MainPanel:claimTrait(traitId)
+    -- SAFETY CHECK: Don't allow claiming if player already has the trait
+    if BurdJournals.playerHasTrait(self.player, traitId) then
+        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", {r=0.7, g=0.5, b=0.3})
+        return
+    end
+
     -- If already learning, add to queue
     if self.learningState.active and not self.learningState.isAbsorbAll then
         if self:addToQueue("trait", traitId) then

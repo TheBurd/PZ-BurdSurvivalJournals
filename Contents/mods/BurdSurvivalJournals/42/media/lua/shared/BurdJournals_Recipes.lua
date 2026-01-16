@@ -195,6 +195,13 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
 
         local modData = item:getModData()
 
+        -- CRITICAL: Check if journal already has data (e.g., on multiplayer reconnect)
+        -- OnCreate fires during item deserialization, so we must NOT overwrite existing data
+        if modData and modData.BurdJournals and modData.BurdJournals.uuid then
+            -- Journal already has data, don't reinitialize!
+            return
+        end
+
         -- If spawned with a player context (crafting), create a player journal
         -- If spawned without player (dev menu/loot), create a found journal with random survivor
         if player then
@@ -263,6 +270,13 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
             return
         end
 
+        -- CRITICAL: Check if journal already has data (e.g., on multiplayer reconnect)
+        -- OnCreate fires during item deserialization, so we must NOT overwrite existing data
+        local existingData = item:getModData()
+        if existingData and existingData.BurdJournals and existingData.BurdJournals.uuid then
+            -- Journal already has data, don't reinitialize!
+            return
+        end
 
         -- Get sandbox settings for worn journal rewards (with safe fallbacks)
         local minSkills = 1
@@ -347,6 +361,14 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not item then return end
+
+        -- CRITICAL: Check if journal already has data (e.g., on multiplayer reconnect)
+        -- OnCreate fires during item deserialization, so we must NOT overwrite existing data
+        local existingData = item:getModData()
+        if existingData and existingData.BurdJournals and existingData.BurdJournals.uuid then
+            -- Journal already has data, don't reinitialize!
+            return
+        end
 
         -- Get sandbox settings for bloody journal rewards (with safe fallbacks)
         local minSkills = 2

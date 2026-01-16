@@ -1400,6 +1400,68 @@ setmetatable(BurdJournals.Limits, {
 
 -- ==================== JOURNAL OWNERSHIP & PERMISSIONS ====================
 
+-- ==================== PLAYER IDENTIFICATION ====================
+-- Steam ID is the primary identifier for ownership (persistent across servers)
+-- Username is the fallback for legacy journals and non-Steam players
+-- Character ID (SteamID + CharacterName) is used for per-character claim tracking
+
+-- Get the player's Steam ID (primary identifier for ownership)
+-- Returns Steam ID as string, or "local_username" for offline/non-Steam players
+function BurdJournals.getPlayerSteamId(player)
+    if not player then return nil end
+
+    -- Try Steam ID first (most reliable for multiplayer)
+    if player.getSteamID then
+        local steamId = player:getSteamID()
+        -- getSteamID() returns 0 or "" for non-Steam players
+        if steamId and steamId ~= "" and steamId ~= 0 and tostring(steamId) ~= "0" then
+            return tostring(steamId)
+        end
+    end
+
+    -- Fallback to username for non-Steam (offline mode, GOG players, LAN)
+    local username = player:getUsername()
+    if username and username ~= "" then
+        return "local_" .. username
+    end
+
+    return "local_unknown"
+end
+
+-- Get character-specific ID for claim tracking (SteamID + CharacterName)
+-- This allows each character to claim independently, even on the same account
+function BurdJournals.getPlayerCharacterId(player)
+    if not player then return nil end
+
+    local steamId = BurdJournals.getPlayerSteamId(player)
+    if not steamId then return nil end
+
+    -- Get character name (forename + surname)
+    local descriptor = player:getDescriptor()
+    if not descriptor then return steamId .. "_Unknown" end
+
+    local forename = descriptor:getForename() or "Unknown"
+    local surname = descriptor:getSurname() or ""
+    local charName = forename .. "_" .. surname
+
+    -- Sanitize character name (replace spaces with underscores)
+    charName = string.gsub(charName, " ", "_")
+
+    return steamId .. "_" .. charName
+end
+
+-- Get the owner Steam ID of a journal
+function BurdJournals.getJournalOwnerSteamId(item)
+    if not item then return nil end
+    local modData = item:getModData()
+    if modData.BurdJournals and modData.BurdJournals.ownerSteamId then
+        return modData.BurdJournals.ownerSteamId
+    end
+    return nil
+end
+
+-- ==================== JOURNAL OWNERSHIP GETTERS ====================
+
 -- Get the owner username of a journal (for ownership checks)
 function BurdJournals.getJournalOwnerUsername(item)
     if not item then return nil end
@@ -1421,23 +1483,40 @@ function BurdJournals.getJournalAuthorUsername(item)
 end
 
 -- Check if a player is the owner/author of a journal
+-- Uses a 3-tier fallback system: Steam ID -> Username -> Character Name
 function BurdJournals.isJournalOwner(player, item)
     if not player or not item then return false end
 
     local modData = item:getModData()
     if not modData.BurdJournals then return true end  -- No data = anyone can use
 
-    -- PRIMARY: Check ownerUsername field (new format)
-    local ownerUsername = modData.BurdJournals.ownerUsername
-    if ownerUsername then
-        local playerUsername = player:getUsername()
-        if playerUsername then
-            return ownerUsername == playerUsername
+    local journalData = modData.BurdJournals
+
+    -- PRIMARY: Check ownerSteamId field (new format - most reliable)
+    local ownerSteamId = journalData.ownerSteamId
+    if ownerSteamId then
+        local playerSteamId = BurdJournals.getPlayerSteamId(player)
+        if playerSteamId then
+            -- Direct Steam ID match
+            if ownerSteamId == playerSteamId then
+                return true
+            end
+            -- If journal has Steam ID but player doesn't match, check legacy fallbacks
+            -- (owner might have migrated from legacy journal)
         end
     end
 
-    -- FALLBACK: For older journals, check author against character's full name
-    local author = modData.BurdJournals.author
+    -- FALLBACK 1: Check ownerUsername field (for legacy journals without Steam ID)
+    local ownerUsername = journalData.ownerUsername
+    if ownerUsername then
+        local playerUsername = player:getUsername()
+        if playerUsername and ownerUsername == playerUsername then
+            return true
+        end
+    end
+
+    -- FALLBACK 2: For older journals, check author against character's full name
+    local author = journalData.author
     if author then
         local playerFullName = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname()
         if author == playerFullName then
@@ -1450,8 +1529,8 @@ function BurdJournals.isJournalOwner(player, item)
         end
     end
 
-    -- No ownership info = allow (non-player created journals)
-    if not ownerUsername and not author then
+    -- No ownership info = allow (non-player created journals like worn/bloody)
+    if not ownerSteamId and not ownerUsername and not author then
         return true
     end
 
@@ -1520,6 +1599,201 @@ function BurdJournals.canPlayerClaimFromJournal(player, item)
     end
 
     return true, nil
+end
+
+-- ==================== PER-CHARACTER CLAIM TRACKING ====================
+-- Claims are tracked per-character (SteamID + CharacterName) so that:
+-- 1. Each character can claim independently from the same journal
+-- 2. Different characters on the same Steam account can each claim
+-- 3. Legacy claims are migrated but don't block new characters
+
+-- Initialize the claims structure for a journal if needed
+function BurdJournals.initClaimsStructure(journalData)
+    if not journalData then return end
+    if not journalData.claims then
+        journalData.claims = {}
+    end
+end
+
+-- Get or create the claim entry for a specific character
+function BurdJournals.getCharacterClaims(journalData, player)
+    if not journalData or not player then return nil end
+
+    local characterId = BurdJournals.getPlayerCharacterId(player)
+    if not characterId then return nil end
+
+    BurdJournals.initClaimsStructure(journalData)
+
+    if not journalData.claims[characterId] then
+        journalData.claims[characterId] = {
+            skills = {},
+            traits = {},
+            recipes = {}
+        }
+    end
+
+    return journalData.claims[characterId]
+end
+
+-- Check if a character has claimed a specific skill from a journal
+function BurdJournals.hasCharacterClaimedSkill(journalData, player, skillName)
+    if not journalData or not player or not skillName then return false end
+
+    local characterId = BurdJournals.getPlayerCharacterId(player)
+    if not characterId then return false end
+
+    -- Check new per-character claims structure
+    if journalData.claims and journalData.claims[characterId] then
+        if journalData.claims[characterId].skills and journalData.claims[characterId].skills[skillName] then
+            return true
+        end
+    end
+
+    -- Note: We intentionally DO NOT fall back to legacy claimedSkills
+    -- This ensures new characters can claim from existing worn/bloody journals
+    return false
+end
+
+-- Check if a character has claimed a specific trait from a journal
+function BurdJournals.hasCharacterClaimedTrait(journalData, player, traitId)
+    if not journalData or not player or not traitId then return false end
+
+    local characterId = BurdJournals.getPlayerCharacterId(player)
+    if not characterId then return false end
+
+    -- Check new per-character claims structure
+    if journalData.claims and journalData.claims[characterId] then
+        if journalData.claims[characterId].traits and journalData.claims[characterId].traits[traitId] then
+            return true
+        end
+    end
+
+    return false
+end
+
+-- Check if a character has claimed a specific recipe from a journal
+function BurdJournals.hasCharacterClaimedRecipe(journalData, player, recipeName)
+    if not journalData or not player or not recipeName then return false end
+
+    local characterId = BurdJournals.getPlayerCharacterId(player)
+    if not characterId then return false end
+
+    -- Check new per-character claims structure
+    if journalData.claims and journalData.claims[characterId] then
+        if journalData.claims[characterId].recipes and journalData.claims[characterId].recipes[recipeName] then
+            return true
+        end
+    end
+
+    return false
+end
+
+-- Mark a skill as claimed by a specific character
+function BurdJournals.markSkillClaimedByCharacter(journalData, player, skillName)
+    if not journalData or not player or not skillName then return false end
+
+    local claims = BurdJournals.getCharacterClaims(journalData, player)
+    if not claims then return false end
+
+    claims.skills[skillName] = true
+
+    -- Also update legacy field for backward compatibility with old UI/displays
+    if not journalData.claimedSkills then
+        journalData.claimedSkills = {}
+    end
+    journalData.claimedSkills[skillName] = true
+
+    return true
+end
+
+-- Mark a trait as claimed by a specific character
+function BurdJournals.markTraitClaimedByCharacter(journalData, player, traitId)
+    if not journalData or not player or not traitId then return false end
+
+    local claims = BurdJournals.getCharacterClaims(journalData, player)
+    if not claims then return false end
+
+    claims.traits[traitId] = true
+
+    -- Also update legacy field for backward compatibility
+    if not journalData.claimedTraits then
+        journalData.claimedTraits = {}
+    end
+    journalData.claimedTraits[traitId] = true
+
+    return true
+end
+
+-- Mark a recipe as claimed by a specific character
+function BurdJournals.markRecipeClaimedByCharacter(journalData, player, recipeName)
+    if not journalData or not player or not recipeName then return false end
+
+    local claims = BurdJournals.getCharacterClaims(journalData, player)
+    if not claims then return false end
+
+    claims.recipes[recipeName] = true
+
+    -- Also update legacy field for backward compatibility
+    if not journalData.claimedRecipes then
+        journalData.claimedRecipes = {}
+    end
+    journalData.claimedRecipes[recipeName] = true
+
+    return true
+end
+
+-- ==================== JOURNAL MIGRATION ====================
+-- Migrate legacy journals to the new ownership/claims format
+
+function BurdJournals.migrateJournalIfNeeded(item, player)
+    if not item then return end
+
+    local modData = item:getModData()
+    if not modData.BurdJournals then return end
+
+    local journalData = modData.BurdJournals
+    local migrated = false
+
+    -- Migration 1: Add Steam ID to journals that don't have it
+    -- Only migrate if we can determine the owner (player is the owner)
+    if not journalData.ownerSteamId and journalData.ownerUsername and player then
+        local playerUsername = player:getUsername()
+        if playerUsername and journalData.ownerUsername == playerUsername then
+            -- This player is the owner, add their Steam ID
+            journalData.ownerSteamId = BurdJournals.getPlayerSteamId(player)
+            migrated = true
+            print("[BurdJournals] Migrated journal ownership: added Steam ID " .. tostring(journalData.ownerSteamId))
+        end
+    end
+
+    -- Migration 2: Mark legacy journals without Steam ID
+    if not journalData.ownerSteamId and journalData.ownerUsername then
+        -- Can't recover Steam ID from username alone, mark as legacy
+        journalData.ownerSteamId = "legacy_" .. journalData.ownerUsername
+        migrated = true
+        print("[BurdJournals] Marked legacy journal with placeholder Steam ID: " .. journalData.ownerSteamId)
+    end
+
+    -- Migration 3: Migrate legacy claims to per-character structure
+    -- Note: We do NOT move legacy claims to block new characters
+    -- Instead, we just initialize the claims structure if missing
+    if (journalData.claimedSkills or journalData.claimedTraits or journalData.claimedRecipes) and not journalData.claims then
+        -- Initialize claims structure but put legacy claims under special key
+        -- This preserves the display of what's been claimed while allowing new chars to claim
+        journalData.claims = {}
+        journalData.claims["legacy_unknown"] = {
+            skills = journalData.claimedSkills or {},
+            traits = journalData.claimedTraits or {},
+            recipes = journalData.claimedRecipes or {}
+        }
+        migrated = true
+        print("[BurdJournals] Migrated legacy claims to per-character structure")
+    end
+
+    -- If we migrated, sync the data
+    if migrated then
+        item:transmitModData()
+    end
 end
 
 function BurdJournals.isDebug()
@@ -2643,6 +2917,24 @@ function BurdJournals.getTraitBaseline(player)
     return modData.BurdJournals.traitBaseline or {}
 end
 
+-- Check if a recipe is part of the player's starting baseline
+function BurdJournals.isStartingRecipe(player, recipeName)
+    if not player then return false end
+    if not recipeName then return false end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return false end
+    if not modData.BurdJournals.recipeBaseline then return false end
+    return modData.BurdJournals.recipeBaseline[recipeName] == true
+end
+
+-- Get the full recipe baseline table for a player
+function BurdJournals.getRecipeBaseline(player)
+    if not player then return {} end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return {} end
+    return modData.BurdJournals.recipeBaseline or {}
+end
+
 -- Get earned XP for a skill (current - baseline)
 function BurdJournals.getEarnedXP(player, skillName)
     if not player then return 0 end
@@ -3310,9 +3602,13 @@ function BurdJournals.buildMagazineToRecipesCache(forceRefresh)
 end
 
 -- Get all magazine recipes known by a player
--- Returns table: { recipeName = { name = displayName, source = magazineType } }
+-- Returns table: { recipeName = true }
 -- Uses Build 42's APIs with multiple fallback methods for maximum compatibility
-function BurdJournals.collectPlayerMagazineRecipes(player)
+-- Parameters:
+--   player: the player object
+--   excludeStarting: if true/nil, excludes recipes in baseline when baseline restriction enabled
+--                    if false, includes all recipes (used for baseline capture)
+function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
     if not player then
         print("[BurdJournals] collectPlayerMagazineRecipes: no player")
         return {}
@@ -3322,6 +3618,11 @@ function BurdJournals.collectPlayerMagazineRecipes(player)
     if not BurdJournals.getSandboxOption("EnableRecipeRecording") then
         print("[BurdJournals] collectPlayerMagazineRecipes: recipe recording disabled")
         return {}
+    end
+
+    -- If excludeStarting not specified, check sandbox option
+    if excludeStarting == nil then
+        excludeStarting = BurdJournals.isBaselineRestrictionEnabled()
     end
 
     local recipes = {}
@@ -3452,6 +3753,23 @@ function BurdJournals.collectPlayerMagazineRecipes(player)
     local foundCount = 0
     for _ in pairs(recipes) do foundCount = foundCount + 1 end
     print("[BurdJournals] collectPlayerMagazineRecipes: TOTAL found " .. foundCount .. " magazine recipes known by player")
+
+    -- Filter out starting recipes if baseline restriction is enabled
+    if excludeStarting then
+        local filteredRecipes = {}
+        local excludedCount = 0
+        for recipeName, _ in pairs(recipes) do
+            if BurdJournals.isStartingRecipe(player, recipeName) then
+                excludedCount = excludedCount + 1
+            else
+                filteredRecipes[recipeName] = true
+            end
+        end
+        if excludedCount > 0 then
+            print("[BurdJournals] collectPlayerMagazineRecipes: Excluded " .. excludedCount .. " starting recipes from baseline")
+        end
+        return filteredRecipes
+    end
 
     return recipes
 end

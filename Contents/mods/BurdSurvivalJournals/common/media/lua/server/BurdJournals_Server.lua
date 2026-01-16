@@ -473,7 +473,9 @@ function BurdJournals.Server.handleLogSkills(player, args)
         local modData = filledJournal:getModData()
         modData.BurdJournals = {
             author = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname(),
-            ownerUsername = player:getUsername(),  -- Store username for ownership checks
+            ownerUsername = player:getUsername(),  -- Store username for ownership checks (legacy fallback)
+            ownerSteamId = BurdJournals.getPlayerSteamId(player),  -- Store Steam ID for ownership (primary)
+            ownerCharacterName = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname(),
             timestamp = getGameTime():getWorldAgeHours(),
             readCount = 0,
             -- Clean journal state
@@ -642,7 +644,9 @@ function BurdJournals.Server.handleRecordProgress(player, args)
 
     -- Update journal metadata
     modData.BurdJournals.author = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname()
-    modData.BurdJournals.ownerUsername = player:getUsername()  -- Store username for ownership checks
+    modData.BurdJournals.ownerUsername = player:getUsername()  -- Store username for ownership checks (legacy fallback)
+    modData.BurdJournals.ownerSteamId = BurdJournals.getPlayerSteamId(player)  -- Store Steam ID for ownership (primary)
+    modData.BurdJournals.ownerCharacterName = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname()
     modData.BurdJournals.timestamp = getGameTime():getWorldAgeHours()
     modData.BurdJournals.isPlayerCreated = true
     modData.BurdJournals.isWritten = true
@@ -721,11 +725,10 @@ function BurdJournals.Server.handleRecordProgress(player, args)
     local journalData = nil
     local finalJournalId = newJournalId or (journal and journal:getID())
 
-    -- Determine if we should include full journalData in response
-    -- For large journals, skip it to reduce bandwidth - client will use transmitModData instead
-    local finalItemCount = existingSkillCount + existingTraitCount + existingRecipeCount +
-                           skillsRecorded + traitsRecorded + recipesRecorded
-    local includeJournalData = finalItemCount < 50  -- Only include full data for smaller journals
+    -- Always include journalData in response for immediate UI update
+    -- The bandwidth cost is minimal compared to the UX benefit of instant updates
+    -- transmitModData is async and unreliable for immediate UI feedback in MP
+    local includeJournalData = true
 
     if includeJournalData and finalJournal then
         local modData = finalJournal:getModData()
@@ -930,11 +933,8 @@ function BurdJournals.Server.handleClaimSkill(player, args)
             mode = "set"
         })
 
-        -- Mark skill as claimed in journal (for player journals, we track claims too)
-        if not journalData.claimedSkills then
-            journalData.claimedSkills = {}
-        end
-        journalData.claimedSkills[skillName] = true
+        -- Mark skill as claimed in journal using per-character tracking
+        BurdJournals.markSkillClaimedByCharacter(journalData, player, skillName)
 
         -- Sync modData
         if journal.transmitModData then
@@ -1013,11 +1013,8 @@ function BurdJournals.Server.handleClaimTrait(player, args)
     local traitWasAdded = BurdJournals.safeAddTrait(player, traitId)
 
     if traitWasAdded then
-        -- Mark trait as claimed
-        if not journalData.claimedTraits then
-            journalData.claimedTraits = {}
-        end
-        journalData.claimedTraits[traitId] = true
+        -- Mark trait as claimed using per-character tracking
+        BurdJournals.markTraitClaimedByCharacter(journalData, player, traitId)
 
         -- Sync modData
         if journal.transmitModData then
@@ -1119,9 +1116,8 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
         return
     end
 
-    -- Check if skill already claimed
-    if BurdJournals.isSkillClaimed(journal, skillName) then
-        -- Debug removed
+    -- Check if THIS CHARACTER has already claimed this skill (per-character tracking)
+    if BurdJournals.hasCharacterClaimedSkill(journalData, player, skillName) then
         BurdJournals.Server.sendToClient(player, "error", {message = "This skill has already been claimed."})
         return
     end
@@ -1181,15 +1177,12 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
     -- MULTIPLAYER: Client must apply XP (server proxy can't modify XP directly)
     -- Server validates, marks claimed, and tells client to apply XP
     if xpToAdd > 0 then
-        -- Mark skill as claimed on server FIRST
-        BurdJournals.claimSkill(journal, skillName)
+        -- Mark skill as claimed on server FIRST (per-character tracking)
+        BurdJournals.markSkillClaimedByCharacter(journalData, player, skillName)
         -- Debug removed
 
-        -- DEBUG: Check dissolution state with details
-        local unclaimedSkills = BurdJournals.getUnclaimedSkillCount(journal)
-        local unclaimedTraits = BurdJournals.getUnclaimedTraitCount(journal)
-
-        local shouldDis = (unclaimedSkills == 0 and unclaimedTraits == 0)
+        -- Check dissolution state using shared function (includes skills, traits, AND recipes)
+        local shouldDis = BurdJournals.shouldDissolve(journal)
 
         -- Send applyXP command to CLIENT - client will apply XP
         -- Debug removed
@@ -1205,8 +1198,6 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
         -- Handle dissolution or continuation
         if shouldDis then
-            -- Debug removed
-
             -- Get fresh reference to journal by ID to ensure we have valid object
             local journalId = journal:getID()
             local freshJournal = BurdJournals.findItemById(player, journalId)
@@ -1217,20 +1208,13 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
                 if container then
                     container:Remove(freshJournal)
-                    -- Debug removed
                 end
 
                 -- Also remove from player inventory directly
                 local inv = player:getInventory()
                 if inv:contains(freshJournal) then
                     inv:Remove(freshJournal)
-                    -- Debug removed
                 end
-
-                -- Verify deletion
-                local stillThere = inv:contains(freshJournal)
-            else
-                -- print removed
             end
 
             -- Notify client
@@ -1245,10 +1229,13 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
             end
 
             -- Tell client to update UI with journal data
+            local remainingRewards = BurdJournals.getUnclaimedSkillCount(journal) +
+                                     BurdJournals.getUnclaimedTraitCount(journal) +
+                                     BurdJournals.getUnclaimedRecipeCount(journal)
             BurdJournals.Server.sendToClient(player, "absorbSuccess", {
                 skillName = skillName,
                 xpGained = xpToAdd,
-                remaining = unclaimedSkills + unclaimedTraits,
+                remaining = remainingRewards,
                 total = BurdJournals.getTotalRewards(journal),
                 journalId = journal:getID(),
                 journalData = BurdJournals.Server.copyJournalData(journal)
@@ -1304,8 +1291,8 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
         return
     end
 
-    -- Check if trait already claimed
-    if BurdJournals.isTraitClaimed(journal, traitId) then
+    -- Check if THIS CHARACTER has already claimed this trait (per-character tracking)
+    if BurdJournals.hasCharacterClaimedTrait(journalData, player, traitId) then
         BurdJournals.Server.sendToClient(player, "error", {message = "This trait has already been claimed."})
         return
     end
@@ -1444,14 +1431,11 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
     -- Debug removed
 
     if traitWasAdded then
-        -- Trait was granted - NOW mark as claimed
-        BurdJournals.claimTrait(journal, traitId)
+        -- Trait was granted - NOW mark as claimed (per-character tracking)
+        BurdJournals.markTraitClaimedByCharacter(journalData, player, traitId)
 
-        -- DEBUG: Check dissolution state with details
-        local unclaimedSkills = BurdJournals.getUnclaimedSkillCount(journal)
-        local unclaimedTraits = BurdJournals.getUnclaimedTraitCount(journal)
-
-        local shouldDis = (unclaimedSkills == 0 and unclaimedTraits == 0)
+        -- Check dissolution state using shared function (includes skills, traits, AND recipes)
+        local shouldDis = BurdJournals.shouldDissolve(journal)
 
         -- Send command to show feedback on client with journal data for UI sync
         BurdJournals.Server.sendToClient(player, "grantTrait", {
@@ -1462,8 +1446,6 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
 
         -- Handle dissolution or continuation
         if shouldDis then
-            -- Debug removed
-
             -- Get fresh reference to journal by ID
             local journalId = journal:getID()
             local freshJournal = BurdJournals.findItemById(player, journalId)
@@ -1474,20 +1456,13 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
 
                 if container then
                     container:Remove(freshJournal)
-                    -- Debug removed
                 end
 
                 -- Also remove from player inventory directly
                 local inv = player:getInventory()
                 if inv:contains(freshJournal) then
                     inv:Remove(freshJournal)
-                    -- Debug removed
                 end
-
-                -- Verify deletion
-                local stillThere = inv:contains(freshJournal)
-            else
-                -- print removed
             end
 
             -- Notify client
@@ -1502,9 +1477,12 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
             end
 
             -- Send success response with journal data for UI update
+            local remainingRewards = BurdJournals.getUnclaimedSkillCount(journal) +
+                                     BurdJournals.getUnclaimedTraitCount(journal) +
+                                     BurdJournals.getUnclaimedRecipeCount(journal)
             BurdJournals.Server.sendToClient(player, "absorbSuccess", {
                 traitId = traitId,
-                remaining = unclaimedSkills + unclaimedTraits,
+                remaining = remainingRewards,
                 total = BurdJournals.getTotalRewards(journal),
                 journalId = journal:getID(),
                 journalData = BurdJournals.Server.copyJournalData(journal)
@@ -1707,11 +1685,8 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
     local recipeWasLearned = BurdJournals.learnRecipeWithVerification(player, recipeName, "[BurdJournals Server]")
 
     if recipeWasLearned then
-        -- Mark recipe as claimed
-        if not journalData.claimedRecipes then
-            journalData.claimedRecipes = {}
-        end
-        journalData.claimedRecipes[recipeName] = true
+        -- Mark recipe as claimed using per-character tracking
+        BurdJournals.markRecipeClaimedByCharacter(journalData, player, recipeName)
 
         -- Sync modData
         if journal.transmitModData then
@@ -1775,8 +1750,8 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
         return
     end
 
-    -- Check if already claimed
-    if BurdJournals.isRecipeClaimed(journal, recipeName) then
+    -- Check if THIS CHARACTER has already claimed this recipe (per-character tracking)
+    if BurdJournals.hasCharacterClaimedRecipe(journalData, player, recipeName) then
         BurdJournals.Server.sendToClient(player, "error", {message = "Recipe already claimed."})
         return
     end
@@ -1784,7 +1759,7 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
     -- Check if player already knows this recipe
     if BurdJournals.playerKnowsRecipe(player, recipeName) then
         -- Mark as claimed but notify player they already know it
-        BurdJournals.claimRecipe(journal, recipeName)
+        BurdJournals.markRecipeClaimedByCharacter(journalData, player, recipeName)
 
         if journal.transmitModData then
             journal:transmitModData()
@@ -1811,8 +1786,8 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
     local recipeWasLearned = BurdJournals.learnRecipeWithVerification(player, recipeName, "[BurdJournals Server]")
 
     if recipeWasLearned then
-        -- Mark recipe as claimed
-        BurdJournals.claimRecipe(journal, recipeName)
+        -- Mark recipe as claimed using per-character tracking
+        BurdJournals.markRecipeClaimedByCharacter(journalData, player, recipeName)
 
         -- Sync modData
         if journal.transmitModData then

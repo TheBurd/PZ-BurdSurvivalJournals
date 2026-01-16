@@ -524,7 +524,19 @@ function BurdJournals.LearnFromJournalAction:isValid()
     if not journal then return false end
 
     -- Check if main panel is still open
-    if self.mainPanel and not self.mainPanel:isVisible() then
+    -- Use the global instance if our stored reference is stale or not visible
+    local currentPanel = BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance
+    if currentPanel then
+        -- Update our reference if needed
+        if self.mainPanel ~= currentPanel then
+            self.mainPanel = currentPanel
+        end
+        -- Check visibility on the current active panel
+        if not currentPanel:isVisible() then
+            return false
+        end
+    elseif self.mainPanel and not self.mainPanel:isVisible() then
+        -- No global instance, check our stored reference
         return false
     end
 
@@ -821,8 +833,21 @@ function BurdJournals.RecordToJournalAction:isValid()
     end
 
     -- Check if main panel is still open
-    if self.mainPanel and not self.mainPanel:isVisible() then
-        print("[BurdJournals] RecordToJournalAction:isValid FAILED - panel not visible")
+    -- Use the global instance if our stored reference is stale or not visible
+    local currentPanel = BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance
+    if currentPanel then
+        -- Update our reference if needed
+        if self.mainPanel ~= currentPanel then
+            self.mainPanel = currentPanel
+        end
+        -- Check visibility on the current active panel
+        if not currentPanel:isVisible() then
+            print("[BurdJournals] RecordToJournalAction:isValid FAILED - panel not visible")
+            return false
+        end
+    elseif self.mainPanel and not self.mainPanel:isVisible() then
+        -- No global instance, check our stored reference
+        print("[BurdJournals] RecordToJournalAction:isValid FAILED - panel not visible (no global instance)")
         return false
     end
 

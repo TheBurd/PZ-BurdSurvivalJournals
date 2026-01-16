@@ -51,6 +51,10 @@ function BurdJournals.Client.checkLanguageChange()
     BurdJournals.Client._currentLanguage = newLanguage
 end
 
+-- Flag to indicate OnCreatePlayer will handle baseline capture
+-- This prevents init() from racing with onCreatePlayer
+BurdJournals.Client._pendingNewCharacterBaseline = false
+
 function BurdJournals.Client.init()
     -- Initialize language tracking for localization
     BurdJournals.Client.checkLanguageChange()
@@ -60,8 +64,26 @@ function BurdJournals.Client.init()
     -- 1. Existing saves (characters created before the mod update)
     -- 2. Characters where OnCreatePlayer might have been missed
     -- 3. Saves with outdated baseline data that needs recalculation
+    --
+    -- IMPORTANT: For NEW characters, OnCreatePlayer sets _pendingNewCharacterBaseline flag
+    -- and will do direct capture. We must check this flag AND hoursAlive to be safe.
     local player = getPlayer()
     if player then
+        local hoursAlive = player:getHoursSurvived() or 0
+
+        -- Skip if OnCreatePlayer is handling this (flag set)
+        if BurdJournals.Client._pendingNewCharacterBaseline then
+            print("[BurdJournals] init: OnCreatePlayer is handling baseline, skipping")
+            return
+        end
+
+        -- Skip if this is a brand new character - OnCreatePlayer will handle it
+        -- New characters have < 0.1 hours (6 minutes) of survival time
+        if hoursAlive < 0.1 then
+            print("[BurdJournals] init: New character detected (" .. hoursAlive .. " hours), deferring to OnCreatePlayer")
+            return
+        end
+
         local modData = player:getModData()
         local needsBaseline = not modData.BurdJournals or not modData.BurdJournals.baselineCaptured
 
@@ -71,7 +93,6 @@ function BurdJournals.Client.init()
             if currentVersion < BurdJournals.Client.BASELINE_VERSION then
                 print("[BurdJournals] Baseline version " .. currentVersion .. " is outdated (current: " .. BurdJournals.Client.BASELINE_VERSION .. ")")
                 -- Only recalculate for existing saves (players who have played for a while)
-                local hoursAlive = player:getHoursSurvived() or 0
                 if hoursAlive > 1 then
                     print("[BurdJournals] Existing save detected (" .. hoursAlive .. " hours survived), will recalculate baseline")
                     -- Clear old baseline to allow recapture
@@ -91,6 +112,11 @@ function BurdJournals.Client.init()
                 ticksWaited = ticksWaited + 1
                 if ticksWaited >= 10 then  -- Wait 10 ticks (~1 second) for game start
                     Events.OnTick.Remove(captureAfterDelay)
+                    -- Double-check flag hasn't been set while we waited
+                    if BurdJournals.Client._pendingNewCharacterBaseline then
+                        print("[BurdJournals] init delayed: OnCreatePlayer took over, aborting")
+                        return
+                    end
                     -- Pass false for isNewCharacter - calculate baseline from profession/traits
                     BurdJournals.Client.captureBaseline(player, false)
                 end
@@ -290,21 +316,34 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
     -- 1. The journal found by ID (for consistency)
     -- 2. The UI panel's journal reference directly (to ensure UI sees the update)
     local journalId = args.newJournalId or args.journalId
+    print("[BurdJournals] Client: handleRecordSuccess - journalId=" .. tostring(journalId) .. ", has journalData=" .. tostring(args.journalData ~= nil))
     if journalId and args.journalData then
         print("[BurdJournals] Client: Applying journal data from server for ID " .. tostring(journalId))
+        -- Debug: show what recipes are in the server response
+        if args.journalData.recipes then
+            local recipeCount = 0
+            for _ in pairs(args.journalData.recipes) do recipeCount = recipeCount + 1 end
+            print("[BurdJournals] Client: Server journalData contains " .. recipeCount .. " recipes")
+        else
+            print("[BurdJournals] Client: Server journalData has NO recipes table")
+        end
         local journal = BurdJournals.findItemById(player, journalId)
         if journal then
             local modData = journal:getModData()
             modData.BurdJournals = args.journalData
-            print("[BurdJournals] Client: Journal data applied successfully")
+            print("[BurdJournals] Client: Journal data applied successfully to found journal")
         else
-            print("[BurdJournals] Client: Could not find journal to apply data")
+            print("[BurdJournals] Client: Could not find journal by ID to apply data")
         end
+    elseif journalId and not args.journalData then
+        print("[BurdJournals] Client: WARNING - No journalData in server response (journal too large?)")
     end
 
     -- Update UI if open
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
         local panel = BurdJournals.UI.MainPanel.instance
+        local panelJournalId = panel.journal and panel.journal:getID() or nil
+        print("[BurdJournals] Client: Panel exists, panel.journal ID=" .. tostring(panelJournalId) .. ", server journalId=" .. tostring(journalId))
 
         -- If journal was converted (blank -> filled), update the panel's journal reference
         if args.newJournalId then
@@ -330,7 +369,21 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
             if args.journalData then
                 local panelModData = panel.journal:getModData()
                 panelModData.BurdJournals = args.journalData
-                print("[BurdJournals] Client: Applied journalData to existing panel.journal")
+                print("[BurdJournals] Client: Applied journalData to existing panel.journal (IDs match)")
+            else
+                print("[BurdJournals] Client: IDs match but no journalData to apply")
+            end
+        else
+            print("[BurdJournals] Client: WARNING - Journal ID mismatch or missing! Panel has " .. tostring(panelJournalId) .. ", server sent " .. tostring(journalId))
+            -- Try to update the panel's journal reference to match what the server is talking about
+            if journalId and args.journalData then
+                local serverJournal = BurdJournals.findItemById(player, journalId)
+                if serverJournal then
+                    print("[BurdJournals] Client: Found server's journal, updating panel reference")
+                    panel.journal = serverJournal
+                    local panelModData = panel.journal:getModData()
+                    panelModData.BurdJournals = args.journalData
+                end
             end
         end
 
@@ -340,16 +393,23 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
         end
 
         -- Refresh the UI to show updated data
-        -- Pass journalData directly to populateRecordList to bypass getModData() timing issues in SP
-        if panel.refreshJournalData then
-            panel:refreshJournalData()
+        -- Skip refreshJournalData if we have override data - it will call populateRecordList without override
+        -- which would read potentially stale data
+        if args.journalData then
+            -- We have fresh data from server, use it directly
+            print("[BurdJournals] Client: Calling populateRecordList with server journalData (skipping refreshJournalData)")
+            if panel.populateRecordList then
+                pcall(function() panel:populateRecordList(args.journalData) end)
+            end
+        else
+            -- No server data, do a full refresh which will read from modData
+            print("[BurdJournals] Client: No server journalData, doing full refreshJournalData")
+            if panel.refreshJournalData then
+                panel:refreshJournalData()
+            end
         end
-        if panel.populateRecordList and args.journalData then
-            print("[BurdJournals] Client: Calling populateRecordList with server journalData")
-            pcall(function() panel:populateRecordList(args.journalData) end)
-        elseif panel.populateRecordList then
-            pcall(function() panel:populateRecordList() end)
-        end
+    else
+        print("[BurdJournals] Client: No UI panel instance to update")
     end
 end
 
@@ -1069,29 +1129,56 @@ function BurdJournals.Client.captureBaseline(player, isNewCharacter)
         for traitId, _ in pairs(traits) do
             modData.BurdJournals.traitBaseline[traitId] = true
         end
+
+        -- Capture recipe baseline (all currently known recipes are "starting" recipes)
+        -- This captures recipes from profession, traits, or any other spawn-time grants
+        -- Pass false for excludeStarting to capture ALL recipes (don't filter baseline against itself)
+        modData.BurdJournals.recipeBaseline = {}
+        local recipes = BurdJournals.collectPlayerMagazineRecipes(player, false)
+        for recipeName, _ in pairs(recipes) do
+            modData.BurdJournals.recipeBaseline[recipeName] = true
+        end
     else
         -- EXISTING SAVE: Calculate baseline from profession + traits
         print("[BurdJournals] Calculating baseline for EXISTING save (retroactive)")
         local calcSkills, calcTraits = BurdJournals.Client.calculateProfessionBaseline(player)
         modData.BurdJournals.skillBaseline = calcSkills
         modData.BurdJournals.traitBaseline = calcTraits
+        -- For existing saves, we can't know which recipes were from spawn vs earned
+        -- So we don't set a recipe baseline (all recipes are recordable)
+        modData.BurdJournals.recipeBaseline = {}
     end
 
     modData.BurdJournals.baselineCaptured = true
     modData.BurdJournals.baselineVersion = BurdJournals.Client.BASELINE_VERSION
 
+    -- Capture player identity for ownership tracking
+    modData.BurdJournals.steamId = BurdJournals.getPlayerSteamId(player)
+    modData.BurdJournals.characterId = BurdJournals.getPlayerCharacterId(player)
+
     -- Detailed logging for debugging
     local method = isNewCharacter and "direct capture" or "calculated from profession/traits"
+    local recipeCount = BurdJournals.countTable(modData.BurdJournals.recipeBaseline or {})
     print("[BurdJournals] Baseline captured (" .. method .. "): " ..
           tostring(BurdJournals.countTable(modData.BurdJournals.skillBaseline)) .. " skills, " ..
-          tostring(BurdJournals.countTable(modData.BurdJournals.traitBaseline)) .. " traits")
+          tostring(BurdJournals.countTable(modData.BurdJournals.traitBaseline)) .. " traits, " ..
+          tostring(recipeCount) .. " recipes")
 
-    -- Log each baseline skill with XP for debugging
+    -- Log each baseline item for debugging
     for skillName, xp in pairs(modData.BurdJournals.skillBaseline) do
         print("[BurdJournals]   Baseline skill: " .. skillName .. " = " .. tostring(xp) .. " XP")
     end
     for traitId, _ in pairs(modData.BurdJournals.traitBaseline) do
         print("[BurdJournals]   Baseline trait: " .. traitId)
+    end
+    for recipeName, _ in pairs(modData.BurdJournals.recipeBaseline or {}) do
+        print("[BurdJournals]   Baseline recipe: " .. recipeName)
+    end
+
+    -- CRITICAL: Transmit modData to ensure persistence in saves (especially multiplayer)
+    if player.transmitModData then
+        player:transmitModData()
+        print("[BurdJournals] Player modData transmitted for persistence")
     end
 end
 
@@ -1120,6 +1207,11 @@ end
 function BurdJournals.Client.onCreatePlayer(playerIndex)
     local player = getSpecificPlayer(playerIndex)
     if player then
+        -- IMMEDIATELY set flag to tell init() we're handling baseline capture
+        -- This must happen BEFORE any delay to win the race with init()
+        BurdJournals.Client._pendingNewCharacterBaseline = true
+        print("[BurdJournals] onCreatePlayer: Set pending flag, will capture baseline for new character")
+
         -- CRITICAL: Clear any existing baseline data to ensure fresh capture
         -- This handles respawn case where old baseline might persist
         local modData = player:getModData()
@@ -1134,15 +1226,43 @@ function BurdJournals.Client.onCreatePlayer(playerIndex)
             modData.BurdJournals.recipeBaseline = nil
         end
 
-        -- Small delay to ensure player is fully initialized
+        -- Wait for player to be fully initialized with traits loaded
+        -- We need to wait longer than before because traits may not be applied immediately
         local captureAfterDelay
         local ticksWaited = 0
+        local maxWaitTicks = 300  -- Max 5 seconds wait (300 ticks at 60fps)
+        local minWaitTicks = 30   -- Minimum 0.5 seconds before checking
+
         captureAfterDelay = function()
             ticksWaited = ticksWaited + 1
-            if ticksWaited >= 5 then  -- Wait 5 ticks (~0.5 seconds)
-                Events.OnTick.Remove(captureAfterDelay)
-                -- Pass true for isNewCharacter - direct capture of spawn XP
-                BurdJournals.Client.captureBaseline(player, true)
+
+            -- After minimum wait, check if traits are loaded
+            if ticksWaited >= minWaitTicks then
+                -- Check if traits have been applied to the player
+                local hasTraits = false
+                pcall(function()
+                    local charTraits = player:getCharacterTraits()
+                    if charTraits then
+                        local knownTraits = charTraits:getKnownTraits()
+                        if knownTraits and knownTraits:size() > 0 then
+                            hasTraits = true
+                        end
+                    end
+                end)
+
+                -- Capture baseline if traits are loaded OR we've waited too long
+                if hasTraits or ticksWaited >= maxWaitTicks then
+                    Events.OnTick.Remove(captureAfterDelay)
+                    -- Clear the pending flag now that we're capturing
+                    BurdJournals.Client._pendingNewCharacterBaseline = false
+                    if not hasTraits then
+                        print("[BurdJournals] WARNING: Max wait reached, capturing baseline without traits")
+                    else
+                        print("[BurdJournals] Traits loaded after " .. ticksWaited .. " ticks, capturing baseline")
+                    end
+                    -- Pass true for isNewCharacter - direct capture of spawn XP
+                    BurdJournals.Client.captureBaseline(player, true)
+                end
             end
         end
         Events.OnTick.Add(captureAfterDelay)
