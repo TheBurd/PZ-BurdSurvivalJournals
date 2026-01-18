@@ -1,36 +1,21 @@
---[[
-    Burd's Survival Journals - Recipe & OnCreate Callbacks
-    Build 42
 
-    Handles OnCreate callbacks for journal creation.
-
-    IMPORTANT: OnCreate is called in TWO different contexts:
-    1. Recipe crafting: (items, result, player, selectedItem) - result is the created item
-    2. Loot spawning:   (item) - item is the created item directly
-
-    Each callback must handle BOTH signatures to work with world loot spawns!
-]]
-
--- Load the shared module
 require "BurdJournals_Shared"
 
--- ============================================================
---                    HELPER FUNCTION
--- ============================================================
+function BurdJournals_CanCraftPlayerJournal(recipe, playerObj)
 
--- Determine the actual item from either call signature:
--- B42 Recipe:     (craftRecipeData, character) -> use craftRecipeData:getAllCreatedItems():get(0)
--- B41 Recipe:     (items, result, player, selectedItem) -> result is the item
--- Loot spawn:     (item) -> first param is the item directly
---
--- Returns: resultItem, player/character, inputItems (if available)
+    if BurdJournals and BurdJournals.isPlayerJournalsEnabled then
+        return BurdJournals.isPlayerJournalsEnabled()
+    end
+
+    return true
+end
+
 local function getItemFromArgs(arg1, arg2, arg3, arg4)
-    -- Check for B42 craftRecipeData signature
-    -- craftRecipeData has methods like getAllCreatedItems, getAllConsumedItems
+
     if arg1 and type(arg1) == "userdata" then
         local hasGetAllCreated = pcall(function() return arg1.getAllCreatedItems end)
         if hasGetAllCreated and arg1.getAllCreatedItems then
-            -- B42 signature: (craftRecipeData, character)
+
             local createdItems = arg1:getAllCreatedItems()
             local resultItem = createdItems and createdItems:size() > 0 and createdItems:get(0) or nil
             local consumedItems = arg1:getAllConsumedItems()
@@ -38,29 +23,25 @@ local function getItemFromArgs(arg1, arg2, arg3, arg4)
         end
     end
 
-    -- Check for B41 recipe signature: (items, result, player, selectedItem)
     if arg2 and type(arg2) ~= "nil" then
-        -- Verify arg2 is actually an item (has getModData)
+
         if arg2.getModData then
             return arg2, arg3, arg1
         end
     end
 
-    -- Loot spawn signature: (item) - arg1 IS the item directly
     if arg1 and arg1.getModData then
         return arg1, nil, nil
     end
 
-    -- Fallback: something went wrong
     return nil, nil, nil
 end
 
--- Safe wrapper for generating random skills (handles if BurdJournals.generateRandomSkills isn't loaded yet)
 local function safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     if BurdJournals and BurdJournals.generateRandomSkills then
         return BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     end
-    -- Fallback: generate minimal skills manually
+
     local skills = {}
     local fallbackSkills = {"Carpentry", "Cooking", "Farming", "Foraging", "Fishing"}
     local numSkills = ZombRand(minSkills or 1, (maxSkills or 2) + 1)
@@ -74,7 +55,6 @@ local function safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     return skills
 end
 
--- Safe wrapper for generating survivor name
 local function safeGenerateSurvivorName()
     if BurdJournals and BurdJournals.generateRandomSurvivorName then
         return BurdJournals.generateRandomSurvivorName()
@@ -83,7 +63,6 @@ local function safeGenerateSurvivorName()
     return names[ZombRand(#names) + 1] .. " Survivor"
 end
 
--- Safe wrapper for generating UUID
 local function safeGenerateUUID()
     if BurdJournals and BurdJournals.generateUUID then
         return BurdJournals.generateUUID()
@@ -91,12 +70,6 @@ local function safeGenerateUUID()
     return tostring(ZombRand(100000, 999999))
 end
 
--- ============================================================
---                    BLANK JOURNAL CALLBACKS
--- ============================================================
-
--- Clean Blank - Pristine, craftable
--- Supports B42 (craftRecipeData, character), B41 (items, result, player), and loot (item)
 function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
@@ -125,7 +98,6 @@ function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
     end
 end
 
--- Worn Blank - Found in world containers
 function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
@@ -154,7 +126,6 @@ function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
     end
 end
 
--- Bloody Blank - Found on zombie corpses
 function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
@@ -183,11 +154,6 @@ function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
     end
 end
 
--- ============================================================
---                   FILLED JOURNAL CALLBACKS
--- ============================================================
-
--- Clean Filled - Player-created (SET mode) OR dev menu/loot spawned (found journal)
 function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
@@ -195,17 +161,13 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
 
         local modData = item:getModData()
 
-        -- CRITICAL: Check if journal already has data (e.g., on multiplayer reconnect)
-        -- OnCreate fires during item deserialization, so we must NOT overwrite existing data
         if modData and modData.BurdJournals and modData.BurdJournals.uuid then
-            -- Journal already has data, don't reinitialize!
+
             return
         end
 
-        -- If spawned with a player context (crafting), create a player journal
-        -- If spawned without player (dev menu/loot), create a found journal with random survivor
         if player then
-            -- Player-created journal (crafting)
+
             modData.BurdJournals = {
                 uuid = safeGenerateUUID(),
                 condition = 10,
@@ -222,7 +184,7 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
                 claimedTraits = {}
             }
         else
-            -- Loot/dev menu spawn - create as found journal with random survivor
+
             local survivorName = safeGenerateSurvivorName()
             modData.BurdJournals = {
                 uuid = safeGenerateUUID(),
@@ -249,7 +211,6 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
             BurdJournals.updateJournalIcon(item)
         end
 
-        -- Sync modData to clients in multiplayer
         if isServer() and item.transmitModData then
             item:transmitModData()
         end
@@ -260,9 +221,6 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
     end
 end
 
--- Worn Filled - Found in world containers, consumable (ADD mode, light rewards)
--- THIS IS THE PRIMARY CALLBACK FOR WORLD LOOT SPAWNS!
--- Wrapped in pcall to prevent errors from blocking item creation
 function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
@@ -270,15 +228,12 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
             return
         end
 
-        -- CRITICAL: Check if journal already has data (e.g., on multiplayer reconnect)
-        -- OnCreate fires during item deserialization, so we must NOT overwrite existing data
         local existingData = item:getModData()
         if existingData and existingData.BurdJournals and existingData.BurdJournals.uuid then
-            -- Journal already has data, don't reinitialize!
+
             return
         end
 
-        -- Get sandbox settings for worn journal rewards (with safe fallbacks)
         local minSkills = 1
         local maxSkills = 2
         local minXP = 25
@@ -295,13 +250,11 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
             maxRecipes = BurdJournals.getSandboxOption("WornJournalMaxRecipes") or maxRecipes
         end
 
-        -- Get random profession for the previous owner (with fallback)
         local professionId, professionName, flavorKey = "unemployed", "Survivor", nil
         if BurdJournals and BurdJournals.getRandomProfession then
             professionId, professionName, flavorKey = BurdJournals.getRandomProfession()
         end
 
-        -- Generate recipes (lower chance for worn journals)
         local recipes = nil
         if ZombRand(100) < recipeChance then
             local numRecipes = ZombRand(1, maxRecipes + 1)
@@ -327,13 +280,12 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
             readCount = 0,
             skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
             recipes = recipes,
-            traits = {}, -- Worn journals from world don't have traits
+            traits = {},
             claimedSkills = {},
             claimedTraits = {},
             claimedRecipes = {}
         }
 
-        -- Update name/icon (with safety check)
         if BurdJournals and BurdJournals.updateJournalName then
             BurdJournals.updateJournalName(item)
         end
@@ -341,12 +293,10 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
             BurdJournals.updateJournalIcon(item)
         end
 
-        -- Sync modData to clients in multiplayer
         if isServer() and item.transmitModData then
             item:transmitModData()
         end
 
-        -- Debug removed
         local skillCount = 0
         for _ in pairs(modData.BurdJournals.skills or {}) do skillCount = skillCount + 1 end
     end)
@@ -356,26 +306,24 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
     end
 end
 
--- Bloody Filled - Found on zombie corpses (rare rewards + traits)
 function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not item then return end
 
-        -- CRITICAL: Check if journal already has data (e.g., on multiplayer reconnect)
-        -- OnCreate fires during item deserialization, so we must NOT overwrite existing data
         local existingData = item:getModData()
         if existingData and existingData.BurdJournals and existingData.BurdJournals.uuid then
-            -- Journal already has data, don't reinitialize!
+
             return
         end
 
-        -- Get sandbox settings for bloody journal rewards (with safe fallbacks)
         local minSkills = 2
         local maxSkills = 4
         local minXP = 50
         local maxXP = 150
         local traitChance = 15
+        local recipeChance = 35
+        local maxRecipes = 2
 
         if BurdJournals and BurdJournals.getSandboxOption then
             minSkills = BurdJournals.getSandboxOption("BloodyJournalMinSkills") or minSkills
@@ -383,15 +331,15 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             minXP = BurdJournals.getSandboxOption("BloodyJournalMinXP") or minXP
             maxXP = BurdJournals.getSandboxOption("BloodyJournalMaxXP") or maxXP
             traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or traitChance
+            recipeChance = BurdJournals.getSandboxOption("BloodyJournalRecipeChance") or recipeChance
+            maxRecipes = BurdJournals.getSandboxOption("BloodyJournalMaxRecipes") or maxRecipes
         end
 
-        -- Get random profession for the previous owner (with fallback)
         local professionId, professionName, flavorKey = "unemployed", "Survivor", nil
         if BurdJournals and BurdJournals.getRandomProfession then
             professionId, professionName, flavorKey = BurdJournals.getRandomProfession()
         end
 
-        -- Generate traits if lucky (1-4 random traits)
         local traits = {}
         if ZombRand(100) < traitChance then
             local grantableTraits = (BurdJournals and BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or
@@ -400,8 +348,8 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
                 "lighteater", "dextrous", "graceful", "inconspicuous", "lowthirst"
             }
             if #grantableTraits > 0 then
-                -- Generate 1-4 random unique traits
-                local numTraits = ZombRand(1, 5)  -- 1 to 4 traits
+
+                local numTraits = ZombRand(1, 5)
                 local availableTraits = {}
                 for _, t in ipairs(grantableTraits) do
                     table.insert(availableTraits, t)
@@ -412,10 +360,25 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
                     local idx = ZombRand(#availableTraits) + 1
                     local randomTrait = availableTraits[idx]
                     if randomTrait then
-                        traits[randomTrait] = true  -- Simplified: just mark trait as present
-                        -- Remove from available to avoid duplicates
+                        traits[randomTrait] = true
+
                         table.remove(availableTraits, idx)
                     end
+                end
+            end
+        end
+
+        -- Generate recipes for bloody journals
+        local recipes = nil
+        if ZombRand(100) < recipeChance then
+            local numRecipes = ZombRand(1, maxRecipes + 1)
+            if BurdJournals and BurdJournals.generateRandomRecipes then
+                recipes = BurdJournals.generateRandomRecipes(numRecipes)
+                -- If empty table returned, set to nil
+                if recipes then
+                    local count = 0
+                    for _ in pairs(recipes) do count = count + 1 end
+                    if count == 0 then recipes = nil end
                 end
             end
         end
@@ -437,6 +400,7 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             readCount = 0,
             skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
             traits = traits,
+            recipes = recipes,
             claimedSkills = {},
             claimedTraits = {},
             claimedRecipes = {}
@@ -449,7 +413,6 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             BurdJournals.updateJournalIcon(item)
         end
 
-        -- Sync modData to clients in multiplayer
         if isServer() and item.transmitModData then
             item:transmitModData()
         end
@@ -460,23 +423,15 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
     end
 end
 
--- ============================================================
---                    LEGACY/RECIPE CALLBACKS
--- ============================================================
-
--- Legacy callback for crafting recipes (alias to clean blank)
 function BurdJournals_OnCreateBlankJournal(arg1, arg2, arg3, arg4)
     BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
 end
 
--- Called when a worn journal is cleaned/repaired (RECIPE ONLY - not loot spawn)
--- Supports B42 (craftRecipeData, character) and B41 (items, result, player)
 function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
 
-        -- Find the worn journal in the input items
         local wornJournal = nil
         if inputItems and inputItems.size then
             for i = 0, inputItems:size() - 1 do
@@ -530,17 +485,11 @@ function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
     end
 end
 
--- ============================================================
---           FILLED JOURNAL CONVERSION CALLBACKS
--- ============================================================
-
--- Convert Worn Filled -> Clean Filled (preserves data)
 function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
 
-        -- Find the worn journal in the input items
         local wornJournal = nil
         if inputItems and inputItems.size then
             for i = 0, inputItems:size() - 1 do
@@ -585,7 +534,7 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
                 end
             end
         else
-            -- Fallback: Initialize as new clean filled journal
+
             local modData = result:getModData()
             modData.BurdJournals = {
                 uuid = safeGenerateUUID(),
@@ -602,13 +551,11 @@ function BurdJournals_OnCreateFilledCleanFromWorn(arg1, arg2, arg3, arg4)
     end
 end
 
--- Convert Bloody Filled -> Worn Filled (preserves data)
 function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
 
-        -- Find the bloody journal in the input items
         local bloodyJournal = nil
         if inputItems and inputItems.size then
             for i = 0, inputItems:size() - 1 do
@@ -653,7 +600,7 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
                 end
             end
         else
-            -- Fallback: Initialize with random data
+
             BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         end
     end)
@@ -663,14 +610,11 @@ function BurdJournals_OnCreateFilledWornFromBloody(arg1, arg2, arg3, arg4)
     end
 end
 
--- Convert Worn or Bloody Filled -> Clean Filled (preserves data)
--- Universal restore callback that handles both worn and bloody inputs
 function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
 
-        -- Find the worn or bloody journal in the input items
         local sourceJournal = nil
         if inputItems and inputItems.size then
             for i = 0, inputItems:size() - 1 do
@@ -720,7 +664,7 @@ function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4
                 end
             end
         else
-            -- Fallback: Initialize as new clean filled journal
+
             local modData = result:getModData()
             modData.BurdJournals = {
                 uuid = safeGenerateUUID(),
@@ -737,13 +681,11 @@ function BurdJournals_OnCreateFilledCleanFromWornOrBloody(arg1, arg2, arg3, arg4
     end
 end
 
--- Convert Bloody Filled -> Clean Filled directly (preserves data)
 function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
     local ok, err = pcall(function()
         local result, player, inputItems = getItemFromArgs(arg1, arg2, arg3, arg4)
         if not result then return end
 
-        -- Find the bloody journal in the input items
         local bloodyJournal = nil
         if inputItems and inputItems.size then
             for i = 0, inputItems:size() - 1 do
@@ -789,7 +731,7 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
                 end
             end
         else
-            -- Fallback: Initialize as new clean filled journal
+
             local modData = result:getModData()
             modData.BurdJournals = {
                 uuid = safeGenerateUUID(),
@@ -805,3 +747,16 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
         print("[BurdJournals] ERROR in OnCreateFilledCleanFromBloody: " .. tostring(err))
     end
 end
+
+BurdJournals.OnCreateBlankClean = BurdJournals_OnCreateBlankClean
+BurdJournals.OnCreateBlankWorn = BurdJournals_OnCreateBlankWorn
+BurdJournals.OnCreateBlankBloody = BurdJournals_OnCreateBlankBloody
+BurdJournals.OnCreateFilledClean = BurdJournals_OnCreateFilledClean
+BurdJournals.OnCreateFilledWorn = BurdJournals_OnCreateFilledWorn
+BurdJournals.OnCreateFilledBloody = BurdJournals_OnCreateFilledBloody
+BurdJournals.OnCreateBlankJournal = BurdJournals_OnCreateBlankJournal
+BurdJournals.OnCleanWornJournal = BurdJournals_OnCleanWornJournal
+BurdJournals.OnCreateFilledCleanFromWorn = BurdJournals_OnCreateFilledCleanFromWorn
+BurdJournals.OnCreateFilledWornFromBloody = BurdJournals_OnCreateFilledWornFromBloody
+BurdJournals.OnCreateFilledCleanFromWornOrBloody = BurdJournals_OnCreateFilledCleanFromWornOrBloody
+BurdJournals.OnCreateFilledCleanFromBloody = BurdJournals_OnCreateFilledCleanFromBloody

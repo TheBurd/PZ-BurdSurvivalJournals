@@ -93,6 +93,7 @@ Tooltip_EN = {
     Tooltip_BurdJournals_Owner = "Owner: %s",
     Tooltip_BurdJournals_OwnerYou = "(You)",
     Tooltip_BurdJournals_Author = "Author: %s",
+    Tooltip_BurdJournals_Contributors = "Contributors: %s",
     Tooltip_BurdJournals_Profession = "Profession: %s",
     Tooltip_BurdJournals_SkillsLine = "Skills: %d/%d",
     Tooltip_BurdJournals_SkillsLineXP = "Skills: %d/%d (%s XP)",

@@ -39,8 +39,7 @@ UI_EN = {
     UI_BurdJournals_NoSkillsSelected = "Select at least one skill first.",
     UI_BurdJournals_SkillsLogged = "Skills recorded in journal.",
     UI_BurdJournals_SkillsLearned = "Knowledge absorbed from the journal!",
-    UI_BurdJournals_JournalErased = "Journal contents erased.",
-    UI_BurdJournals_JournalCleaned = "The journal has been cleaned and is now readable.",
+    -- (moved to Client Messages section below)
     UI_BurdJournals_JournalUpdated = "Journal skills updated.",
     UI_BurdJournals_JournalRenamed = "Journal renamed.",
     UI_BurdJournals_JournalConverted = "Journal converted to a clean blank journal.",
@@ -81,6 +80,7 @@ UI_EN = {
     UI_BurdJournals_BloodyJournalHeader = "BLOODY JOURNAL",
     UI_BurdJournals_WornJournalHeader = "WORN JOURNAL",
     UI_BurdJournals_PersonalJournalHeader = "PERSONAL JOURNAL",
+    UI_BurdJournals_RestoredJournalHeader = "RESTORED JOURNAL",
     UI_BurdJournals_RecordProgressHeader = "RECORD PROGRESS",
 
     -- Rarity Labels
@@ -92,6 +92,7 @@ UI_EN = {
     UI_BurdJournals_WornBloodyFlavor = "Recovered from the wasteland...",
     UI_BurdJournals_WornFlavor = "An old survivor's notes...",
     UI_BurdJournals_PersonalFlavor = "Your documented survival knowledge...",
+    UI_BurdJournals_RestoredFlavor = "Salvaged knowledge given new life...",
     UI_BurdJournals_RecordFlavor = "Document your survival skills...",
 
     -- Tab Labels
@@ -108,11 +109,29 @@ UI_EN = {
     UI_BurdJournals_BtnClaimTab = "Claim %s",
     UI_BurdJournals_BtnRecordTab = "Record %s",
     UI_BurdJournals_BtnClose = "Close",
+    UI_BurdJournals_BtnDissolve = "Dissolve",
+    UI_BurdJournals_ConfirmDissolve = "Are you sure you want to dissolve this journal? This cannot be undone.",
+    UI_BurdJournals_DissolveTitle = "Dissolve Journal",
+    UI_BurdJournals_BtnClearMyBaseline = "Clear My Baseline",
+    UI_BurdJournals_ClearMyBaselineTooltip = "Clears YOUR baseline - all skills/traits/recipes become recordable for this character.",
+    UI_BurdJournals_BtnClearAllBaselines = "Clear All (Server)",
+    UI_BurdJournals_ClearAllBaselinesTooltip = "ADMIN: Clears ALL player baseline caches on the server. Players will get fresh baselines on next character creation.",
+    UI_BurdJournals_BaselineBypassEnabled = "Baseline cleared! All skills/traits/recipes now recordable for this character.",
+    UI_BurdJournals_ClearingAllBaselines = "Clearing all baseline caches...",
+    UI_BurdJournals_AllBaselinesCleared = "Server baseline cache cleared!",
+    UI_BurdJournals_CmdBaselineBypassed = "[Journals] Baseline cleared! All skills/traits/recipes now recordable for this character.",
+    UI_BurdJournals_CmdBaselineHelp = "[Journals] Usage: /clearbaseline - Clears your skill baseline and allows recording everything.",
+    -- Legacy keys for backwards compatibility
+    UI_BurdJournals_BtnClearBaselineCache = "Clear Baseline & Cache",
+    UI_BurdJournals_ClearBaselineCacheTooltip = "Clears your baseline data and server cache. Use to fix baseline issues or start fresh.",
+    UI_BurdJournals_BaselineCacheCleared = "Baseline & cache cleared! Fresh baseline captured.",
+    UI_BurdJournals_CmdBaselineCleared = "[Journals] Your baseline has been cleared and recaptured.",
     UI_BurdJournals_BtnKeepReading = "Keep Reading",
     UI_BurdJournals_BtnCancelClose = "Cancel & Close",
     UI_BurdJournals_BtnQueue = "QUEUE",
     UI_BurdJournals_BtnClaim = "CLAIM",
     UI_BurdJournals_BtnRecord = "RECORD",
+    UI_BurdJournals_BtnBatching = "BATCH",
     UI_BurdJournals_BtnErase = "Erase",
 
     -- Button States
@@ -283,6 +302,14 @@ UI_EN = {
     UI_BurdJournals_PlusRecipes = ", +%d recipes",
     UI_BurdJournals_RecipeAlreadyKnownCount = "%d recipe already known",
     UI_BurdJournals_RecipesAlreadyKnownCount = "%d recipes already known",
+    UI_BurdJournals_RecipeKnowledge = "Recipe knowledge",
+    UI_BurdJournals_RecipeKnowledgeQueued = "Recipe knowledge - Queued",
+    UI_BurdJournals_RecipeKnowledgeQueuedNum = "Recipe knowledge - Queued #%d",
+    UI_BurdJournals_UnknownTrait = "Unknown Trait",
+    UI_BurdJournals_ApproachingCapacity = "Journal approaching capacity: %s",
+    UI_BurdJournals_CapacitySkills = "Skills: %d/%d",
+    UI_BurdJournals_CapacityTraits = "Traits: %d/%d",
+    UI_BurdJournals_CapacityRecipes = "Recipes: %d/%d",
 
     -- Stats Tab
     UI_BurdJournals_Stats = "STATS",

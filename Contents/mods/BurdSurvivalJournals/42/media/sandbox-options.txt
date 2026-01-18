@@ -159,30 +159,30 @@ option BurdJournals.LearningTimePerRecipe = {
 }
 
 /* Journal Capacity Limits */
-/* Controls max items that can be stored in player journals */
+/* Controls max items that can be stored in player journals (0 = unlimited) */
 option BurdJournals.MaxSkillsPerJournal = {
     type = integer,
-    min = 10,
-    max = 100,
-    default = 50,
+    min = 0,
+    max = 500,
+    default = 0,
     page = BurdJournals_Player,
     translation = BurdJournals_MaxSkillsPerJournal,
 }
 
 option BurdJournals.MaxTraitsPerJournal = {
     type = integer,
-    min = 20,
-    max = 200,
-    default = 100,
+    min = 0,
+    max = 500,
+    default = 0,
     page = BurdJournals_Player,
     translation = BurdJournals_MaxTraitsPerJournal,
 }
 
 option BurdJournals.MaxRecipesPerJournal = {
     type = integer,
-    min = 100,
-    max = 1000,
-    default = 500,
+    min = 0,
+    max = 10000,
+    default = 0,
     page = BurdJournals_Player,
     translation = BurdJournals_MaxRecipesPerJournal,
 }
@@ -435,6 +435,53 @@ option BurdJournals.AllowNegativeTraits = {
     default = false,
     page = BurdJournals_Advanced,
     translation = BurdJournals_AllowNegativeTraits,
+}
+
+/* Allow player journals from worn/bloody blanks to dissolve */
+option BurdJournals.AllowPlayerJournalDissolution = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_AllowPlayerJournalDissolution,
+}
+
+/* ============================================================ */
+/* PERFORMANCE SETTINGS                                          */
+/* Batch processing for faster record/absorb operations          */
+/* ============================================================ */
+
+/* Record Batch Size - How many items to record per timed action */
+/* Higher values = faster "Record All" but longer individual action bars */
+option BurdJournals.RecordBatchSize = {
+    type = integer,
+    min = 1,
+    max = 50,
+    default = 15,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_RecordBatchSize,
+}
+
+/* Absorb Batch Size - How many items to claim/absorb per timed action */
+/* Higher values = faster "Absorb All" but longer individual action bars */
+option BurdJournals.AbsorbBatchSize = {
+    type = integer,
+    min = 1,
+    max = 50,
+    default = 15,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_AbsorbBatchSize,
+}
+
+/* Batch Time Multiplier - Reduces time when processing batches */
+/* 1.0 = no reduction (full time), 0.5 = half time, 0.25 = quarter time */
+/* Only affects "Record All" and "Absorb All" operations, not individual clicks */
+option BurdJournals.BatchTimeMultiplier = {
+    type = double,
+    min = 0.1,
+    max = 1.0,
+    default = 0.25,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_BatchTimeMultiplier,
 }
 
 /* ============================================================ */

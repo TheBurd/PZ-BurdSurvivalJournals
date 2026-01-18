@@ -376,6 +376,8 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
         local minXP = 50
         local maxXP = 150
         local traitChance = 15
+        local recipeChance = 35
+        local maxRecipes = 2
 
         if BurdJournals and BurdJournals.getSandboxOption then
             minSkills = BurdJournals.getSandboxOption("BloodyJournalMinSkills") or minSkills
@@ -383,6 +385,8 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             minXP = BurdJournals.getSandboxOption("BloodyJournalMinXP") or minXP
             maxXP = BurdJournals.getSandboxOption("BloodyJournalMaxXP") or maxXP
             traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or traitChance
+            recipeChance = BurdJournals.getSandboxOption("BloodyJournalRecipeChance") or recipeChance
+            maxRecipes = BurdJournals.getSandboxOption("BloodyJournalMaxRecipes") or maxRecipes
         end
 
         -- Get random profession for the previous owner (with fallback)
@@ -420,6 +424,21 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             end
         end
 
+        -- Generate recipes for bloody journals
+        local recipes = nil
+        if ZombRand(100) < recipeChance then
+            local numRecipes = ZombRand(1, maxRecipes + 1)
+            if BurdJournals and BurdJournals.generateRandomRecipes then
+                recipes = BurdJournals.generateRandomRecipes(numRecipes)
+                -- If empty table returned, set to nil
+                if recipes then
+                    local count = 0
+                    for _ in pairs(recipes) do count = count + 1 end
+                    if count == 0 then recipes = nil end
+                end
+            end
+        end
+
         local modData = item:getModData()
         modData.BurdJournals = {
             uuid = safeGenerateUUID(),
@@ -437,6 +456,7 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
             readCount = 0,
             skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
             traits = traits,
+            recipes = recipes,
             claimedSkills = {},
             claimedTraits = {},
             claimedRecipes = {}
@@ -805,3 +825,20 @@ function BurdJournals_OnCreateFilledCleanFromBloody(arg1, arg2, arg3, arg4)
         print("[BurdJournals] ERROR in OnCreateFilledCleanFromBloody: " .. tostring(err))
     end
 end
+
+-- ============================================================
+-- Register OnCreate callbacks for B42 craftRecipe system
+-- B42 requires TableName.FunctionName format (not global functions)
+-- ============================================================
+BurdJournals.OnCreateBlankClean = BurdJournals_OnCreateBlankClean
+BurdJournals.OnCreateBlankWorn = BurdJournals_OnCreateBlankWorn
+BurdJournals.OnCreateBlankBloody = BurdJournals_OnCreateBlankBloody
+BurdJournals.OnCreateFilledClean = BurdJournals_OnCreateFilledClean
+BurdJournals.OnCreateFilledWorn = BurdJournals_OnCreateFilledWorn
+BurdJournals.OnCreateFilledBloody = BurdJournals_OnCreateFilledBloody
+BurdJournals.OnCreateBlankJournal = BurdJournals_OnCreateBlankJournal
+BurdJournals.OnCleanWornJournal = BurdJournals_OnCleanWornJournal
+BurdJournals.OnCreateFilledCleanFromWorn = BurdJournals_OnCreateFilledCleanFromWorn
+BurdJournals.OnCreateFilledWornFromBloody = BurdJournals_OnCreateFilledWornFromBloody
+BurdJournals.OnCreateFilledCleanFromWornOrBloody = BurdJournals_OnCreateFilledCleanFromWornOrBloody
+BurdJournals.OnCreateFilledCleanFromBloody = BurdJournals_OnCreateFilledCleanFromBloody

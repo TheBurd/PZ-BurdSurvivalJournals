@@ -1,15 +1,3 @@
---[[
-    Burd's Survival Journals - Enhanced Tooltips
-    Build 42 - Version 2.2
-
-    Adds rich tooltip information for journal items showing:
-    - Owner (username who owns the journal)
-    - Author name (character name)
-    - Skill/trait counts with XP totals
-    - Journal condition (Clean/Worn/Bloody)
-    - Origin info (Personal/Found/Recovered)
-    - Age in days
-]]
 
 require "BurdJournals_Shared"
 require "ISUI/ISToolTipInv"
@@ -17,9 +5,6 @@ require "ISUI/ISToolTipInv"
 BurdJournals = BurdJournals or {}
 BurdJournals.Tooltips = BurdJournals.Tooltips or {}
 
--- ==================== HELPER FUNCTIONS ====================
-
--- Format age in days
 local function formatAge(timestamp)
     if not timestamp then return nil end
 
@@ -39,7 +24,6 @@ local function formatAge(timestamp)
     end
 end
 
--- Check if player is the owner
 local function isCurrentPlayerOwner(journalData)
     local player = getPlayer()
     if not player then return false end
@@ -47,12 +31,10 @@ local function isCurrentPlayerOwner(journalData)
     local playerUsername = player:getUsername()
     if not playerUsername then return false end
 
-    -- Check ownerUsername field first (new format)
     if journalData.ownerUsername then
         return journalData.ownerUsername == playerUsername
     end
 
-    -- Fallback: Check author against username or character name
     if journalData.author then
         if journalData.author == playerUsername then
             return true
@@ -65,8 +47,6 @@ local function isCurrentPlayerOwner(journalData)
 
     return false
 end
-
--- ==================== BUILD TOOLTIP LINES ====================
 
 function BurdJournals.Tooltips.getExtraInfo(item)
     if not item then return nil end
@@ -85,9 +65,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
 
     local lines = {}
 
-    -- ==================== OWNERSHIP INFO ====================
-
-    -- Owner (username) - shows who owns this journal
     if journalData.ownerUsername then
         local ownerText = journalData.ownerUsername
         if isCurrentPlayerOwner(journalData) then
@@ -100,12 +77,11 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Author (character name) - the character who wrote the journal
     if journalData.author then
-        -- Only show author if different from owner display or if no owner
+
         local showAuthor = true
         if journalData.ownerUsername and journalData.author == journalData.ownerUsername then
-            showAuthor = false  -- Don't duplicate if same
+            showAuthor = false
         end
         if showAuthor then
             local authorLine = string.format(getText("Tooltip_BurdJournals_Author") or "Author: %s", journalData.author)
@@ -113,15 +89,31 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Profession info (for found journals)
+    if journalData.contributors then
+        local contributorNames = {}
+        for steamId, contribData in pairs(journalData.contributors) do
+            if contribData.characterName then
+                table.insert(contributorNames, contribData.characterName)
+            elseif contribData.username then
+                table.insert(contributorNames, contribData.username)
+            end
+        end
+
+        if #contributorNames > 0 then
+
+            table.sort(contributorNames)
+
+            local contributorList = table.concat(contributorNames, ", ")
+            local contribLine = string.format(getText("Tooltip_BurdJournals_Contributors") or "Contributors: %s", contributorList)
+            table.insert(lines, {text = contribLine, color = {r=0.6, g=0.8, b=0.6}})
+        end
+    end
+
     if journalData.professionName then
         local profLine = string.format(getText("Tooltip_BurdJournals_Profession") or "Profession: %s", journalData.professionName)
         table.insert(lines, {text = profLine, color = {r=0.7, g=0.7, b=0.7}})
     end
 
-    -- ==================== CONTENTS INFO ====================
-
-    -- Count skills
     local skillCount = 0
     local unclaimedSkills = 0
     local totalXP = 0
@@ -135,7 +127,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Count traits
     local traitCount = 0
     local unclaimedTraits = 0
     if journalData.traits then
@@ -147,7 +138,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Skills line
     if skillCount > 0 then
         local skillText
         if unclaimedSkills > 0 and BurdJournals.formatXP then
@@ -163,7 +153,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Traits line
     if traitCount > 0 then
         local traitText = string.format(getText("Tooltip_BurdJournals_TraitsLine") or "Traits: %d/%d", unclaimedTraits, traitCount)
         if unclaimedTraits > 0 then
@@ -174,7 +163,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Count recipes
     local recipeCount = 0
     local unclaimedRecipes = 0
     if journalData.recipes then
@@ -186,20 +174,16 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    -- Recipes line
     if recipeCount > 0 then
         local recipeText = string.format(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
         if unclaimedRecipes > 0 then
-            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})  -- Teal/cyan for recipes
+            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})
         else
             recipeText = recipeText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
             table.insert(lines, {text = recipeText, color = {r=0.5, g=0.5, b=0.5}})
         end
     end
 
-    -- ==================== CONDITION & ORIGIN ====================
-
-    -- Journal condition (physical state)
     local conditionText = nil
     local conditionColor = nil
 
@@ -221,7 +205,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         table.insert(lines, {text = conditionText, color = conditionColor})
     end
 
-    -- Origin info (where did this journal come from)
     local originText = nil
     local originColor = {r=0.6, g=0.6, b=0.6}
 
@@ -235,7 +218,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         originText = getText("Tooltip_BurdJournals_OriginCrafted") or "Origin: Crafted"
         originColor = {r=0.5, g=0.6, b=0.5}
     elseif not journalData.ownerUsername and journalData.author then
-        -- Legacy journal or found journal
+
         originText = getText("Tooltip_BurdJournals_OriginFound") or "Origin: Found"
         originColor = {r=0.5, g=0.5, b=0.6}
     elseif isCurrentPlayerOwner(journalData) then
@@ -247,9 +230,6 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         table.insert(lines, {text = originText, color = originColor})
     end
 
-    -- ==================== AGE INFO ====================
-
-    -- Age (how long ago was this created)
     if journalData.timestamp then
         local ageText = formatAge(journalData.timestamp)
         if ageText then
@@ -267,50 +247,58 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     return lines
 end
 
--- ==================== TOOLTIP HOOK ====================
--- Hook into ISToolTipInv to add extra lines for journal items
--- Note: ISToolTipInv uses self:drawRect/self:drawText, not self.tooltip
-
 local originalRender = ISToolTipInv.render
 
 ISToolTipInv.render = function(self)
-    -- Call original render first
+
     originalRender(self)
 
-    -- Check if we have a valid journal item
     if not self.item then return end
-    if not self.item.getFullType then return end  -- Ensure method exists
+    if not self.item.getFullType then return end
 
     local fullType = self.item:getFullType()
     if not fullType or not string.find(fullType, "BurdJournals") then
         return
     end
 
-    -- Get extra tooltip info
     local extraLines = BurdJournals.Tooltips.getExtraInfo(self.item)
     if not extraLines or #extraLines == 0 then
         return
     end
 
-    -- Get font and line height
     local font = UIFont.Small
     local lineHeight = getTextManager():getFontHeight(font) + 2
 
-    -- Calculate starting Y position (after the existing tooltip content)
-    local startY = self:getHeight() + 5
+    local extraHeight = (#extraLines * lineHeight) + 12
 
-    -- Draw a separator line
-    self:drawRect(10, startY - 3, self:getWidth() - 20, 1, 0.3, 0.6, 0.6, 0.6)
+    local originalHeight = self:getHeight()
 
-    -- Draw each extra line
+    local bgColor = self.backgroundColor
+    local borderColor = self.borderColor
+
+    if not bgColor or not borderColor then
+        return
+    end
+
+    self:drawRect(0, originalHeight, self:getWidth(), extraHeight, bgColor.a, bgColor.r, bgColor.g, bgColor.b)
+
+    self:drawRect(0, originalHeight, 1, extraHeight, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
+
+    self:drawRect(self:getWidth() - 1, originalHeight, 1, extraHeight, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
+
+    self:drawRect(0, originalHeight + extraHeight - 1, self:getWidth(), 1, borderColor.a, borderColor.r, borderColor.g, borderColor.b)
+
+    self:drawRect(1, originalHeight - 1, self:getWidth() - 2, 1, bgColor.a, bgColor.r, bgColor.g, bgColor.b)
+
+    local startY = originalHeight + 5
+    self:drawRect(10, startY - 3, self:getWidth() - 20, 1, 0.5, 0.6, 0.6, 0.6)
+
     for i, lineData in ipairs(extraLines) do
         local y = startY + (i - 1) * lineHeight
         self:drawText(lineData.text, 12, y, lineData.color.r, lineData.color.g, lineData.color.b, 1.0, font)
     end
 
-    -- Expand tooltip height to fit new content
-    local extraHeight = (#extraLines * lineHeight) + 10
-    self:setHeight(self:getHeight() + extraHeight)
+    self:setHeight(originalHeight + extraHeight)
 end
 
-print("[BurdJournals] Tooltip hook installed")
+BurdJournals.debugPrint("[BurdJournals] Tooltip hook installed")

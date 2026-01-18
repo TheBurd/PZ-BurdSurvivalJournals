@@ -40,7 +40,7 @@ module Base
         time = 60,
         Tags = AnySurfaceCraft,
         category = Miscellaneous,
-        OnCreate = BurdJournals_OnCreateBlankClean,
+        OnCreate = BurdJournals.OnCreateBlankClean,
         inputs
         {
             item 1 [BurdJournals.FilledSurvivalJournal],
@@ -63,9 +63,9 @@ module Base
         time = 120,
         Tags = AnySurfaceCraft,
         category = Miscellaneous,
-        skillRequired = Tailoring:1,
+        SkillRequired = Tailoring:1,
         xpAward = Tailoring:3,
-        OnCreate = BurdJournals_OnCreateBlankClean,
+        OnCreate = BurdJournals.OnCreateBlankClean,
         inputs
         {
             item 1 [Base.Journal;Base.Notebook],
@@ -90,7 +90,7 @@ module Base
         time = 90,
         Tags = AnySurfaceCraft,
         category = Miscellaneous,
-        OnCreate = BurdJournals_OnCreateBlankClean,
+        OnCreate = BurdJournals.OnCreateBlankClean,
         inputs
         {
             item 1 [Base.Journal;Base.Notebook],
@@ -115,9 +115,9 @@ module Base
         time = 60,
         Tags = AnySurfaceCraft,
         category = Miscellaneous,
-        skillRequired = Tailoring:1,
+        SkillRequired = Tailoring:1,
         xpAward = Tailoring:3,
-        OnCreate = BurdJournals_OnCreateFilledCleanFromWornOrBloody,
+        OnCreate = BurdJournals.OnCreateFilledCleanFromWornOrBloody,
         inputs
         {
             item 1 [BurdJournals.FilledSurvivalJournal_Worn;BurdJournals.FilledSurvivalJournal_Bloody],
@@ -142,7 +142,7 @@ module Base
         time = 45,
         Tags = AnySurfaceCraft,
         category = Miscellaneous,
-        OnCreate = BurdJournals_OnCreateFilledCleanFromWornOrBloody,
+        OnCreate = BurdJournals.OnCreateFilledCleanFromWornOrBloody,
         inputs
         {
             item 1 [BurdJournals.FilledSurvivalJournal_Worn;BurdJournals.FilledSurvivalJournal_Bloody],

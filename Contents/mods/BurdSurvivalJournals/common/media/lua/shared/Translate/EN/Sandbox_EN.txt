@@ -73,13 +73,13 @@ Sandbox_EN = {
 
     -- Journal Capacity Limits
     Sandbox_BurdJournals_MaxSkillsPerJournal = "Max Skills Per Journal",
-    Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip = "Maximum number of skills that can be recorded in a single journal. Vanilla game has ~30 skills. Increase for heavily modded games.",
+    Sandbox_BurdJournals_MaxSkillsPerJournal_tooltip = "Maximum number of skills that can be recorded in a single journal. Set to 0 for unlimited. Vanilla game has ~30 skills.",
 
     Sandbox_BurdJournals_MaxTraitsPerJournal = "Max Traits Per Journal",
-    Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip = "Maximum number of traits that can be recorded in a single journal. Vanilla game has ~50 grantable traits. Increase for heavily modded games.",
+    Sandbox_BurdJournals_MaxTraitsPerJournal_tooltip = "Maximum number of traits that can be recorded in a single journal. Set to 0 for unlimited. Vanilla game has ~50 grantable traits.",
 
     Sandbox_BurdJournals_MaxRecipesPerJournal = "Max Recipes Per Journal",
-    Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip = "Maximum number of recipes that can be recorded in a single journal. Heavily modded games can have 400+ magazine recipes. Increase if you get capacity warnings.",
+    Sandbox_BurdJournals_MaxRecipesPerJournal_tooltip = "Maximum number of recipes that can be recorded in a single journal. Set to 0 for unlimited. Heavily modded games can have 400+ magazine recipes.",
 
     -- ============================================================
     -- TAB 2: LOOT SETTINGS
@@ -175,5 +175,25 @@ Sandbox_EN = {
     -- Trait Settings
     Sandbox_BurdJournals_AllowNegativeTraits = "Allow Negative Traits",
     Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "If enabled, negative traits (like Clumsy, Slow Learner, etc.) can appear in journals and be recorded. Useful for modded traits or challenge runs. Default: OFF (only positive traits).",
+
+    -- Player Journal Dissolution
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution = "Allow Restored Journal Dissolution",
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution_tooltip = "Controls whether 'Restored' journals (player journals created from worn/bloody blanks) dissolve after all contents are claimed. Restored journals always display their origin status. Default: OFF (restored journals persist forever like clean journals).",
+
+    -- ============================================================
+    -- PERFORMANCE SETTINGS
+    -- ============================================================
+
+    -- Record Batch Size
+    Sandbox_BurdJournals_RecordBatchSize = "Record Batch Size",
+    Sandbox_BurdJournals_RecordBatchSize_tooltip = "How many skills/traits/recipes to record in a single action when using 'Record All' or 'Record Tab'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    -- Absorb Batch Size
+    Sandbox_BurdJournals_AbsorbBatchSize = "Absorb Batch Size",
+    Sandbox_BurdJournals_AbsorbBatchSize_tooltip = "How many skills/traits/recipes to absorb in a single action when using 'Absorb All'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    -- Batch Time Multiplier
+    Sandbox_BurdJournals_BatchTimeMultiplier = "Batch Time Multiplier",
+    Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplier for batch action duration. Lower = faster batches. Example: 15 recipes at 0.8s each = 12s normally. With 0.25 multiplier = 3s. Only affects 'Record All' and 'Absorb All', not individual clicks. Default: 0.25 (4x faster)",
 
 }
