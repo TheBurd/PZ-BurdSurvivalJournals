@@ -14,7 +14,7 @@ A Project Zomboid mod for Build 42 that lets you record your survival skills in 
 ## Installation
 
 ### Steam Workshop
-Subscribe to the mod on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3394230024)
+Subscribe to the mod on the [Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3639628777)
 
 ### Manual Installation
 1. Download or clone this repository
