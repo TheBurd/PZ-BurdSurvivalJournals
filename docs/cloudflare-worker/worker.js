@@ -11,8 +11,8 @@
 const GITHUB_OAUTH_URL = 'https://github.com/login/oauth/access_token';
 
 // CORS headers
-function getCorsHeaders(origin) {
-    const allowedOrigins = (ALLOWED_ORIGINS || 'https://theburd.github.io').split(',').map(o => o.trim());
+function getCorsHeaders(origin, env) {
+    const allowedOrigins = (env?.ALLOWED_ORIGINS || 'https://theburd.github.io').split(',').map(o => o.trim());
 
     // Check if origin is allowed
     const isAllowed = allowedOrigins.includes(origin) ||
@@ -28,11 +28,11 @@ function getCorsHeaders(origin) {
 }
 
 // Handle CORS preflight
-function handleOptions(request) {
+function handleOptions(request, env) {
     const origin = request.headers.get('Origin');
     return new Response(null, {
         status: 204,
-        headers: getCorsHeaders(origin)
+        headers: getCorsHeaders(origin, env)
     });
 }
 
@@ -41,11 +41,11 @@ export default {
     async fetch(request, env) {
         const url = new URL(request.url);
         const origin = request.headers.get('Origin');
-        const corsHeaders = getCorsHeaders(origin);
+        const corsHeaders = getCorsHeaders(origin, env);
 
         // Handle CORS preflight
         if (request.method === 'OPTIONS') {
-            return handleOptions(request);
+            return handleOptions(request, env);
         }
 
         // Route: POST /token - Exchange code for access token
@@ -80,6 +80,58 @@ export default {
                 // Return token to client
                 return new Response(JSON.stringify(tokenData), {
                     status: tokenResponse.ok ? 200 : 400,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            } catch (error) {
+                return new Response(JSON.stringify({ error: error.message }), {
+                    status: 500,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+            }
+        }
+
+        // Route: POST /revoke - Revoke an access token
+        if (url.pathname === '/revoke' && request.method === 'POST') {
+            try {
+                const body = await request.json();
+                const { token } = body;
+
+                if (!token) {
+                    return new Response(JSON.stringify({ error: 'Missing token parameter' }), {
+                        status: 400,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                    });
+                }
+
+                // Revoke the token via GitHub API
+                // https://docs.github.com/en/rest/apps/oauth-applications#delete-an-app-token
+                const revokeResponse = await fetch(
+                    `https://api.github.com/applications/${env.GITHUB_CLIENT_ID}/token`,
+                    {
+                        method: 'DELETE',
+                        headers: {
+                            'Accept': 'application/vnd.github+json',
+                            'Authorization': 'Basic ' + btoa(`${env.GITHUB_CLIENT_ID}:${env.GITHUB_CLIENT_SECRET}`),
+                            'X-GitHub-Api-Version': '2022-11-28'
+                        },
+                        body: JSON.stringify({ access_token: token })
+                    }
+                );
+
+                // 204 = success, token was revoked
+                // 404 = token was already invalid/revoked
+                if (revokeResponse.status === 204 || revokeResponse.status === 404) {
+                    return new Response(JSON.stringify({ success: true }), {
+                        status: 200,
+                        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                    });
+                }
+
+                return new Response(JSON.stringify({
+                    error: 'Failed to revoke token',
+                    status: revokeResponse.status
+                }), {
+                    status: revokeResponse.status,
                     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 });
             } catch (error) {

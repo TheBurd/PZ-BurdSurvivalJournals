@@ -160,9 +160,32 @@ export function getAuthStatus() {
 
 /**
  * Logout from GitHub
+ * Revokes the token on GitHub's side and clears local storage
+ * @returns {Promise<boolean>} True if logout was successful
  */
-export function logout() {
+export async function logout() {
+    const token = getGitHubToken();
+
+    // Clear local token first
     clearGitHubToken();
+
+    // If we had a token, try to revoke it on GitHub's side
+    if (token) {
+        try {
+            await fetch(`${OAUTH_CONFIG.workerUrl}/revoke`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ token })
+            });
+            // We don't really care if this fails - token is already cleared locally
+        } catch (e) {
+            console.warn('Failed to revoke token on GitHub:', e);
+        }
+    }
+
+    return true;
 }
 
 /**
