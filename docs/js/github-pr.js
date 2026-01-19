@@ -193,10 +193,15 @@ async function createPullRequest({ title, body, head, base }) {
 /**
  * Submit translations as a pull request
  * @param {Object} translationsByLang - Object with langCode keys and translations values
- * @param {Function} onProgress - Progress callback
+ * @param {Object} options - Options object
+ * @param {Function} options.onProgress - Progress callback
+ * @param {string} options.customTitle - Custom PR title (optional)
+ * @param {string} options.customBody - Custom PR body (optional)
+ * @param {Object} options.langNames - Map of langCode to display name
  * @returns {Promise<Object>} Result with PR URL
  */
-export async function submitTranslationsPR(translationsByLang, onProgress = null) {
+export async function submitTranslationsPR(translationsByLang, options = {}) {
+    const { onProgress = null, customTitle = null, customBody = null, langNames = {} } = options;
     if (!isGitHubAuthenticated()) {
         throw new Error('Not authenticated with GitHub');
     }
@@ -285,8 +290,8 @@ export async function submitTranslationsPR(translationsByLang, onProgress = null
     // Create PR
     if (onProgress) onProgress('Creating pull request...', 95);
 
-    const prTitle = generatePRTitle(languages);
-    const prBody = generatePRBody(languages, translationsByLang);
+    const prTitle = customTitle || generatePRTitle(languages, langNames);
+    const prBody = customBody || generatePRBody(languages, translationsByLang, langNames);
 
     const pr = await createPullRequest({
         title: prTitle,
@@ -309,13 +314,16 @@ export async function submitTranslationsPR(translationsByLang, onProgress = null
 /**
  * Generate PR title
  * @param {string[]} languages - Array of language codes
+ * @param {Object} langNames - Optional map of langCode to display name
  * @returns {string} PR title
  */
-function generatePRTitle(languages) {
+export function generatePRTitle(languages, langNames = {}) {
+    const getDisplayName = (code) => langNames[code] || code;
+
     if (languages.length === 1) {
-        return `Add/Update ${languages[0]} translation`;
+        return `Add/Update ${getDisplayName(languages[0])} translation`;
     } else if (languages.length <= 3) {
-        return `Add/Update ${languages.join(', ')} translations`;
+        return `Add/Update ${languages.map(getDisplayName).join(', ')} translations`;
     } else {
         return `Add/Update translations for ${languages.length} languages`;
     }
@@ -325,11 +333,13 @@ function generatePRTitle(languages) {
  * Generate PR body
  * @param {string[]} languages - Array of language codes
  * @param {Object} translationsByLang - Translations by language
+ * @param {Object} langNames - Optional map of langCode to display name
  * @returns {string} PR body
  */
-function generatePRBody(languages, translationsByLang) {
+export function generatePRBody(languages, translationsByLang, langNames = {}) {
     const english = getEnglishBaseline();
     const englishKeyCount = Object.keys(english).length;
+    const getDisplayName = (code) => langNames[code] || code;
 
     let body = `## Translation Submission\n\n`;
     body += `This PR adds/updates translations for the following languages:\n\n`;
@@ -338,7 +348,7 @@ function generatePRBody(languages, translationsByLang) {
         const translations = translationsByLang[langCode];
         const keyCount = Object.keys(translations).length;
         const percentage = Math.round((keyCount / englishKeyCount) * 100);
-        body += `- **${langCode}**: ${keyCount}/${englishKeyCount} keys (${percentage}%)\n`;
+        body += `- **${getDisplayName(langCode)}** (${langCode}): ${keyCount} changed/new keys\n`;
     }
 
     body += `\n### Categories Updated\n\n`;
@@ -347,7 +357,7 @@ function generatePRBody(languages, translationsByLang) {
         const translations = translationsByLang[langCode];
         const categorized = categorizeTranslations(translations);
 
-        body += `**${langCode}:**\n`;
+        body += `**${getDisplayName(langCode)}:**\n`;
         for (const category of CATEGORIES) {
             const count = Object.keys(categorized[category] || {}).length;
             if (count > 0) {

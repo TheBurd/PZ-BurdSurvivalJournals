@@ -34,6 +34,10 @@ let discoveredRepoLanguages = []; // Dynamically discovered from GitHub API
 let isLoading = false;
 let isOfflineMode = false;
 
+// Track original repo translations to detect changes
+// Structure: { langCode: { key: value, ... }, ... }
+let originalRepoTranslations = {};
+
 // Event callbacks
 const eventHandlers = {
     onLoadingStart: [],
@@ -229,6 +233,9 @@ export async function switchLanguage(langCode, loadFromRepo = true, onProgress =
                 }
             });
 
+            // Store the original repo translations for this language (for change detection)
+            originalRepoTranslations[langCode] = { ...result.translations };
+
             // Merge repo translations (repo takes precedence for existing keys)
             // But preserve local additions
             for (const [key, value] of Object.entries(result.translations)) {
@@ -236,6 +243,9 @@ export async function switchLanguage(langCode, loadFromRepo = true, onProgress =
                     currentTranslations[key] = value;
                 }
             }
+        } else if (!isLanguageInRepo(langCode)) {
+            // For new languages not in repo, there are no original translations
+            originalRepoTranslations[langCode] = {};
         }
 
         emit('onLanguageChanged', { langCode, translations: currentTranslations });
@@ -485,24 +495,57 @@ export function forceSave() {
 
 /**
  * Get all saved translation data for PR submission
- * @returns {Object} All translations by language
+ * Only includes translations that are NEW or CHANGED compared to the repo
+ * @returns {Object} Changed/new translations by language
  */
 export function getAllSavedTranslationsForSubmission() {
     const result = {};
+
+    // First, save current work to ensure we have the latest
+    if (currentLanguage && Object.keys(currentTranslations).length > 0) {
+        saveLanguageTranslations(currentLanguage, currentTranslations);
+    }
+
     const saved = getAllTranslations();
 
     for (const [langCode, data] of Object.entries(saved)) {
-        if (data.translations && Object.keys(data.translations).length > 0) {
-            result[langCode] = data.translations;
+        if (!data.translations || Object.keys(data.translations).length === 0) {
+            continue;
+        }
+
+        // Get the original repo translations for this language
+        const originalRepo = originalRepoTranslations[langCode] || {};
+
+        // Find only changed or new translations
+        const changedTranslations = {};
+        for (const [key, value] of Object.entries(data.translations)) {
+            // Skip empty values
+            if (!value || !value.trim()) continue;
+
+            const originalValue = originalRepo[key];
+
+            // Include if: new key (not in repo) OR value has changed
+            if (originalValue === undefined || originalValue !== value) {
+                changedTranslations[key] = value;
+            }
+        }
+
+        // Only include language if there are actual changes
+        if (Object.keys(changedTranslations).length > 0) {
+            result[langCode] = changedTranslations;
         }
     }
 
-    // Include current unsaved work
-    if (currentLanguage && Object.keys(currentTranslations).length > 0) {
-        result[currentLanguage] = { ...currentTranslations };
-    }
-
     return result;
+}
+
+/**
+ * Get original repo translations for a language
+ * @param {string} langCode - Language code
+ * @returns {Object} Original translations from repo
+ */
+export function getOriginalRepoTranslations(langCode) {
+    return originalRepoTranslations[langCode] || {};
 }
 
 /**

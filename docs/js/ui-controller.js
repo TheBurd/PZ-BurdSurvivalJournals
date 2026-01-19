@@ -44,7 +44,7 @@ import {
     getGitHubUser,
     isGitHubAuthenticated
 } from './github-auth.js';
-import { submitTranslationsPR, canSubmitPR } from './github-pr.js';
+import { submitTranslationsPR, canSubmitPR, generatePRTitle, generatePRBody } from './github-pr.js';
 import { extractPlaceholders } from './lua-parser.js';
 import { getSavedLanguages, deleteLanguageTranslations } from './storage-manager.js';
 
@@ -514,19 +514,266 @@ function handleGitHubClick() {
 }
 
 async function handleSubmitPR() {
-    const translations = getAllSavedTranslationsForSubmission();
-    const status = canSubmitPR(translations);
+    const allTranslations = getAllSavedTranslationsForSubmission();
+
+    // Filter out EN (English is the baseline, not a translation to submit)
+    // Also filter out any empty translation sets
+    const submittableTranslations = {};
+    for (const [langCode, translations] of Object.entries(allTranslations)) {
+        if (langCode === 'EN') continue; // Never submit English as a "translation"
+
+        // Only include translations that have actual content
+        const filledKeys = Object.entries(translations).filter(([k, v]) => v && v.trim());
+        if (filledKeys.length > 0) {
+            submittableTranslations[langCode] = Object.fromEntries(filledKeys);
+        }
+    }
+
+    const status = canSubmitPR(submittableTranslations);
 
     if (!status.canSubmit) {
         showNotification(status.reason, 'warning');
         return;
     }
 
+    // Show confirmation modal instead of immediately submitting
+    showPRConfirmationModal(submittableTranslations);
+}
+
+/**
+ * Show PR confirmation modal with summary of what will be submitted
+ * @param {Object} translationsByLang - Translations to submit by language code
+ */
+function showPRConfirmationModal(translationsByLang) {
+    const english = getEnglishBaseline();
+    const englishKeyCount = Object.keys(english).length;
+    const languages = Object.keys(translationsByLang);
+    const allLangs = getAllLanguages();
+
+    // Build language name map for PR generation
+    const langNames = {};
+    for (const langCode of languages) {
+        const langInfo = allLangs.find(l => l.code === langCode);
+        langNames[langCode] = langInfo?.name || langCode;
+    }
+
+    // Generate default PR title and body
+    const defaultTitle = generatePRTitle(languages, langNames);
+    const defaultBody = generatePRBody(languages, translationsByLang, langNames);
+
+    // Build summary for each language
+    let languageSummaryHtml = '';
+    let totalKeys = 0;
+
+    for (const langCode of languages) {
+        const translations = translationsByLang[langCode];
+        const keyCount = Object.keys(translations).length;
+        totalKeys += keyCount;
+
+        const langName = langNames[langCode];
+
+        // Categorize to show breakdown
+        const categorized = {};
+        for (const key of Object.keys(translations)) {
+            const cat = getCategoryFromKey(key);
+            if (cat) {
+                categorized[cat] = (categorized[cat] || 0) + 1;
+            }
+        }
+
+        languageSummaryHtml += `
+            <div class="pr-language-summary">
+                <div class="pr-language-header">
+                    <span class="pr-language-name">${langName} (${langCode})</span>
+                    <span class="pr-language-stats">${keyCount} changed keys</span>
+                </div>
+                <div class="pr-category-breakdown">
+                    ${CATEGORIES.map(cat => {
+                        const count = categorized[cat] || 0;
+                        return count > 0 ? `<span class="pr-category-item">${cat}: ${count}</span>` : '';
+                    }).filter(Boolean).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal pr-confirmation-modal">
+            <div class="modal-header">
+                <h3>Submit Pull Request</h3>
+                <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="pr-summary-section">
+                    <h4>Changes to Submit</h4>
+                    <p>Only <strong>new or modified</strong> translations will be included:</p>
+
+                    <div class="pr-languages-list">
+                        ${languageSummaryHtml}
+                    </div>
+
+                    <div class="pr-totals">
+                        <strong>Total:</strong> ${languages.length} language(s), ${totalKeys} changed/new keys
+                    </div>
+                </div>
+
+                <div class="pr-form-section">
+                    <h4>Pull Request Details</h4>
+
+                    <div class="pr-form-group">
+                        <label for="prTitle">PR Title</label>
+                        <input type="text" id="prTitle" class="pr-input" value="${escapeHtml(defaultTitle)}" />
+                    </div>
+
+                    <div class="pr-form-group">
+                        <label for="prBody">
+                            Description
+                            <span class="pr-label-hint">(Markdown supported)</span>
+                        </label>
+                        <textarea id="prBody" class="pr-textarea" rows="8">${escapeHtml(defaultBody)}</textarea>
+                    </div>
+
+                    <div class="pr-form-group pr-checkbox-group">
+                        <label class="pr-checkbox-label">
+                            <input type="checkbox" id="prPreview" />
+                            <span>Preview description</span>
+                        </label>
+                    </div>
+
+                    <div id="prPreviewArea" class="pr-preview-area" style="display: none;"></div>
+                </div>
+
+                <div class="pr-info-box">
+                    <strong>What happens next:</strong>
+                    <ul>
+                        <li>A fork will be created in your GitHub account (if needed)</li>
+                        <li>Your translations will be committed to a new branch</li>
+                        <li>A Pull Request will be opened for the mod author to review</li>
+                    </ul>
+                </div>
+
+                <div class="pr-actions">
+                    <button class="btn btn-secondary" id="prCancelBtn">Cancel</button>
+                    <button class="btn btn-primary" id="prConfirmBtn">
+                        <span class="btn-icon">⬆</span> Submit Pull Request
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    // Cache elements
+    const titleInput = modal.querySelector('#prTitle');
+    const bodyTextarea = modal.querySelector('#prBody');
+    const previewCheckbox = modal.querySelector('#prPreview');
+    const previewArea = modal.querySelector('#prPreviewArea');
+
+    // Preview toggle
+    previewCheckbox?.addEventListener('change', () => {
+        if (previewCheckbox.checked) {
+            // Simple markdown preview (basic rendering)
+            previewArea.innerHTML = renderSimpleMarkdown(bodyTextarea.value);
+            previewArea.style.display = 'block';
+            bodyTextarea.style.display = 'none';
+        } else {
+            previewArea.style.display = 'none';
+            bodyTextarea.style.display = 'block';
+        }
+    });
+
+    // Cancel button
+    modal.querySelector('#prCancelBtn')?.addEventListener('click', () => {
+        modal.remove();
+    });
+
+    // Submit button
+    modal.querySelector('#prConfirmBtn')?.addEventListener('click', async () => {
+        const customTitle = titleInput?.value?.trim() || defaultTitle;
+        const customBody = bodyTextarea?.value || defaultBody;
+
+        modal.remove();
+        await executePRSubmission(translationsByLang, {
+            customTitle,
+            customBody,
+            langNames
+        });
+    });
+
+    // Close on background click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+
+    // Close on Escape key
+    const handleEscape = (e) => {
+        if (e.key === 'Escape') {
+            modal.remove();
+            document.removeEventListener('keydown', handleEscape);
+        }
+    };
+    document.addEventListener('keydown', handleEscape);
+}
+
+/**
+ * Render simple markdown to HTML (basic subset)
+ * @param {string} markdown - Markdown text
+ * @returns {string} HTML string
+ */
+function renderSimpleMarkdown(markdown) {
+    let html = escapeHtml(markdown);
+
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h4>$1</h4>');
+    html = html.replace(/^## (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^# (.+)$/gm, '<h2>$1</h2>');
+
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Links
+    html = html.replace(/\[(.+?)\]\((.+?)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+    // Lists
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+    // Line breaks
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = `<p>${html}</p>`;
+
+    // Horizontal rule
+    html = html.replace(/^---$/gm, '<hr>');
+
+    return html;
+}
+
+/**
+ * Execute the actual PR submission after confirmation
+ * @param {Object} translationsByLang - Translations to submit
+ * @param {Object} options - Options including customTitle, customBody, langNames
+ */
+async function executePRSubmission(translationsByLang, options = {}) {
+    const { customTitle, customBody, langNames } = options;
+
     showLoadingOverlay('Submitting to GitHub...');
 
     try {
-        const result = await submitTranslationsPR(translations, (message, progress) => {
-            updateLoadingProgress(message, progress);
+        const result = await submitTranslationsPR(translationsByLang, {
+            onProgress: (message, progress) => {
+                updateLoadingProgress(message, progress);
+            },
+            customTitle,
+            customBody,
+            langNames
         });
 
         hideLoadingOverlay();
