@@ -496,6 +496,8 @@ export function forceSave() {
 /**
  * Get all saved translation data for PR submission
  * Only includes translations that are NEW or CHANGED compared to the repo
+ * IMPORTANT: Only includes languages that have been loaded this session
+ * (so we have a baseline to compare against)
  * @returns {Object} Changed/new translations by language
  */
 export function getAllSavedTranslationsForSubmission() {
@@ -513,8 +515,16 @@ export function getAllSavedTranslationsForSubmission() {
             continue;
         }
 
+        // CRITICAL: Only include languages that have been loaded this session
+        // If we haven't loaded the language, we don't have a baseline to compare against
+        // and we'd incorrectly mark all saved translations as "new"
+        if (!(langCode in originalRepoTranslations)) {
+            console.log(`Skipping ${langCode} - not loaded this session (no baseline for comparison)`);
+            continue;
+        }
+
         // Get the original repo translations for this language
-        const originalRepo = originalRepoTranslations[langCode] || {};
+        const originalRepo = originalRepoTranslations[langCode];
 
         // Find only changed or new translations
         const changedTranslations = {};

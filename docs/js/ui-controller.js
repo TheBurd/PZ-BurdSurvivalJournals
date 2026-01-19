@@ -502,10 +502,12 @@ function handleTranslationBlur() {
     updateProgressBar();
 }
 
-function handleGitHubClick() {
+async function handleGitHubClick() {
     if (isGitHubAuthenticated()) {
-        logout();
+        showLoadingOverlay('Disconnecting from GitHub...');
+        await logout();
         githubUser = null;
+        hideLoadingOverlay();
         updateGitHubStatus();
         showNotification('Disconnected from GitHub', 'info');
     } else {
