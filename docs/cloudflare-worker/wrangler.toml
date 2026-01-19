@@ -1,0 +1,35 @@
+# Burd's Survival Journals - GitHub OAuth Proxy
+# Cloudflare Worker Configuration
+
+name = "bsj-oauth"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Account ID - You'll get this from your Cloudflare dashboard
+# Uncomment and fill in after creating your account
+# account_id = "YOUR_ACCOUNT_ID"
+
+# Environment variables (non-secret)
+[vars]
+ALLOWED_ORIGINS = "https://theburd.github.io,http://localhost:8000,http://127.0.0.1:8000"
+
+# Secrets (set via `wrangler secret put` command):
+# - GITHUB_CLIENT_ID
+# - GITHUB_CLIENT_SECRET
+#
+# To set secrets, run:
+#   wrangler secret put GITHUB_CLIENT_ID
+#   wrangler secret put GITHUB_CLIENT_SECRET
+#
+# You'll be prompted to enter the values securely.
+
+# Optional: Custom domain
+# [routes]
+# routes = [
+#   { pattern = "bsj-oauth.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]
+
+# Development settings
+[dev]
+port = 8787
+local_protocol = "http"

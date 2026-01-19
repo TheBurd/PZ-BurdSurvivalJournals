@@ -1,0 +1,15 @@
+{
+  "version": "3.0",
+  "baseLanguage": "EN",
+  "repoConfig": {
+    "owner": "TheBurd",
+    "repo": "PZ-BurdSurvivalJournals",
+    "branch": "master",
+    "translationPaths": {
+      "build42": "Contents/mods/BurdSurvivalJournals/42/media/lua/shared/Translate",
+      "build41": "Contents/mods/BurdSurvivalJournals/common/media/lua/shared/Translate"
+    }
+  },
+  "categories": ["ContextMenu", "IG_UI", "ItemName", "Recipes", "Sandbox", "Tooltip", "UI"],
+  "note": "Available languages are now auto-discovered from the GitHub repo at startup"
+}
