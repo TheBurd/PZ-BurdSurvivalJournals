@@ -1288,16 +1288,7 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
         -- Note: feedbackLabel visibility is set by showFeedback() when not in progress
     end
 
-    -- Reposition admin buttons when progress is active (they're at btnY - 28)
-    local normalAdminBtnY = normalBtnY - 28
-    local progressAdminBtnY = progressBtnY - 28
-    local targetAdminBtnY = isProgressActive and progressAdminBtnY or normalAdminBtnY
-    if self.clearBaselineCacheBtn then
-        self.clearBaselineCacheBtn:setY(targetAdminBtnY)
-    end
-    if self.clearAllBaselinesBtn then
-        self.clearAllBaselinesBtn:setY(targetAdminBtnY)
-    end
+    -- Admin buttons are now in the header, no repositioning needed
 
     if self.mode == "absorb" or self.mode == "view" then
         local isLearning = self.learningState and self.learningState.active
@@ -4819,34 +4810,24 @@ function BurdJournals.UI.MainPanel:createLogUI()
     self.closeBottomBtn.textColor = {r=0.9, g=0.85, b=0.8, a=1}
     self:addChild(self.closeBottomBtn)
 
-    -- Show admin baseline buttons only if:
+    -- Show admin baseline buttons in header (top-right) only if:
     -- 1. Baseline restriction is enabled (sandbox option "Only Record Earned Progress")
     -- 2. User is admin or debug mode is active
     local baselineEnabled = BurdJournals.isBaselineRestrictionEnabled and BurdJournals.isBaselineRestrictionEnabled()
     local isAdmin = self.player and self.player:getAccessLevel() and self.player:getAccessLevel() ~= "None"
     local isDebug = BurdJournals.isDebug and BurdJournals.isDebug()
     if baselineEnabled and (isAdmin or isDebug) then
-        local adminBtnWidth = 160
-        local adminBtnSpacing = 8
-        local totalAdminWidth = adminBtnWidth * 2 + adminBtnSpacing
-        local adminBtnStartX = (self.width - totalAdminWidth) / 2
-        local adminBtnY = btnY - 28
+        local adminBtnHeight = 22
+        local adminBtnSpacing = 6
+        local adminBtnY = 15  -- Position in header area (header is 52px tall)
+        local rightMargin = 10
 
-        -- Button 1: Clear my baseline (for this character)
-        local btnLabel = getText("UI_BurdJournals_BtnClearMyBaseline") or "Clear My Baseline"
-        self.clearBaselineCacheBtn = ISButton:new(adminBtnStartX, adminBtnY, adminBtnWidth, 22, btnLabel, self, BurdJournals.UI.MainPanel.onClearBaselineCache)
-        self.clearBaselineCacheBtn:initialise()
-        self.clearBaselineCacheBtn:instantiate()
-        self.clearBaselineCacheBtn.borderColor = {r=0.8, g=0.4, b=0.1, a=1}
-        self.clearBaselineCacheBtn.backgroundColor = {r=0.4, g=0.2, b=0.05, a=0.9}
-        self.clearBaselineCacheBtn.textColor = {r=1, g=0.8, b=0.3, a=1}
-        self.clearBaselineCacheBtn.tooltip = getText("UI_BurdJournals_ClearMyBaselineTooltip") or "Clears YOUR baseline - all skills/traits/recipes become recordable for this character."
-        self:addChild(self.clearBaselineCacheBtn)
-
-        -- Button 2: Clear ALL baselines (server-wide, admin only)
+        -- Button 2: Clear ALL baselines (server-wide, admin only) - rightmost
         if isAdmin then
             local btnLabel2 = getText("UI_BurdJournals_BtnClearAllBaselines") or "Clear All (Server)"
-            self.clearAllBaselinesBtn = ISButton:new(adminBtnStartX + adminBtnWidth + adminBtnSpacing, adminBtnY, adminBtnWidth, 22, btnLabel2, self, BurdJournals.UI.MainPanel.onClearAllBaselines)
+            local btnWidth2 = getTextManager():MeasureStringX(UIFont.Small, btnLabel2) + 20
+            local btnX2 = self.width - rightMargin - btnWidth2
+            self.clearAllBaselinesBtn = ISButton:new(btnX2, adminBtnY, btnWidth2, adminBtnHeight, btnLabel2, self, BurdJournals.UI.MainPanel.onClearAllBaselines)
             self.clearAllBaselinesBtn:initialise()
             self.clearAllBaselinesBtn:instantiate()
             self.clearAllBaselinesBtn.borderColor = {r=0.9, g=0.2, b=0.2, a=1}
@@ -4854,7 +4835,21 @@ function BurdJournals.UI.MainPanel:createLogUI()
             self.clearAllBaselinesBtn.textColor = {r=1, g=0.7, b=0.7, a=1}
             self.clearAllBaselinesBtn.tooltip = getText("UI_BurdJournals_ClearAllBaselinesTooltip") or "ADMIN: Clears ALL player baseline caches on the server. Players will get fresh baselines on next character creation."
             self:addChild(self.clearAllBaselinesBtn)
+            rightMargin = rightMargin + btnWidth2 + adminBtnSpacing
         end
+
+        -- Button 1: Clear my baseline (for this character)
+        local btnLabel = getText("UI_BurdJournals_BtnClearMyBaseline") or "Clear My Baseline"
+        local btnWidth1 = getTextManager():MeasureStringX(UIFont.Small, btnLabel) + 20
+        local btnX1 = self.width - rightMargin - btnWidth1
+        self.clearBaselineCacheBtn = ISButton:new(btnX1, adminBtnY, btnWidth1, adminBtnHeight, btnLabel, self, BurdJournals.UI.MainPanel.onClearBaselineCache)
+        self.clearBaselineCacheBtn:initialise()
+        self.clearBaselineCacheBtn:instantiate()
+        self.clearBaselineCacheBtn.borderColor = {r=0.8, g=0.4, b=0.1, a=1}
+        self.clearBaselineCacheBtn.backgroundColor = {r=0.4, g=0.2, b=0.05, a=0.9}
+        self.clearBaselineCacheBtn.textColor = {r=1, g=0.8, b=0.3, a=1}
+        self.clearBaselineCacheBtn.tooltip = getText("UI_BurdJournals_ClearMyBaselineTooltip") or "Clears YOUR baseline - all skills/traits/recipes become recordable for this character."
+        self:addChild(self.clearBaselineCacheBtn)
     end
 
     self:populateRecordList()

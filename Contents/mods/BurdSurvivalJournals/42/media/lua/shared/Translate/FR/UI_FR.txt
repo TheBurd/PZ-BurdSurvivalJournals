@@ -355,4 +355,31 @@ UI_FR = {
     UI_BurdJournals_CapacityTraits = "Traits : %d/%d",
     UI_BurdJournals_CapacityRecipes = "Recettes : %d/%d",
     UI_BurdJournals_TraitAlreadyKnownCount = "%d trait déjà connu",
+
+    -- Restored Journal
+    UI_BurdJournals_RestoredJournalHeader = "JOURNAL RESTAURÉ",
+    UI_BurdJournals_RestoredFlavor = "Savoir récupéré ayant droit à une seconde vie...",
+
+    -- Dissolve Journal Feature
+    UI_BurdJournals_BtnDissolve = "Détruire",
+    UI_BurdJournals_ConfirmDissolve = "Veux-tu vraiment détruire ce journal ? Cette action est irréversible.",
+    UI_BurdJournals_DissolveTitle = "Détruire le journal",
+
+    -- Baseline Management
+    UI_BurdJournals_BtnClearMyBaseline = "Effacer ma base",
+    UI_BurdJournals_ClearMyBaselineTooltip = "Efface TA base de référence - toutes les compétences/traits/recettes deviennent enregistrables pour ce personnage.",
+    UI_BurdJournals_BtnClearAllBaselines = "Tout effacer (Serveur)",
+    UI_BurdJournals_ClearAllBaselinesTooltip = "ADMIN : Efface TOUS les caches de base des joueurs du serveur. Les joueurs recevront une nouvelle base à leur prochaine création de personnage.",
+    UI_BurdJournals_BaselineBypassEnabled = "Base effacée ! Toutes les compétences/traits/recettes sont maintenant enregistrables pour ce personnage.",
+    UI_BurdJournals_ClearingAllBaselines = "Effacement de tous les caches de base...",
+    UI_BurdJournals_AllBaselinesCleared = "Cache de base du serveur effacé !",
+    UI_BurdJournals_CmdBaselineBypassed = "[Journaux] Base effacée ! Toutes les compétences/traits/recettes sont maintenant enregistrables pour ce personnage.",
+    UI_BurdJournals_CmdBaselineHelp = "[Journaux] Utilisation : /clearbaseline - Efface ta base de compétences et permet de tout enregistrer.",
+    UI_BurdJournals_BtnClearBaselineCache = "Effacer Base & Cache",
+    UI_BurdJournals_ClearBaselineCacheTooltip = "Efface tes données de base et le cache serveur. Utilise ceci pour corriger des problèmes de base ou repartir de zéro.",
+    UI_BurdJournals_BaselineCacheCleared = "Base & cache effacés ! Nouvelle base capturée.",
+    UI_BurdJournals_CmdBaselineCleared = "[Journaux] Ta base a été effacée et recapturée.",
+
+    -- Batching
+    UI_BurdJournals_BtnBatching = "LOT",
 }

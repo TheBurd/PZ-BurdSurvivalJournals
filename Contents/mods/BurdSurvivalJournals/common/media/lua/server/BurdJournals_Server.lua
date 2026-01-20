@@ -1215,18 +1215,40 @@ function BurdJournals.Server.handleLearnSkills(player, args)
     local journalSkills = modData.BurdJournals.skills
 
     local skillsToSet = {}
+    local skillsApplied = 0
     for skillName, storedData in pairs(journalSkills) do
 
         if not selectedSkills or not next(selectedSkills) or selectedSkills[skillName] then
+            local targetXP = math.floor(storedData.xp * multiplier)
             skillsToSet[skillName] = {
-                xp = math.floor(storedData.xp * multiplier),
+                xp = targetXP,
                 level = storedData.level,
                 mode = "set"
             }
+
+            -- Apply XP directly on server using vanilla addXp function (42.13.2+ compatible)
+            -- For "set" mode, we need to calculate the difference
+            local perk = BurdJournals.getPerkByName(skillName)
+            if perk and addXp then
+                local currentXP = player:getXp():getXP(perk)
+                if targetXP > currentXP then
+                    local xpToAdd = targetXP - currentXP
+                    print("[BurdJournals] Server: LearnSkills - Applying " .. tostring(xpToAdd) .. " XP to " .. skillName .. " via addXp()")
+                    addXp(player, perk, xpToAdd)
+                    skillsApplied = skillsApplied + 1
+                end
+            end
         end
     end
 
-    BurdJournals.Server.sendToClient(player, "applyXP", {skills = skillsToSet, mode = "set"})
+    -- Fallback: send to client if addXp not available (SP mode)
+    if not addXp then
+        print("[BurdJournals] Server: LearnSkills fallback - sending applyXP to client")
+        BurdJournals.Server.sendToClient(player, "applyXP", {skills = skillsToSet, mode = "set"})
+    else
+        -- Notify client of success (for UI update)
+        BurdJournals.Server.sendToClient(player, "learnSuccess", {skillCount = skillsApplied})
+    end
 end
 
 function BurdJournals.Server.handleClaimSkill(player, args)
@@ -1269,6 +1291,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
 
     local skillData = journalData.skills[skillName]
     local recordedXP = skillData.xp or 0
+    local recordedLevel = skillData.level or 0
 
     local perk = BurdJournals.getPerkByName(skillName)
     if not perk then
@@ -1277,11 +1300,22 @@ function BurdJournals.Server.handleClaimSkill(player, args)
         return
     end
 
-    -- Determine XP application mode based on how the journal was recorded:
-    -- - If recordedWithBaseline = true: XP is DELTA (earned XP), use "add" mode
-    -- - If recordedWithBaseline = false/nil: XP is ABSOLUTE (total XP), cap at recorded value
-    -- This prevents the exploit where absolute XP gets added to existing XP
+    -- Determine XP application mode:
+    -- - Journals recorded with baseline: ADD mode (XP values are deltas/earned XP)
+    -- - Journals recorded without baseline: SET mode (XP values are absolute totals)
+    -- Player journals use SET mode to restore exact XP state
+    -- Found journals (Worn/Bloody) without baseline also use SET mode
     local useAddMode = journalData.recordedWithBaseline == true
+    local isPlayerJournal = journalData.isPlayerCreated == true
+
+    -- Debug logging
+    print("[BurdJournals] Server ClaimSkill DEBUG:")
+    print("  - skillName: " .. tostring(skillName))
+    print("  - recordedXP: " .. tostring(recordedXP))
+    print("  - recordedLevel: " .. tostring(recordedLevel))
+    print("  - isPlayerCreated: " .. tostring(isPlayerJournal))
+    print("  - recordedWithBaseline: " .. tostring(journalData.recordedWithBaseline))
+    print("  - useAddMode: " .. tostring(useAddMode))
 
     if recordedXP > 0 then
         local xpToApply = recordedXP
@@ -1290,6 +1324,9 @@ function BurdJournals.Server.handleClaimSkill(player, args)
         -- Player should end up with AT MOST the recorded XP, not more
         if not useAddMode then
             local currentXP = player:getXp():getXP(perk)
+            local currentLevel = player:getPerkLevel(perk)
+            print("  - currentXP: " .. tostring(currentXP))
+            print("  - currentLevel: " .. tostring(currentLevel))
             if currentXP >= recordedXP then
                 -- Player already has equal or more XP than recorded - nothing to grant
                 BurdJournals.markSkillClaimedByCharacter(journalData, player, skillName)
@@ -1310,17 +1347,38 @@ function BurdJournals.Server.handleClaimSkill(player, args)
             end
             -- Only grant the difference to reach recorded XP
             xpToApply = recordedXP - currentXP
+            print("  - xpToApply (after SET calc): " .. tostring(xpToApply))
         end
 
-        BurdJournals.Server.sendToClient(player, "applyXP", {
-            skills = {
-                [skillName] = {
-                    xp = xpToApply,
-                    mode = "add"  -- Always use add mode, but xpToApply is calculated correctly
-                }
-            },
-            mode = "add"
-        })
+        print("  - FINAL xpToApply: " .. tostring(xpToApply))
+
+        -- Apply XP directly using player:getXp():AddXP() with useMultipliers=false
+        -- This bypasses sandbox XP multiplier settings to give exact recorded XP
+        -- Signature: AddXP(perk, amount, ?, useMultipliers, ?, ?)
+        local success = pcall(function()
+            player:getXp():AddXP(perk, xpToApply, false, false, false, false)
+        end)
+        if success then
+            print("[BurdJournals] Server: Applied " .. tostring(xpToApply) .. " XP to " .. skillName .. " via AddXP (no multipliers)")
+        else
+            -- Fallback to addXp if AddXP fails
+            if addXp then
+                print("[BurdJournals] Server: Fallback to addXp() for " .. skillName)
+                addXp(player, perk, xpToApply)
+            else
+                -- Last resort - send to client
+                print("[BurdJournals] Server: Fallback - sending applyXP to client for " .. skillName)
+                BurdJournals.Server.sendToClient(player, "applyXP", {
+                    skills = {
+                        [skillName] = {
+                            xp = xpToApply,
+                            mode = "add"
+                        }
+                    },
+                    mode = "add"
+                })
+            end
+        end
 
         BurdJournals.markSkillClaimedByCharacter(journalData, player, skillName)
 
@@ -1602,15 +1660,23 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
             shouldDis = BurdJournals.shouldDissolve(freshJournal, player)
         end
 
-        BurdJournals.Server.sendToClient(player, "applyXP", {
-            skills = {
-                [skillName] = {
-                    xp = xpToAdd,
-                    mode = "add"
-                }
-            },
-            mode = "add"
-        })
+        -- Apply XP directly on server using vanilla addXp function (42.13.2+ compatible)
+        if addXp and perk then
+            print("[BurdJournals] Server: Absorb - Applying " .. tostring(xpToAdd) .. " XP to " .. skillName .. " via addXp()")
+            addXp(player, perk, xpToAdd)
+        else
+            -- Fallback for SP or if addXp unavailable
+            print("[BurdJournals] Server: Absorb fallback - sending applyXP to client for " .. skillName)
+            BurdJournals.Server.sendToClient(player, "applyXP", {
+                skills = {
+                    [skillName] = {
+                        xp = xpToAdd,
+                        mode = "add"
+                    }
+                },
+                mode = "add"
+            })
+        end
 
         if shouldDis and freshJournal then
 

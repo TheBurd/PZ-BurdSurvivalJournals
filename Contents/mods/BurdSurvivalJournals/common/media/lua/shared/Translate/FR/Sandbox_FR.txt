@@ -175,4 +175,21 @@ Sandbox_FR = {
     -- Trait Settings
     Sandbox_BurdJournals_AllowNegativeTraits = "Autoriser les traits négatifs",
     Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "Si activé, les traits négatifs (comme Maladroit, Apprentissage lent, etc.) peuvent apparaître dans les journaux et être enregistrés. Utile pour les traits de mods ou les parties à défi. Par défaut : DÉSACTIVÉ (uniquement les traits positifs).",
+
+    -- Player Journal Dissolution
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution = "Autoriser la disparition des journaux restaurés",
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution_tooltip = "Détermine si les journaux 'restaurés' (créés à partir de journaux vierges usés/ensanglantés) disparaissent une fois tout le contenu récupéré. Les journaux restaurés affichent toujours leur origine. Par défaut : DÉSACTIVÉ (les journaux restaurés persistent comme les journaux propres).",
+
+    -- ============================================================
+    -- PERFORMANCE SETTINGS
+    -- ============================================================
+
+    Sandbox_BurdJournals_RecordBatchSize = "Taille du lot d'enregistrement",
+    Sandbox_BurdJournals_RecordBatchSize_tooltip = "Nombre de compétences/traits/recettes à enregistrer en une seule action lors de l'utilisation de 'Tout enregistrer' ou 'Enregistrer l'onglet'. Des valeurs plus élevées terminent plus rapidement mais affichent des barres de progression plus longues. Mettez à 1 pour le comportement classique un par un. Par défaut : 15",
+
+    Sandbox_BurdJournals_AbsorbBatchSize = "Taille du lot d'assimilation",
+    Sandbox_BurdJournals_AbsorbBatchSize_tooltip = "Nombre de compétences/traits/recettes à assimiler en une seule action lors de l'utilisation de 'Tout assimiler'. Des valeurs plus élevées terminent plus rapidement mais affichent des barres de progression plus longues. Mettez à 1 pour le comportement classique un par un. Par défaut : 15",
+
+    Sandbox_BurdJournals_BatchTimeMultiplier = "Multiplicateur de temps par lot",
+    Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplicateur de durée pour les actions par lot. Plus bas = lots plus rapides. Exemple : 15 recettes à 0,8s chacune = 12s normalement. Avec un multiplicateur de 0,25 = 3s. N'affecte que 'Tout enregistrer' et 'Tout assimiler', pas les clics individuels. Par défaut : 0,25 (4x plus rapide)",
 }

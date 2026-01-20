@@ -606,9 +606,11 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
 
     BurdJournals.debugPrint("[BurdJournals] Client: handleClaimSuccess received, journalId=" .. tostring(args.journalId))
 
-    if args.skillName and args.xpGained then
+    -- Handle skill XP claims
+    local xpAmount = args.xpAdded or args.xpGained  -- Support both field names
+    if args.skillName and xpAmount then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
-        local message = string.format(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(args.xpGained))
+        local message = string.format(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(xpAmount))
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
 
     elseif args.traitId then
@@ -1536,3 +1538,416 @@ end
 if Events.OnCustomCommand then
     Events.OnCustomCommand.Add(BurdJournals.Client.onChatCommand)
 end
+
+-- ============================================================================
+-- DIAGNOSTIC SYSTEM FOR MP DEBUGGING
+-- These functions help track down data loss issues in multiplayer
+-- ============================================================================
+
+BurdJournals.Client.Diagnostics = {}
+
+-- Track key events for diagnostic purposes
+BurdJournals.Client.Diagnostics.eventLog = {}
+BurdJournals.Client.Diagnostics.maxLogEntries = 100
+
+function BurdJournals.Client.Diagnostics.log(category, message, data)
+    local timestamp = getTimestampMs and getTimestampMs() or os.time()
+    local entry = {
+        time = timestamp,
+        category = category,
+        message = message,
+        data = data
+    }
+    table.insert(BurdJournals.Client.Diagnostics.eventLog, entry)
+
+    -- Trim old entries
+    while #BurdJournals.Client.Diagnostics.eventLog > BurdJournals.Client.Diagnostics.maxLogEntries do
+        table.remove(BurdJournals.Client.Diagnostics.eventLog, 1)
+    end
+
+    -- Always print diagnostic logs to console for debugging
+    local dataStr = ""
+    if data then
+        local parts = {}
+        for k, v in pairs(data) do
+            table.insert(parts, tostring(k) .. "=" .. tostring(v))
+        end
+        dataStr = " {" .. table.concat(parts, ", ") .. "}"
+    end
+    print("[BurdJournals DIAG] [" .. category .. "] " .. message .. dataStr)
+end
+
+-- Scan all journals in player inventory and report their state
+function BurdJournals.Client.Diagnostics.scanJournals(player)
+    if not player then
+        player = getPlayer()
+    end
+    if not player then
+        print("[BurdJournals DIAG] ERROR: No player available")
+        return nil
+    end
+
+    local results = {
+        timestamp = getTimestampMs and getTimestampMs() or os.time(),
+        journals = {},
+        summary = {
+            total = 0,
+            withData = 0,
+            withSkills = 0,
+            withTraits = 0,
+            withRecipes = 0,
+            totalSkillEntries = 0,
+            totalTraitEntries = 0,
+            totalRecipeEntries = 0
+        }
+    }
+
+    local inventory = player:getInventory()
+    if not inventory then
+        print("[BurdJournals DIAG] ERROR: Could not access player inventory")
+        return results
+    end
+
+    local items = inventory:getItems()
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            local itemType = item:getFullType()
+            if itemType and (string.find(itemType, "SurvivalJournal") or string.find(itemType, "BurdJournal")) then
+                results.summary.total = results.summary.total + 1
+
+                local journalInfo = {
+                    id = item:getID(),
+                    type = itemType,
+                    hasModData = false,
+                    hasBurdData = false,
+                    skills = {},
+                    traits = {},
+                    recipes = {},
+                    skillCount = 0,
+                    traitCount = 0,
+                    recipeCount = 0
+                }
+
+                local modData = item:getModData()
+                if modData then
+                    journalInfo.hasModData = true
+                    local burdData = modData.BurdJournals
+                    if burdData then
+                        journalInfo.hasBurdData = true
+                        results.summary.withData = results.summary.withData + 1
+
+                        if burdData.skills then
+                            for skillName, skillData in pairs(burdData.skills) do
+                                journalInfo.skillCount = journalInfo.skillCount + 1
+                                journalInfo.skills[skillName] = {
+                                    level = skillData.level,
+                                    xp = skillData.xp
+                                }
+                            end
+                            if journalInfo.skillCount > 0 then
+                                results.summary.withSkills = results.summary.withSkills + 1
+                                results.summary.totalSkillEntries = results.summary.totalSkillEntries + journalInfo.skillCount
+                            end
+                        end
+
+                        if burdData.traits then
+                            for traitId, _ in pairs(burdData.traits) do
+                                journalInfo.traitCount = journalInfo.traitCount + 1
+                                table.insert(journalInfo.traits, traitId)
+                            end
+                            if journalInfo.traitCount > 0 then
+                                results.summary.withTraits = results.summary.withTraits + 1
+                                results.summary.totalTraitEntries = results.summary.totalTraitEntries + journalInfo.traitCount
+                            end
+                        end
+
+                        if burdData.recipes then
+                            for recipeName, _ in pairs(burdData.recipes) do
+                                journalInfo.recipeCount = journalInfo.recipeCount + 1
+                                table.insert(journalInfo.recipes, recipeName)
+                            end
+                            if journalInfo.recipeCount > 0 then
+                                results.summary.withRecipes = results.summary.withRecipes + 1
+                                results.summary.totalRecipeEntries = results.summary.totalRecipeEntries + journalInfo.recipeCount
+                            end
+                        end
+                    end
+                end
+
+                table.insert(results.journals, journalInfo)
+            end
+        end
+    end
+
+    return results
+end
+
+-- Get player state snapshot for comparison
+function BurdJournals.Client.Diagnostics.getPlayerSnapshot(player)
+    if not player then
+        player = getPlayer()
+    end
+    if not player then
+        return nil
+    end
+
+    local snapshot = {
+        timestamp = getTimestampMs and getTimestampMs() or os.time(),
+        username = player:getUsername(),
+        steamId = BurdJournals.getPlayerSteamId and BurdJournals.getPlayerSteamId(player) or "unknown",
+        characterId = BurdJournals.getPlayerCharacterId and BurdJournals.getPlayerCharacterId(player) or "unknown",
+        hoursAlive = player:getHoursSurvived(),
+        skills = {},
+        traits = {},
+        knownRecipeCount = 0
+    }
+
+    -- Capture skill levels
+    local allSkills = BurdJournals.getAllSkills and BurdJournals.getAllSkills() or {}
+    for _, skillName in ipairs(allSkills) do
+        local perk = BurdJournals.getPerkByName(skillName)
+        if perk then
+            local level = player:getPerkLevel(perk)
+            local xp = player:getXp():getXP(perk)
+            if level > 0 or xp > 0 then
+                snapshot.skills[skillName] = {level = level, xp = math.floor(xp)}
+            end
+        end
+    end
+
+    -- Capture traits
+    local traitList = player:getTraits()
+    if traitList then
+        for i = 0, traitList:size() - 1 do
+            local trait = traitList:get(i)
+            if trait then
+                table.insert(snapshot.traits, tostring(trait))
+            end
+        end
+    end
+
+    -- Count known recipes
+    local knownRecipes = player:getKnownRecipes()
+    if knownRecipes then
+        snapshot.knownRecipeCount = knownRecipes:size()
+    end
+
+    return snapshot
+end
+
+-- Print full diagnostic report
+function BurdJournals.Client.Diagnostics.printReport()
+    local player = getPlayer()
+    if not player then
+        print("[BurdJournals DIAG] ERROR: No player - cannot generate report")
+        return
+    end
+
+    print("")
+    print("================================================================================")
+    print("BURD'S SURVIVAL JOURNALS - DIAGNOSTIC REPORT")
+    print("================================================================================")
+    print("Generated: " .. (getTimestampMs and tostring(getTimestampMs()) or tostring(os.time())))
+    print("Game Version: " .. (getCore and getCore():getVersionNumber() or "unknown"))
+    print("Is Multiplayer: " .. tostring(isClient()))
+    print("Is Server: " .. tostring(isServer()))
+    print("Is Coop Host: " .. tostring(isCoopHost and isCoopHost() or false))
+    print("")
+
+    -- Player info
+    print("--- PLAYER INFO ---")
+    local snapshot = BurdJournals.Client.Diagnostics.getPlayerSnapshot(player)
+    if snapshot then
+        print("Username: " .. tostring(snapshot.username))
+        print("Steam ID: " .. tostring(snapshot.steamId))
+        print("Character ID: " .. tostring(snapshot.characterId))
+        print("Hours Survived: " .. string.format("%.2f", snapshot.hoursAlive))
+
+        local skillCount = 0
+        for _ in pairs(snapshot.skills) do skillCount = skillCount + 1 end
+        print("Skills with XP: " .. skillCount)
+        print("Traits: " .. #snapshot.traits)
+        print("Known Recipes: " .. snapshot.knownRecipeCount)
+    end
+    print("")
+
+    -- Player modData state
+    print("--- PLAYER MODDATA ---")
+    local modData = player:getModData()
+    if modData and modData.BurdJournals then
+        local bd = modData.BurdJournals
+        print("baselineCaptured: " .. tostring(bd.baselineCaptured))
+        print("baselineVersion: " .. tostring(bd.baselineVersion))
+        print("baselineBypassed: " .. tostring(bd.baselineBypassed))
+        if bd.skillBaseline then
+            local count = 0
+            for _ in pairs(bd.skillBaseline) do count = count + 1 end
+            print("skillBaseline entries: " .. count)
+        else
+            print("skillBaseline: nil")
+        end
+        if bd.traitBaseline then
+            print("traitBaseline entries: " .. #bd.traitBaseline)
+        else
+            print("traitBaseline: nil")
+        end
+        if bd.recipeBaseline then
+            local count = 0
+            for _ in pairs(bd.recipeBaseline) do count = count + 1 end
+            print("recipeBaseline entries: " .. count)
+        else
+            print("recipeBaseline: nil")
+        end
+    else
+        print("No BurdJournals modData on player")
+    end
+    print("")
+
+    -- Journal scan
+    print("--- JOURNAL INVENTORY SCAN ---")
+    local scanResults = BurdJournals.Client.Diagnostics.scanJournals(player)
+    if scanResults then
+        print("Total journals found: " .. scanResults.summary.total)
+        print("Journals with data: " .. scanResults.summary.withData)
+        print("Journals with skills: " .. scanResults.summary.withSkills .. " (total entries: " .. scanResults.summary.totalSkillEntries .. ")")
+        print("Journals with traits: " .. scanResults.summary.withTraits .. " (total entries: " .. scanResults.summary.totalTraitEntries .. ")")
+        print("Journals with recipes: " .. scanResults.summary.withRecipes .. " (total entries: " .. scanResults.summary.totalRecipeEntries .. ")")
+        print("")
+
+        for i, journal in ipairs(scanResults.journals) do
+            print("  Journal #" .. i .. " (ID: " .. tostring(journal.id) .. ")")
+            print("    Type: " .. tostring(journal.type))
+            print("    Has ModData: " .. tostring(journal.hasModData))
+            print("    Has BurdData: " .. tostring(journal.hasBurdData))
+            print("    Skills: " .. journal.skillCount .. ", Traits: " .. journal.traitCount .. ", Recipes: " .. journal.recipeCount)
+        end
+    end
+    print("")
+
+    -- Recent event log
+    print("--- RECENT EVENT LOG (last 20) ---")
+    local log = BurdJournals.Client.Diagnostics.eventLog
+    local startIdx = math.max(1, #log - 19)
+    for i = startIdx, #log do
+        local entry = log[i]
+        print(string.format("  [%s] %s: %s", tostring(entry.time), entry.category, entry.message))
+    end
+    print("")
+
+    print("================================================================================")
+    print("END OF DIAGNOSTIC REPORT")
+    print("================================================================================")
+    print("")
+end
+
+-- Chat command handler for /journaldiag
+function BurdJournals.Client.Diagnostics.onChatCommand(command)
+    if not command then return false end
+
+    local cmd = string.lower(command)
+    if cmd == "/journaldiag" or cmd == "/jdiag" or cmd == "/burdjournaldiag" then
+        BurdJournals.Client.Diagnostics.printReport()
+
+        local player = getPlayer()
+        if player then
+            player:Say("[Journals] Diagnostic report printed to console.txt")
+        end
+        return true
+    end
+
+    if cmd == "/journalscan" or cmd == "/jscan" then
+        local player = getPlayer()
+        local results = BurdJournals.Client.Diagnostics.scanJournals(player)
+        if results and player then
+            local msg = string.format("[Journals] Found %d journals: %d skills, %d traits, %d recipes",
+                results.summary.total,
+                results.summary.totalSkillEntries,
+                results.summary.totalTraitEntries,
+                results.summary.totalRecipeEntries)
+            player:Say(msg)
+        end
+        return true
+    end
+
+    return false
+end
+
+-- Hook diagnostic commands
+if Events.OnCustomCommand then
+    Events.OnCustomCommand.Add(BurdJournals.Client.Diagnostics.onChatCommand)
+end
+
+-- Hook into key events to log them
+local originalOnServerCommand = BurdJournals.Client.onServerCommand
+BurdJournals.Client.onServerCommand = function(module, command, args)
+    if module == "BurdJournals" then
+        -- Log server commands for diagnostics
+        local logData = {command = command}
+        if args then
+            if args.journalId then logData.journalId = args.journalId end
+            if args.skillName then logData.skillName = args.skillName end
+            if args.traitId then logData.traitId = args.traitId end
+            if args.recipeName then logData.recipeName = args.recipeName end
+            if args.journalData then
+                local skillCount = args.journalData.skills and BurdJournals.countTable(args.journalData.skills) or 0
+                local traitCount = args.journalData.traits and BurdJournals.countTable(args.journalData.traits) or 0
+                local recipeCount = args.journalData.recipes and BurdJournals.countTable(args.journalData.recipes) or 0
+                logData.dataSkills = skillCount
+                logData.dataTraits = traitCount
+                logData.dataRecipes = recipeCount
+            end
+        end
+        BurdJournals.Client.Diagnostics.log("SERVER_CMD", "Received: " .. command, logData)
+    end
+
+    -- Call original handler
+    return originalOnServerCommand(module, command, args)
+end
+
+-- Log on game start
+local originalInit = BurdJournals.Client.init
+BurdJournals.Client.init = function(player)
+    BurdJournals.Client.Diagnostics.log("LIFECYCLE", "OnGameStart/init called", {
+        username = player and player:getUsername() or "nil",
+        hoursAlive = player and player:getHoursSurvived() or 0,
+        isClient = isClient(),
+        isServer = isServer()
+    })
+    return originalInit(player)
+end
+
+-- Log on player create
+local originalOnCreatePlayer = BurdJournals.Client.onCreatePlayer
+BurdJournals.Client.onCreatePlayer = function(playerIndex, player)
+    BurdJournals.Client.Diagnostics.log("LIFECYCLE", "OnCreatePlayer called", {
+        playerIndex = playerIndex,
+        username = player and player:getUsername() or "nil",
+        hoursAlive = player and player:getHoursSurvived() or 0
+    })
+    return originalOnCreatePlayer(playerIndex, player)
+end
+
+-- Log connection events if available
+if Events.OnConnected then
+    Events.OnConnected.Add(function()
+        BurdJournals.Client.Diagnostics.log("NETWORK", "OnConnected fired", {})
+    end)
+end
+
+if Events.OnDisconnect then
+    Events.OnDisconnect.Add(function()
+        BurdJournals.Client.Diagnostics.log("NETWORK", "OnDisconnect fired", {})
+    end)
+end
+
+if Events.OnConnectionStateChanged then
+    Events.OnConnectionStateChanged.Add(function(state, reason)
+        BurdJournals.Client.Diagnostics.log("NETWORK", "ConnectionStateChanged", {
+            state = tostring(state),
+            reason = tostring(reason)
+        })
+    end)
+end
+
+print("[BurdJournals] Diagnostic system loaded - use /journaldiag or /jdiag for report")

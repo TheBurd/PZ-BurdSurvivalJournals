@@ -1745,14 +1745,15 @@ function BurdJournals.sanitizeJournalData(item, player)
     local function buildRecipeCache()
         if recipeCacheBuilt then return end  -- Already built
         recipeCacheBuilt = true  -- Mark as built before iteration to prevent re-entry
-        local ok, _ = safePcall(function()
+        local ok, err = safePcall(function()
             local recipes = getAllRecipes()
-            if recipes then
-                for i = 0, recipes:size() - 1 do
+            if recipes and recipes.size then
+                local size = recipes:size()
+                for i = 0, size - 1 do
                     local recipe = recipes:get(i)
-                    if recipe then
-                        local name = recipe:getName()
-                        if name then
+                    if recipe and recipe.getName then
+                        local nameOk, name = safePcall(function() return recipe:getName() end)
+                        if nameOk and name and type(name) == "string" then
                             validRecipeSet[name] = true
                             validRecipeSet[string.lower(name)] = true
                         end
@@ -1760,6 +1761,9 @@ function BurdJournals.sanitizeJournalData(item, player)
                 end
             end
         end)
+        if not ok then
+            print("[BurdJournals] Warning: Failed to build recipe cache: " .. tostring(err))
+        end
     end
 
     -- Helper: Check if recipe exists in game (uses cached set)
