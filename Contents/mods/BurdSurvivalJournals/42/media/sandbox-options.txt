@@ -141,12 +141,20 @@ option BurdJournals.EnableBaselineRestriction = {
     translation = BurdJournals_EnableBaselineRestriction,
 }
 
-/* Recipe Recording */
-option BurdJournals.EnableRecipeRecording = {
+/* Trait Recording - Player Journals */
+option BurdJournals.EnableTraitRecordingPlayer = {
     type = boolean,
     default = true,
     page = BurdJournals_Player,
-    translation = BurdJournals_EnableRecipeRecording,
+    translation = BurdJournals_EnableTraitRecordingPlayer,
+}
+
+/* Recipe Recording - Player Journals */
+option BurdJournals.EnableRecipeRecordingPlayer = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_EnableRecipeRecordingPlayer,
 }
 
 option BurdJournals.LearningTimePerRecipe = {
@@ -245,7 +253,8 @@ option BurdJournals.WornJournalMaxXP = {
     translation = BurdJournals_WornJournalMaxXP,
 }
 
-/* Worn Journal Recipe Chance */
+/* Worn Journal Recipe Settings */
+/* Set chance to 0% to completely disable recipes on worn journals */
 option BurdJournals.WornJournalRecipeChance = {
     type = integer,
     min = 0,
@@ -262,6 +271,15 @@ option BurdJournals.WornJournalMaxRecipes = {
     default = 1,
     page = BurdJournals_Loot,
     translation = BurdJournals_WornJournalMaxRecipes,
+}
+
+/* Enable/Disable Recipe Display on Worn Journals */
+/* When disabled, existing recipes in journals will be hidden but preserved */
+option BurdJournals.EnableWornJournalRecipes = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_EnableWornJournalRecipes,
 }
 
 /* BLOODY JOURNALS (Zombie Corpses - Better Rewards + Traits) */
@@ -317,6 +335,8 @@ option BurdJournals.BloodyJournalMaxXP = {
     translation = BurdJournals_BloodyJournalMaxXP,
 }
 
+/* Bloody Journal Trait Settings */
+/* Set chance to 0% to completely disable traits on bloody journals */
 option BurdJournals.BloodyJournalTraitChance = {
     type = integer,
     min = 0,
@@ -335,7 +355,17 @@ option BurdJournals.BloodyJournalMaxTraits = {
     translation = BurdJournals_BloodyJournalMaxTraits,
 }
 
-/* BLOODY JOURNAL RECIPE SPAWNS */
+/* Enable/Disable Trait Display on Bloody Journals */
+/* When disabled, existing traits in journals will be hidden but preserved */
+option BurdJournals.EnableBloodyJournalTraits = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_EnableBloodyJournalTraits,
+}
+
+/* Bloody Journal Recipe Settings */
+/* Set chance to 0% to completely disable recipes on bloody journals */
 option BurdJournals.BloodyJournalRecipeChance = {
     type = integer,
     min = 0,
@@ -352,6 +382,15 @@ option BurdJournals.BloodyJournalMaxRecipes = {
     default = 2,
     page = BurdJournals_Loot,
     translation = BurdJournals_BloodyJournalMaxRecipes,
+}
+
+/* Enable/Disable Recipe Display on Bloody Journals */
+/* When disabled, existing recipes in journals will be hidden but preserved */
+option BurdJournals.EnableBloodyJournalRecipes = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_EnableBloodyJournalRecipes,
 }
 
 /* ============================================================ */

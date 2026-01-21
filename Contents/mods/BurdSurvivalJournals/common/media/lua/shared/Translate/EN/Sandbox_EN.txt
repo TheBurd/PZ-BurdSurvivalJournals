@@ -64,9 +64,13 @@ Sandbox_EN = {
     Sandbox_BurdJournals_EnableBaselineRestriction = "Only Record Earned Progress",
     Sandbox_BurdJournals_EnableBaselineRestriction_tooltip = "When enabled, journals only record XP earned through gameplay - not profession starting bonuses or trait skill boosts. This prevents exploits where players farm profession skills by creating multiple characters. Recommended ON for multiplayer servers.",
 
-    -- Recipe Recording
-    Sandbox_BurdJournals_EnableRecipeRecording = "Enable Recipe Recording",
-    Sandbox_BurdJournals_EnableRecipeRecording_tooltip = "Allow players to record magazine-learned recipes in journals. Recipes learned from magazines can be shared with others.",
+    -- Trait Recording (Player Journals)
+    Sandbox_BurdJournals_EnableTraitRecordingPlayer = "Enable Trait Recording (Player)",
+    Sandbox_BurdJournals_EnableTraitRecordingPlayer_tooltip = "Allow players to record traits in their personal journals. When disabled, the traits tab will be hidden in player journals and existing traits will be preserved but inaccessible.",
+
+    -- Recipe Recording (Player Journals)
+    Sandbox_BurdJournals_EnableRecipeRecordingPlayer = "Enable Recipe Recording (Player)",
+    Sandbox_BurdJournals_EnableRecipeRecordingPlayer_tooltip = "Allow players to record magazine-learned recipes in their personal journals. When disabled, the recipes tab will be hidden and existing recipes will be preserved but inaccessible.",
 
     Sandbox_BurdJournals_LearningTimePerRecipe = "Learning Time Per Recipe (sec)",
     Sandbox_BurdJournals_LearningTimePerRecipe_tooltip = "Base time in seconds to learn each recipe from a journal.",
@@ -105,10 +109,13 @@ Sandbox_EN = {
     Sandbox_BurdJournals_WornJournalMaxXP_tooltip = "Maximum XP per skill in worn journals.",
 
     Sandbox_BurdJournals_WornJournalRecipeChance = "Worn Recipe Chance %",
-    Sandbox_BurdJournals_WornJournalRecipeChance_tooltip = "Chance for worn journals to include a magazine recipe (0-100%). Worn journals have a lower chance than bloody.",
+    Sandbox_BurdJournals_WornJournalRecipeChance_tooltip = "Chance for worn journals to spawn with recipes (0-100%). Set to 0% to prevent recipes from spawning on new journals. Worn journals have a lower chance than bloody.",
 
     Sandbox_BurdJournals_WornJournalMaxRecipes = "Max Recipes Per Worn",
     Sandbox_BurdJournals_WornJournalMaxRecipes_tooltip = "Maximum number of magazine recipes that can spawn on a single worn journal (1-5).",
+
+    Sandbox_BurdJournals_EnableWornJournalRecipes = "Enable Worn Journal Recipes",
+    Sandbox_BurdJournals_EnableWornJournalRecipes_tooltip = "When enabled, recipes can be claimed from worn journals. When disabled, recipes tab will be hidden on worn journals but existing recipe data is preserved for when re-enabled.",
 
     -- Bloody Journals (Zombie Corpses)
     Sandbox_BurdJournals_EnableBloodyJournalSpawns = "Enable Bloody Journal Drops",
@@ -130,16 +137,22 @@ Sandbox_EN = {
     Sandbox_BurdJournals_BloodyJournalMaxXP_tooltip = "Maximum XP per skill in bloody journals.",
     
     Sandbox_BurdJournals_BloodyJournalTraitChance = "Rare Trait Chance %",
-    Sandbox_BurdJournals_BloodyJournalTraitChance_tooltip = "Chance for bloody journals to include a grantable trait (Brave, Organized, etc.).",
-    
+    Sandbox_BurdJournals_BloodyJournalTraitChance_tooltip = "Chance for bloody journals to spawn with traits (0-100%). Set to 0% to prevent traits from spawning on new journals.",
+
     Sandbox_BurdJournals_BloodyJournalMaxTraits = "Max Traits Per Bloody",
     Sandbox_BurdJournals_BloodyJournalMaxTraits_tooltip = "Maximum number of traits that can spawn on a single bloody journal (0-5).",
 
+    Sandbox_BurdJournals_EnableBloodyJournalTraits = "Enable Bloody Journal Traits",
+    Sandbox_BurdJournals_EnableBloodyJournalTraits_tooltip = "When enabled, traits can be claimed from bloody journals. When disabled, traits tab will be hidden on bloody journals but existing trait data is preserved for when re-enabled.",
+
     Sandbox_BurdJournals_BloodyJournalRecipeChance = "Bloody Recipe Chance %",
-    Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip = "Chance for bloody journals to include magazine recipes (0-100%). Bloody journals have a higher chance than worn.",
+    Sandbox_BurdJournals_BloodyJournalRecipeChance_tooltip = "Chance for bloody journals to spawn with recipes (0-100%). Set to 0% to prevent recipes from spawning on new journals. Bloody journals have a higher chance than worn.",
 
     Sandbox_BurdJournals_BloodyJournalMaxRecipes = "Max Recipes Per Bloody",
     Sandbox_BurdJournals_BloodyJournalMaxRecipes_tooltip = "Maximum number of magazine recipes that can spawn on a single bloody journal (1-5).",
+
+    Sandbox_BurdJournals_EnableBloodyJournalRecipes = "Enable Bloody Journal Recipes",
+    Sandbox_BurdJournals_EnableBloodyJournalRecipes_tooltip = "When enabled, recipes can be claimed from bloody journals. When disabled, recipes tab will be hidden on bloody journals but existing recipe data is preserved for when re-enabled.",
 
     -- ============================================================
     -- TAB 3: ADVANCED SETTINGS

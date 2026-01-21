@@ -80,6 +80,31 @@ function BurdJournals.Server.copyJournalData(journal)
     return BurdJournals.Server.deepCopy(modData.BurdJournals)
 end
 
+-- Server-side function to get skill baseline - checks server cache first, then player modData
+function BurdJournals.Server.getSkillBaselineForPlayer(player, skillName)
+    if not player or not skillName then return 0 end
+
+    -- First, try to get baseline from server cache (more reliable on dedicated servers)
+    local characterId = BurdJournals.getPlayerCharacterId(player)
+    if characterId then
+        local cachedBaseline = BurdJournals.Server.getCachedBaseline(characterId)
+        if cachedBaseline and cachedBaseline.skillBaseline then
+            local xp = cachedBaseline.skillBaseline[skillName]
+            if xp then
+                BurdJournals.debugPrint("[BurdJournals] Server: Got baseline for " .. skillName .. " from SERVER CACHE: " .. tostring(xp))
+                return xp
+            end
+        end
+    end
+
+    -- Fallback to player modData (may not be synced on dedicated servers)
+    local baselineXP = BurdJournals.getSkillBaseline(player, skillName) or 0
+    if baselineXP > 0 then
+        BurdJournals.debugPrint("[BurdJournals] Server: Got baseline for " .. skillName .. " from player modData: " .. tostring(baselineXP))
+    end
+    return baselineXP
+end
+
 function BurdJournals.Server.validateSkillPayload(skills, player)
     if skills == nil then return nil end
     if type(skills) ~= "table" then
@@ -94,6 +119,32 @@ function BurdJournals.Server.validateSkillPayload(skills, player)
 
     -- Get baseline using the correct accessor
     local useBaseline = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
+
+    -- Debug: Check if we have cached baseline for this player
+    local characterId = BurdJournals.getPlayerCharacterId(player)
+    local hasCachedBaseline = false
+    local hasModDataBaseline = false
+    local cachedBaseline = nil
+
+    if characterId then
+        cachedBaseline = BurdJournals.Server.getCachedBaseline(characterId)
+        hasCachedBaseline = cachedBaseline ~= nil and cachedBaseline.skillBaseline ~= nil
+    end
+
+    -- Also check player modData
+    local modData = player:getModData()
+    if modData and modData.BurdJournals and modData.BurdJournals.skillBaseline then
+        hasModDataBaseline = true
+    end
+
+    BurdJournals.debugPrint("[BurdJournals] validateSkillPayload: useBaseline=" .. tostring(useBaseline) .. ", characterId=" .. tostring(characterId) .. ", hasCachedBaseline=" .. tostring(hasCachedBaseline) .. ", hasModDataBaseline=" .. tostring(hasModDataBaseline))
+
+    -- WARNING: If baseline restriction is enabled but we have NO baseline data, log a warning
+    -- This could cause skills to be rejected incorrectly
+    if useBaseline and not hasCachedBaseline and not hasModDataBaseline then
+        print("[BurdJournals] WARNING: Baseline restriction enabled but NO baseline data found for player " .. tostring(player:getUsername()) .. "! This may cause skills to be rejected incorrectly.")
+        print("[BurdJournals] The player's baseline may not have been captured. Consider asking them to close and reopen the journal, or disable 'Only Record Earned Progress' sandbox option.")
+    end
 
     for skillName, skillData in pairs(skills) do
 
@@ -116,7 +167,8 @@ function BurdJournals.Server.validateSkillPayload(skills, player)
                 local earnedXP = actualXP
                 local baselineXP = 0
                 if useBaseline then
-                    baselineXP = BurdJournals.getSkillBaseline(player, skillName) or 0
+                    -- Use server-side baseline retrieval (checks cache first)
+                    baselineXP = BurdJournals.Server.getSkillBaselineForPlayer(player, skillName) or 0
                     earnedXP = math.max(0, actualXP - baselineXP)
                     BurdJournals.debugPrint("[BurdJournals] validateSkillPayload: " .. skillName .. " actualXP=" .. tostring(actualXP) .. ", baselineXP=" .. tostring(baselineXP) .. ", earnedXP=" .. tostring(earnedXP))
                 else
@@ -141,6 +193,13 @@ end
 
 function BurdJournals.Server.validateTraitPayload(traits, player)
     if traits == nil then return nil end
+
+    -- Check if trait recording is enabled for player journals
+    if BurdJournals.getSandboxOption("EnableTraitRecordingPlayer") == false then
+        BurdJournals.debugPrint("[BurdJournals] Trait recording disabled for player journals")
+        return nil
+    end
+
     if type(traits) ~= "table" then
         print("[BurdJournals] WARNING: Invalid traits payload (not a table) from " .. tostring(player and player:getUsername() or "unknown"))
         return nil
@@ -209,6 +268,13 @@ end
 
 function BurdJournals.Server.validateRecipePayload(recipes, player)
     if recipes == nil then return nil end
+
+    -- Check if recipe recording is enabled for player journals
+    if BurdJournals.getSandboxOption("EnableRecipeRecordingPlayer") == false then
+        BurdJournals.debugPrint("[BurdJournals] Recipe recording disabled for player journals")
+        return nil
+    end
+
     if type(recipes) ~= "table" then
         print("[BurdJournals] WARNING: Invalid recipes payload (not a table) from " .. tostring(player and player:getUsername() or "unknown"))
         return nil
@@ -1464,6 +1530,12 @@ function BurdJournals.Server.handleClaimTrait(player, args)
         return
     end
 
+    -- Check if traits are enabled for this journal type
+    if not BurdJournals.areTraitsEnabledForJournal(journalData) then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Trait claiming is disabled for this journal type."})
+        return
+    end
+
     if not journalData.traits[traitId] then
         print("[BurdJournals] Server ERROR: Trait '" .. traitId .. "' not found in journal")
         BurdJournals.Server.sendToClient(player, "error", {message = "Trait not found in journal."})
@@ -1769,6 +1841,12 @@ function BurdJournals.Server.handleAbsorbTrait(player, args)
 
     if not journalData or not journalData.traits then
         BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no trait data."})
+        return
+    end
+
+    -- Check if traits are enabled for this journal type
+    if not BurdJournals.areTraitsEnabledForJournal(journalData) then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Trait absorbing is disabled for this journal type."})
         return
     end
 
@@ -2124,6 +2202,12 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
         return
     end
 
+    -- Check if recipes are enabled for this journal type
+    if not BurdJournals.areRecipesEnabledForJournal(journalData) then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Recipe claiming is disabled for this journal type."})
+        return
+    end
+
     if not journalData.recipes[recipeName] then
         print("[BurdJournals] Server ERROR: Recipe '" .. recipeName .. "' not found in journal")
         BurdJournals.Server.sendToClient(player, "error", {message = "Recipe not found in journal."})
@@ -2211,6 +2295,12 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
 
     if not journalData or not journalData.recipes then
         BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no recipe data."})
+        return
+    end
+
+    -- Check if recipes are enabled for this journal type
+    if not BurdJournals.areRecipesEnabledForJournal(journalData) then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Recipe absorbing is disabled for this journal type."})
         return
     end
 

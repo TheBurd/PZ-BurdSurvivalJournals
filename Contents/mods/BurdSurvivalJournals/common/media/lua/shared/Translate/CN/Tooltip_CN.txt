@@ -113,4 +113,5 @@ Tooltip_CN = {
     Tooltip_BurdJournals_AgeToday = "今天",
     Tooltip_BurdJournals_Age1Day = "1天前",
     Tooltip_BurdJournals_AgeDays = "%d天前",
+    Tooltip_BurdJournals_Contributors = "Contributors: %s",
 }

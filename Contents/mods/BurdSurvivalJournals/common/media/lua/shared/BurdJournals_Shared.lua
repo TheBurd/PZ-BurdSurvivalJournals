@@ -1188,7 +1188,14 @@ function BurdJournals.getSandboxOption(optionName)
         RecordZombieKills = true,
         RecordHoursSurvived = true,
 
-        EnableRecipeRecording = true,
+        -- Player Journal trait/recipe recording toggles
+        EnableTraitRecordingPlayer = true,
+        EnableRecipeRecordingPlayer = true,
+
+        -- Loot journal trait/recipe display toggles (hides but preserves data)
+        EnableWornJournalRecipes = true,
+        EnableBloodyJournalTraits = true,
+        EnableBloodyJournalRecipes = true,
 
         -- 0 = unlimited (must match sandbox-options.txt defaults)
         MaxSkillsPerJournal = 0,
@@ -1235,6 +1242,47 @@ end
 
 function BurdJournals.isPlayerJournalsEnabled()
     return BurdJournals.getSandboxOption("EnablePlayerJournals") ~= false
+end
+
+-- Check if traits are enabled for a specific journal type
+-- journalType: "player", "worn", "bloody"
+function BurdJournals.areTraitsEnabledForJournal(journalData)
+    if not journalData then return false end
+
+    -- Player journals check EnableTraitRecordingPlayer
+    if journalData.isPlayerCreated then
+        return BurdJournals.getSandboxOption("EnableTraitRecordingPlayer") ~= false
+    end
+
+    -- Bloody journals (or restored from bloody) check EnableBloodyJournalTraits
+    if journalData.isBloody or journalData.wasFromBloody then
+        return BurdJournals.getSandboxOption("EnableBloodyJournalTraits") ~= false
+    end
+
+    -- Worn journals don't have traits by default
+    return false
+end
+
+-- Check if recipes are enabled for a specific journal type
+function BurdJournals.areRecipesEnabledForJournal(journalData)
+    if not journalData then return false end
+
+    -- Player journals check EnableRecipeRecordingPlayer
+    if journalData.isPlayerCreated then
+        return BurdJournals.getSandboxOption("EnableRecipeRecordingPlayer") ~= false
+    end
+
+    -- Bloody journals check EnableBloodyJournalRecipes
+    if journalData.isBloody or journalData.wasFromBloody then
+        return BurdJournals.getSandboxOption("EnableBloodyJournalRecipes") ~= false
+    end
+
+    -- Worn journals check EnableWornJournalRecipes
+    if journalData.isWorn then
+        return BurdJournals.getSandboxOption("EnableWornJournalRecipes") ~= false
+    end
+
+    return true -- Default to enabled for unknown types
 end
 
 setmetatable(BurdJournals.Limits, {
@@ -4360,11 +4408,13 @@ function BurdJournals.getTotalRecipeCount(item)
 end
 
 function BurdJournals.getAllMagazineRecipes()
+    BurdJournals.debugPrint("[BurdJournals] getAllMagazineRecipes called (isServer=" .. tostring(isServer()) .. ", isClient=" .. tostring(isClient()) .. ")")
     local cache = BurdJournals.buildMagazineRecipeCache()
     local recipes = {}
     for recipeName, _ in pairs(cache) do
         table.insert(recipes, recipeName)
     end
+    BurdJournals.debugPrint("[BurdJournals] getAllMagazineRecipes returning " .. #recipes .. " recipes")
     return recipes
 end
 
@@ -4374,9 +4424,17 @@ function BurdJournals.generateRandomRecipes(count)
     local recipes = {}
 
     local available = BurdJournals.getAllMagazineRecipes()
+    BurdJournals.debugPrint("[BurdJournals] generateRandomRecipes: Requested " .. count .. " recipes, " .. #available .. " available in cache")
 
     if #available == 0 then
         print("[BurdJournals] WARNING: No magazine recipes found in cache!")
+        -- Debug: Check if cache was even built
+        local cacheExists = BurdJournals._magazineRecipeCache ~= nil
+        local cacheCount = 0
+        if BurdJournals._magazineRecipeCache then
+            for _ in pairs(BurdJournals._magazineRecipeCache) do cacheCount = cacheCount + 1 end
+        end
+        print("[BurdJournals] DEBUG: Cache exists=" .. tostring(cacheExists) .. ", cacheCount=" .. cacheCount)
         return {}
     end
 

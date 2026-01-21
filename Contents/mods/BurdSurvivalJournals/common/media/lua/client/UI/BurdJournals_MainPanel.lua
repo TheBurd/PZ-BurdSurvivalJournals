@@ -992,10 +992,12 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self.totalXP = totalXP
 
     local tabs = {{id = "skills", label = getText("UI_BurdJournals_TabSkills")}}
-    if hasBloodyOrigin and totalTraitCount > 0 then
+    -- Only show traits tab if enabled and journal has traits
+    if hasBloodyOrigin and totalTraitCount > 0 and BurdJournals.areTraitsEnabledForJournal(journalData) then
         table.insert(tabs, {id = "traits", label = getText("UI_BurdJournals_TabTraits")})
     end
-    if totalRecipeCount > 0 then
+    -- Only show recipes tab if enabled and journal has recipes
+    if totalRecipeCount > 0 and BurdJournals.areRecipesEnabledForJournal(journalData) then
         table.insert(tabs, {id = "recipes", label = getText("UI_BurdJournals_TabRecipes")})
     end
 
@@ -4667,10 +4669,15 @@ function BurdJournals.UI.MainPanel:createLogUI()
 
     local tabs = {
         {id = "skills", label = getText("UI_BurdJournals_TabSkills")},
-        {id = "traits", label = getText("UI_BurdJournals_TabTraits")},
     }
 
-    if BurdJournals.getSandboxOption("EnableRecipeRecording") then
+    -- Only show traits tab if enabled for player journals
+    if BurdJournals.getSandboxOption("EnableTraitRecordingPlayer") ~= false then
+        table.insert(tabs, {id = "traits", label = getText("UI_BurdJournals_TabTraits")})
+    end
+
+    -- Only show recipes tab if enabled for player journals
+    if BurdJournals.getSandboxOption("EnableRecipeRecordingPlayer") ~= false then
         table.insert(tabs, {id = "recipes", label = getText("UI_BurdJournals_TabRecipes")})
     end
 
@@ -5842,10 +5849,12 @@ function BurdJournals.UI.MainPanel:createViewUI()
     self.totalXP = totalXP
 
     local tabs = {{id = "skills", label = getText("UI_BurdJournals_TabSkills")}}
-    if totalTraitCount > 0 then
+    -- Only show traits tab if enabled and journal has traits
+    if totalTraitCount > 0 and BurdJournals.areTraitsEnabledForJournal(journalData) then
         table.insert(tabs, {id = "traits", label = getText("UI_BurdJournals_TabTraits")})
     end
-    if totalRecipeCount > 0 then
+    -- Only show recipes tab if enabled and journal has recipes
+    if totalRecipeCount > 0 and BurdJournals.areRecipesEnabledForJournal(journalData) then
         table.insert(tabs, {id = "recipes", label = getText("UI_BurdJournals_TabRecipes")})
     end
     if totalStatCount > 0 then

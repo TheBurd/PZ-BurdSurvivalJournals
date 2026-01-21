@@ -174,4 +174,21 @@ Sandbox_CN = {
     -- Trait Settings
     Sandbox_BurdJournals_AllowNegativeTraits = "允许负面特质",
     Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "启用后，负面特质（如笨拙、学习迟钝等）可出现在日志中并被记录。适用于模组特质或挑战模式。默认：关闭（仅允许正面特质）。",
+
+    -- Player Journal Dissolution
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution = "Allow Restored Journal Dissolution",
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution_tooltip = "Controls whether 'Restored' journals (player journals created from worn/bloody blanks) dissolve after all contents are claimed. Restored journals always display their origin status. Default: OFF (restored journals persist forever like clean journals).",
+
+    -- ============================================================
+    -- PERFORMANCE SETTINGS
+    -- ============================================================
+
+    Sandbox_BurdJournals_RecordBatchSize = "Record Batch Size",
+    Sandbox_BurdJournals_RecordBatchSize_tooltip = "How many skills/traits/recipes to record in a single action when using 'Record All' or 'Record Tab'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    Sandbox_BurdJournals_AbsorbBatchSize = "Absorb Batch Size",
+    Sandbox_BurdJournals_AbsorbBatchSize_tooltip = "How many skills/traits/recipes to absorb in a single action when using 'Absorb All'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    Sandbox_BurdJournals_BatchTimeMultiplier = "Batch Time Multiplier",
+    Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplier for batch action duration. Lower = faster batches. Example: 15 recipes at 0.8s each = 12s normally. With 0.25 multiplier = 3s. Only affects 'Record All' and 'Absorb All', not individual clicks. Default: 0.25 (4x faster)",
 }
