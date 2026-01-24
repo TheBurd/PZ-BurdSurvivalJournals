@@ -12,6 +12,13 @@ option BurdJournals.EnableJournals = {
     translation = BurdJournals_EnableJournals,
 }
 
+option BurdJournals.EnablePlayerJournals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Player,
+    translation = BurdJournals_EnablePlayerJournals,
+}
+
 /* XP Recovery Mode (Clean Journals - SET mode) */
 option BurdJournals.XPRecoveryMode = {
     type = enum,
@@ -414,14 +421,6 @@ option BurdJournals.EnableBloodyJournalRecipes = {
 /* TAB 3: SURVIVAL JOURNALS - ADVANCED                          */
 /* Advanced settings and feature toggles                        */
 /* ============================================================ */
-
-/* Feature Toggles */
-option BurdJournals.EnablePlayerJournals = {
-    type = boolean,
-    default = true,
-    page = BurdJournals_Advanced,
-    translation = BurdJournals_EnablePlayerJournals,
-}
 
 /* Reading Skill Integration */
 option BurdJournals.ReadingSkillAffectsSpeed = {
