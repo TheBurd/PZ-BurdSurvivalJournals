@@ -363,6 +363,15 @@ function BurdJournals.discoverAllSkills(forceRefresh)
         addedSkillSet[string.lower(skill)] = true
     end
 
+    -- Also mark perk ID mappings as added to prevent duplicates
+    -- e.g., "Foraging" maps to "PlantScavenging" - mark "plantscavenging" as added
+    -- so PerkFactory discovery doesn't add it as a separate skill
+    if BurdJournals.SKILL_TO_PERK then
+        for skillName, perkId in pairs(BurdJournals.SKILL_TO_PERK) do
+            addedSkillSet[string.lower(perkId)] = true
+        end
+    end
+
     -- Now discover mod-added skills from PerkFactory
     -- IMPORTANT: Use getParent():getId() to filter out category perks
     local modSkillsFound = 0
@@ -1226,6 +1235,9 @@ function BurdJournals.getSandboxOption(optionName)
 
         JournalXPMultiplier = 1.0,
 
+        SkillBookMultiplierForJournals = true,
+        SkillBookMultiplierCap = 2.0,
+
         AllowOthersToOpenJournals = true,
         AllowOthersToClaimFromJournals = true,
 
@@ -1283,6 +1295,14 @@ function BurdJournals.areRecipesEnabledForJournal(journalData)
     end
 
     return true -- Default to enabled for unknown types
+end
+
+-- Unified helper: Check if recipe recording is enabled globally
+-- This is the correct sandbox option key - there is NO "EnableRecipeRecording" option
+-- Only "EnableRecipeRecordingPlayer" exists in sandbox-options.txt
+function BurdJournals.isRecipeRecordingEnabled()
+    local v = BurdJournals.getSandboxOption("EnableRecipeRecordingPlayer")
+    return v ~= false
 end
 
 setmetatable(BurdJournals.Limits, {
@@ -1624,6 +1644,178 @@ function BurdJournals.markRecipeClaimedByCharacter(journalData, player, recipeNa
     journalData.claimedRecipes[recipeName] = true
 
     return true
+end
+
+-- =============================================================================
+-- STAT ABSORPTION SYSTEM
+-- =============================================================================
+-- Allows players to claim recorded stats (zombie kills, hours survived) from
+-- worn/bloody journals. Only stats where the journal value exceeds the player's
+-- current value can be absorbed.
+-- =============================================================================
+
+-- Define which stats can be absorbed and how to apply them
+BurdJournals.ABSORBABLE_STATS = {
+    zombieKills = {
+        canAbsorb = true,
+        displayName = "Zombie Kills",
+        -- Apply the stat value to the player
+        apply = function(player, value)
+            if player and player.setZombieKills then
+                local oldValue = player:getZombieKills()
+                player:setZombieKills(value)
+                local newValue = player:getZombieKills()
+                print("[BurdJournals] Applied zombieKills: " .. tostring(oldValue) .. " -> " .. tostring(value) .. " (now: " .. tostring(newValue) .. ")")
+                return true
+            end
+            print("[BurdJournals] ERROR: Cannot apply zombieKills - method not available")
+            return false
+        end,
+        -- Get current player value for comparison
+        getCurrentValue = function(player)
+            if player and player.getZombieKills then
+                return player:getZombieKills()
+            end
+            return 0
+        end,
+    },
+    hoursSurvived = {
+        canAbsorb = true,
+        displayName = "Hours Survived",
+        -- Apply the stat value to the player
+        apply = function(player, value)
+            if player and player.setHoursSurvived then
+                local oldValue = player:getHoursSurvived()
+                player:setHoursSurvived(value)
+                local newValue = player:getHoursSurvived()
+                print("[BurdJournals] Applied hoursSurvived: " .. tostring(oldValue) .. " -> " .. tostring(value) .. " (now: " .. tostring(newValue) .. ")")
+                return true
+            end
+            print("[BurdJournals] ERROR: Cannot apply hoursSurvived - method not available")
+            return false
+        end,
+        -- Get current player value for comparison
+        getCurrentValue = function(player)
+            if player and player.getHoursSurvived then
+                return player:getHoursSurvived()
+            end
+            return 0
+        end,
+    },
+}
+
+-- Check if a stat can be absorbed from a journal by a player
+-- Returns: canAbsorb (boolean), recordedValue (number), currentValue (number), reason (string)
+function BurdJournals.canAbsorbStat(journalData, player, statId)
+    if not journalData or not player or not statId then
+        return false, nil, nil, "invalid_params"
+    end
+
+    -- Check if stat absorption is defined for this stat
+    local statDef = BurdJournals.ABSORBABLE_STATS[statId]
+    if not statDef or not statDef.canAbsorb then
+        return false, nil, nil, "not_absorbable"
+    end
+
+    -- Check if journal has this stat recorded
+    if not journalData.stats or not journalData.stats[statId] then
+        return false, nil, nil, "not_recorded"
+    end
+
+    -- Get recorded and current values
+    -- Stats are stored as tables with {value = X, timestamp = Y, recordedBy = Z}
+    local statData = journalData.stats[statId]
+    local recordedValue = type(statData) == "table" and statData.value or statData
+    local currentValue = statDef.getCurrentValue(player)
+
+    -- Safety check: ensure both values are numbers
+    if type(recordedValue) ~= "number" then
+        return false, nil, nil, "invalid_value"
+    end
+    if type(currentValue) ~= "number" then
+        currentValue = 0
+    end
+
+    -- Check if already claimed by this character
+    if BurdJournals.hasCharacterClaimedStat(journalData, player, statId) then
+        return false, recordedValue, currentValue, "already_claimed"
+    end
+
+    -- Can only absorb if recorded value is higher than current
+    if currentValue >= recordedValue then
+        return false, recordedValue, currentValue, "no_benefit"
+    end
+
+    return true, recordedValue, currentValue, nil
+end
+
+-- Check if a character has claimed a specific stat from a journal
+function BurdJournals.hasCharacterClaimedStat(journalData, player, statId)
+    if not journalData or not player or not statId then return false end
+
+    -- For non-player journals (worn/bloody), check global claims first
+    if not journalData.isPlayerCreated and journalData.claimedStats and journalData.claimedStats[statId] then
+        return true
+    end
+
+    -- Check per-character claims
+    local claims = BurdJournals.getCharacterClaims(journalData, player)
+    if not claims then return false end
+
+    -- Ensure stats table exists in claims
+    if not claims.stats then
+        claims.stats = {}
+    end
+
+    return claims.stats[statId] == true
+end
+
+-- Mark a stat as claimed by a specific character
+function BurdJournals.markStatClaimedByCharacter(journalData, player, statId)
+    if not journalData or not player or not statId then return false end
+
+    local claims = BurdJournals.getCharacterClaims(journalData, player)
+    if not claims then return false end
+
+    -- Ensure stats table exists
+    if not claims.stats then
+        claims.stats = {}
+    end
+
+    claims.stats[statId] = true
+
+    -- Also mark in global claims for non-player journals
+    if not journalData.claimedStats then
+        journalData.claimedStats = {}
+    end
+    journalData.claimedStats[statId] = true
+
+    return true
+end
+
+-- Apply a stat absorption to the player
+function BurdJournals.applyStatAbsorption(player, statId, value)
+    if not player or not statId or not value then return false end
+
+    local statDef = BurdJournals.ABSORBABLE_STATS[statId]
+    if not statDef or not statDef.apply then
+        return false
+    end
+
+    return statDef.apply(player, value)
+end
+
+-- Get display name for a stat
+function BurdJournals.getStatDisplayName(statId)
+    local statDef = BurdJournals.ABSORBABLE_STATS[statId]
+    if statDef and statDef.displayName then
+        return statDef.displayName
+    end
+    -- Fallback: convert camelCase to Title Case
+    if statId then
+        return statId:gsub("(%u)", " %1"):gsub("^%s", ""):gsub("^%l", string.upper)
+    end
+    return "Unknown"
 end
 
 function BurdJournals.migrateJournalIfNeeded(item, player)
@@ -2853,6 +3045,10 @@ function BurdJournals.updateJournalName(item, forceUpdate)
     if data.customName then
         if item:getName() ~= data.customName then
             item:setName(data.customName)
+            -- Mark as custom name so PZ preserves it during item serialization (MP transfers)
+            if item.setCustomName then
+                item:setCustomName(true)
+            end
         end
         return
     end
@@ -2920,6 +3116,56 @@ function BurdJournals.formatXP(xp)
         return string.format("%.1fk", xp / 1000)
     end
     return tostring(math.floor(xp))
+end
+
+-- Get skill book multiplier for a player's skill (capped by sandbox setting)
+-- Only applies to Worn/Bloody journal absorption, not Player Journal claims
+-- Returns: cappedMultiplier, hasBookBoost (boolean)
+function BurdJournals.getSkillBookMultiplier(player, skillName)
+    -- Check if feature is enabled
+    local featureEnabled = BurdJournals.getSandboxOption("SkillBookMultiplierForJournals")
+    print("[BurdJournals] getSkillBookMultiplier: featureEnabled=" .. tostring(featureEnabled))
+    if not featureEnabled then
+        print("[BurdJournals] getSkillBookMultiplier: Feature disabled, returning 1.0")
+        return 1.0, false
+    end
+    
+    if not player then 
+        print("[BurdJournals] getSkillBookMultiplier: No player, returning 1.0")
+        return 1.0, false 
+    end
+    local perk = BurdJournals.getPerkByName(skillName)
+    if not perk then 
+        print("[BurdJournals] getSkillBookMultiplier: No perk for " .. tostring(skillName) .. ", returning 1.0")
+        return 1.0, false 
+    end
+    
+    local xpObj = player:getXp()
+    if not xpObj or not xpObj.getMultiplier then 
+        print("[BurdJournals] getSkillBookMultiplier: No xpObj or getMultiplier, returning 1.0")
+        return 1.0, false 
+    end
+    
+    local rawMultiplier = xpObj:getMultiplier(perk)
+    print("[BurdJournals] getSkillBookMultiplier: rawMultiplier for " .. tostring(skillName) .. " = " .. tostring(rawMultiplier))
+    if rawMultiplier <= 1.0 then 
+        print("[BurdJournals] getSkillBookMultiplier: rawMultiplier <= 1.0, returning 1.0")
+        return 1.0, false 
+    end
+    
+    -- Apply sandbox cap (default 2.0)
+    local cap = BurdJournals.getSandboxOption("SkillBookMultiplierCap") or 2.0
+    local cappedMultiplier = math.min(rawMultiplier, cap)
+    print("[BurdJournals] getSkillBookMultiplier: cap=" .. tostring(cap) .. ", cappedMultiplier=" .. tostring(cappedMultiplier))
+    
+    return cappedMultiplier, true
+end
+
+-- Calculate effective XP with capped skill book multiplier
+-- Returns: effectiveXP, hasBookBoost (boolean)
+function BurdJournals.getEffectiveXP(player, skillName, baseXP)
+    local multiplier, hasBoost = BurdJournals.getSkillBookMultiplier(player, skillName)
+    return baseXP * multiplier, hasBoost
 end
 
 function BurdJournals.formatTimestamp(hours)
@@ -3704,7 +3950,7 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
         return {}
     end
 
-    if not BurdJournals.getSandboxOption("EnableRecipeRecording") then
+    if not BurdJournals.isRecipeRecordingEnabled() then
         BurdJournals.debugPrint("[BurdJournals] collectPlayerMagazineRecipes: recipe recording disabled")
         return {}
     end
@@ -3722,12 +3968,24 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
     for _ in pairs(magToRecipes) do magCount = magCount + 1 end
     BurdJournals.debugPrint("[BurdJournals] collectPlayerMagazineRecipes: checking " .. magCount .. " magazine types")
 
+    -- Check if SeeNotLearntRecipe sandbox option is enabled
+    -- When enabled, isRecipeKnown() returns true for ALL recipes, making it useless
+    -- for detecting actually learned recipes. We must rely on other methods.
+    local seeNotLearnt = false
+    safePcall(function()
+        seeNotLearnt = SandboxVars and SandboxVars.SeeNotLearntRecipe
+    end)
+
     local ok, err = safePcall(function()
 
+        -- Method 1: Using isRecipeKnown() - SKIP if SeeNotLearntRecipe is enabled
+        -- because it will return true for ALL recipes, not just learned ones
         BurdJournals.debugPrint("[BurdJournals] Method 1: Using isRecipeKnown() for each magazine recipe...")
         local method1Count = 0
 
-        if player.isRecipeKnown then
+        if seeNotLearnt then
+            BurdJournals.debugPrint("[BurdJournals] Method 1: SKIPPED - SeeNotLearntRecipe is enabled (returns true for all recipes)")
+        elseif player.isRecipeKnown then
             for magazineType, recipeList in pairs(magToRecipes) do
                 for _, recipeName in ipairs(recipeList) do
                     if not recipes[recipeName] then
@@ -3810,6 +4068,16 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
             local hasSize, recipeCount = safePcall(function() return knownRecipes:size() end)
             if hasSize and recipeCount and recipeCount > 0 then
                 BurdJournals.debugPrint("[BurdJournals] Method 4: player has " .. recipeCount .. " items in getKnownRecipes")
+                -- Debug: Log first few recipes to see what's actually in the list
+                local debugLimit = math.min(recipeCount, 5)
+                for i = 0, debugLimit - 1 do
+                    local debugRecipe = nil
+                    safePcall(function() debugRecipe = knownRecipes:get(i) end)
+                    if debugRecipe then
+                        BurdJournals.debugPrint("[BurdJournals] Method 4 sample[" .. i .. "]: " .. tostring(debugRecipe))
+                    end
+                end
+                -- Process all recipes
                 for i = 0, recipeCount - 1 do
                     local recipeName = nil
                     safePcall(function() recipeName = knownRecipes:get(i) end)
@@ -3822,7 +4090,11 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
                         end
                     end
                 end
+            else
+                BurdJournals.debugPrint("[BurdJournals] Method 4: getKnownRecipes returned empty or nil size")
             end
+        else
+            BurdJournals.debugPrint("[BurdJournals] Method 4: getKnownRecipes returned nil")
         end
         BurdJournals.debugPrint("[BurdJournals] Method 4 (getKnownRecipes): found " .. method4Count .. " additional recipes")
 
@@ -3875,6 +4147,18 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
     for _ in pairs(recipes) do foundCount = foundCount + 1 end
     BurdJournals.debugPrint("[BurdJournals] collectPlayerMagazineRecipes: TOTAL found " .. foundCount .. " magazine recipes known by player")
 
+    -- Diagnostic output (always print if zero recipes found to help debug)
+    if foundCount == 0 then
+        print("[BurdJournals] WARNING: No magazine recipes detected! magCount=" .. magCount .. " excludeStarting=" .. tostring(excludeStarting))
+        -- Check getKnownRecipes directly
+        local knownCount = 0
+        pcall(function()
+            local known = player:getKnownRecipes()
+            if known then knownCount = known:size() end
+        end)
+        print("[BurdJournals] Player has " .. knownCount .. " total known recipes (from getKnownRecipes)")
+    end
+
     if excludeStarting then
         local filteredRecipes = {}
         local excludedCount = 0
@@ -3888,6 +4172,12 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting)
         if excludedCount > 0 then
             BurdJournals.debugPrint("[BurdJournals] collectPlayerMagazineRecipes: Excluded " .. excludedCount .. " starting recipes from baseline")
         end
+        -- Also warn if all recipes were excluded
+        local resultCount = 0
+        for _ in pairs(filteredRecipes) do resultCount = resultCount + 1 end
+        if foundCount > 0 and resultCount == 0 then
+            print("[BurdJournals] WARNING: All " .. foundCount .. " recipes were excluded by baseline! Check recipeBaseline data.")
+        end
         return filteredRecipes
     end
 
@@ -3899,9 +4189,17 @@ function BurdJournals.playerKnowsRecipe(player, recipeName)
 
     local DEBUG_RECIPE_CHECK = false
 
+    -- Check if SeeNotLearntRecipe sandbox option is enabled
+    -- When enabled, isRecipeKnown() returns true for ALL recipes, making it useless
+    local seeNotLearnt = false
+    safePcall(function()
+        seeNotLearnt = SandboxVars and SandboxVars.SeeNotLearntRecipe
+    end)
+
     local ok, result = safePcall(function()
 
-        if player.isRecipeKnown then
+        -- Skip isRecipeKnown() if SeeNotLearntRecipe is enabled - it returns true for everything
+        if not seeNotLearnt and player.isRecipeKnown then
             local known = player:isRecipeKnown(recipeName)
             if known then
                 if DEBUG_RECIPE_CHECK then
@@ -4239,8 +4537,8 @@ function BurdJournals.debugRecipeSystem(player)
     end
 
     print("\n[Recipe Recording Status]")
-    local enableRecording = BurdJournals.getSandboxOption("EnableRecipeRecording")
-    print("  EnableRecipeRecording sandbox option: " .. tostring(enableRecording))
+    local enableRecording = BurdJournals.isRecipeRecordingEnabled()
+    print("  EnableRecipeRecordingPlayer sandbox option: " .. tostring(enableRecording))
 
     local collectedRecipes = BurdJournals.collectPlayerMagazineRecipes(player)
     local collectedCount = 0

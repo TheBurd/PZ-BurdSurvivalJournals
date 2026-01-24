@@ -1,4 +1,4 @@
-UI_PTBR = {
+﻿UI_PTBR = {
     -- Journal Types
     UI_BurdJournals_BlankJournal = "Diário de Sobrevivência em Branco",
     UI_BurdJournals_FilledJournal = "Diário de Sobrevivência Preenchido",
@@ -142,6 +142,7 @@ UI_PTBR = {
     UI_BurdJournals_BaselineReset = "Linha de base redefinida!",
     UI_BurdJournals_BaselineInitializing = "Por favor, aguarde - dados do personagem sendo inicializados...",
     UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_XPBoosted = "(aumentado)",
     UI_BurdJournals_JournalSyncFailed = "Erro: Sincronização do diário falhou",
     UI_BurdJournals_EntryErased = "Entrada apagada: %s",
 
@@ -355,4 +356,45 @@ UI_PTBR = {
     UI_BurdJournals_CapacityTraits = "Características: %d/%d",
     UI_BurdJournals_CapacityRecipes = "Receitas: %d/%d",
     UI_BurdJournals_TraitAlreadyKnownCount = "%d característica já conhecida",
+
+    -- Restored Journal (v2.x)
+    UI_BurdJournals_RestoredJournalHeader = "RESTORED JOURNAL",
+    UI_BurdJournals_RestoredFlavor = "Salvaged knowledge given new life...",
+
+    -- Dissolve Feature
+    UI_BurdJournals_BtnDissolve = "Dissolve",
+    UI_BurdJournals_ConfirmDissolve = "Dissolve this journal? All remaining contents will be lost forever.",
+    UI_BurdJournals_DissolveTitle = "Dissolve Journal",
+
+    -- Baseline Management
+    UI_BurdJournals_BaselineSkillsHeader = "BASELINE SKILLS",
+    UI_BurdJournals_BaselineTraitsHeader = "BASELINE TRAITS",
+    UI_BurdJournals_YourBaseline = "Your starting baseline:",
+    UI_BurdJournals_BaselineInfo = "These values represent your character's starting skills/traits and cannot be recorded in journals.",
+    UI_BurdJournals_NoBaselineData = "No baseline data recorded yet.",
+    UI_BurdJournals_BaselineWaiting = "Waiting for baseline initialization...",
+    UI_BurdJournals_ClearBaselineConfirm = "Clear your baseline data? This cannot be undone.",
+    UI_BurdJournals_ClearBaselineTitle = "Clear Baseline",
+    UI_BurdJournals_BtnViewMyBaseline = "View My Baseline",
+    UI_BurdJournals_BtnClearMyBaseline = "Clear My Baseline",
+    UI_BurdJournals_BaselineCleared = "Baseline data cleared!",
+    UI_BurdJournals_ViewBaselineTitle = "Your Character Baseline",
+
+    -- Batching
+    UI_BurdJournals_BtnBatching = "BATCH",
+
+    -- Complete Baseline Management
+    UI_BurdJournals_ClearMyBaselineTooltip = "Clears YOUR baseline - all skills/traits/recipes become recordable for this character.",
+    UI_BurdJournals_BtnClearAllBaselines = "Clear All (Server)",
+    UI_BurdJournals_ClearAllBaselinesTooltip = "ADMIN: Clears ALL player baseline caches on the server. Players will get fresh baselines on next character creation.",
+    UI_BurdJournals_BaselineBypassEnabled = "Baseline cleared! All skills/traits/recipes now recordable for this character.",
+    UI_BurdJournals_ClearingAllBaselines = "Clearing all baseline caches...",
+    UI_BurdJournals_AllBaselinesCleared = "Server baseline cache cleared!",
+    UI_BurdJournals_CmdBaselineBypassed = "[Journals] Baseline cleared! All skills/traits/recipes now recordable for this character.",
+    UI_BurdJournals_CmdBaselineHelp = "[Journals] Usage: /clearbaseline - Clears your skill baseline and allows recording everything.",
+    UI_BurdJournals_BtnClearBaselineCache = "Clear Baseline & Cache",
+    UI_BurdJournals_ClearBaselineCacheTooltip = "Clears your baseline data and server cache. Use to fix baseline issues or start fresh.",
+    UI_BurdJournals_BaselineCacheCleared = "Baseline & cache cleared! Fresh baseline captured.",
+    UI_BurdJournals_CmdBaselineCleared = "[Journals] Your baseline has been cleared and recaptured.",
 }
+

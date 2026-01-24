@@ -1,4 +1,4 @@
-UI_ES = {
+﻿UI_ES = {
     -- Journal Types
     UI_BurdJournals_BlankJournal = "Diario de Supervivencia En Blanco",
     UI_BurdJournals_FilledJournal = "Diario de Supervivencia Lleno",
@@ -177,6 +177,7 @@ UI_ES = {
     UI_BurdJournals_FailedToAddTrait = "Fallo al agregar rasgo: %s",
     UI_BurdJournals_BaselineReset = "Linea base restablecida!",
     UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_XPBoosted = "(aumentado)",
     UI_BurdJournals_JournalSyncFailed = "Error: Fallo sincronizacion de diario",
     UI_BurdJournals_EntryErased = "Entrada borrada: %s",
     UI_BurdJournals_PlusTrait = ", +%d rasgo",
@@ -356,3 +357,4 @@ UI_ES = {
     -- Batching
     UI_BurdJournals_BtnBatching = "LOTE",
 }
+

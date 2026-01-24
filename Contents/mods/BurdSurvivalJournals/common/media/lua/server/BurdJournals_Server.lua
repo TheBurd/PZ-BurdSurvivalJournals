@@ -366,6 +366,7 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         claimSkill = true,
         claimTrait = true,
         claimRecipe = true,
+        claimStat = true,
         absorbSkill = true,
         absorbTrait = true,
         absorbRecipe = true,
@@ -422,6 +423,8 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         BurdJournals.Server.handleSyncJournalData(player, args)
     elseif command == "claimRecipe" then
         BurdJournals.Server.handleClaimRecipe(player, args)
+    elseif command == "claimStat" then
+        BurdJournals.Server.handleClaimStat(player, args)
     elseif command == "absorbRecipe" then
         BurdJournals.Server.handleAbsorbRecipe(player, args)
     elseif command == "eraseEntry" then
@@ -438,6 +441,8 @@ function BurdJournals.Server.onClientCommand(module, command, player, args)
         BurdJournals.Server.handleSanitizeJournal(player, args)
     elseif command == "clearAllBaselines" then
         BurdJournals.Server.handleClearAllBaselines(player, args)
+    elseif command == "renameJournal" then
+        BurdJournals.Server.handleRenameJournal(player, args)
     end
 end
 
@@ -1593,6 +1598,95 @@ function BurdJournals.Server.handleClaimTrait(player, args)
     end
 end
 
+-- Server handler for claiming stats (zombie kills, hours survived) from journals
+function BurdJournals.Server.handleClaimStat(player, args)
+    if not args or not args.statId then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
+        return
+    end
+
+    local journalId = args.journalId
+    local statId = args.statId
+    local value = args.value
+
+    local journal = BurdJournals.findItemById(player, journalId)
+    if not journal then
+        print("[BurdJournals] Server ERROR: Journal not found by ID " .. tostring(journalId))
+        BurdJournals.Server.sendToClient(player, "error", {message = "Journal not found."})
+        return
+    end
+
+    local canClaim, reason = BurdJournals.canPlayerClaimFromJournal(player, journal)
+    if not canClaim then
+        BurdJournals.Server.sendToClient(player, "error", {message = reason or "Permission denied."})
+        return
+    end
+
+    local modData = journal:getModData()
+    local journalData = modData.BurdJournals
+
+    if not journalData or not journalData.stats then
+        BurdJournals.Server.sendToClient(player, "error", {message = "This journal has no stat data."})
+        return
+    end
+
+    -- Validate that this stat can be absorbed
+    if not BurdJournals.canAbsorbStat then
+        BurdJournals.Server.sendToClient(player, "error", {message = "Stat absorption not available."})
+        return
+    end
+
+    local canAbsorb, _, _, absorbReason = BurdJournals.canAbsorbStat(journalData, player, statId)
+    if not canAbsorb then
+        -- Convert reason codes to user-friendly messages
+        local message = "Cannot absorb this stat."
+        if absorbReason == "not_absorbable" then
+            message = "This stat cannot be absorbed."
+        elseif absorbReason == "already_claimed" then
+            message = "Already claimed from this journal."
+        elseif absorbReason == "no_benefit" then
+            message = "Your current value is already higher or equal."
+        end
+        BurdJournals.Server.sendToClient(player, "error", {message = message})
+        return
+    end
+
+    -- Apply the stat absorption on the server
+    local statApplied = BurdJournals.applyStatAbsorption(player, statId, value)
+
+    if statApplied then
+        -- Mark the stat as claimed
+        BurdJournals.markStatClaimedByCharacter(journalData, player, statId)
+
+        if journal.transmitModData then
+            journal:transmitModData()
+        end
+
+        BurdJournals.Server.sendToClient(player, "claimSuccess", {
+            statId = statId,
+            journalId = journalId,
+            value = value,
+            journalData = journalData,
+        })
+
+        -- Check for dissolution after claiming
+        local freshJournal = BurdJournals.findItemById(player, journalId)
+        print("[BurdJournals] Server: Post-stat claim check - freshJournal=" .. tostring(freshJournal ~= nil) .. ", journalId=" .. tostring(journalId))
+        if freshJournal then
+            local isValid = BurdJournals.isValidItem(freshJournal)
+            local hasShouldDissolve = BurdJournals.shouldDissolve ~= nil
+            local shouldDis = hasShouldDissolve and BurdJournals.shouldDissolve(freshJournal, player)
+            print("[BurdJournals] Server: isValid=" .. tostring(isValid) .. ", hasShouldDissolve=" .. tostring(hasShouldDissolve) .. ", shouldDis=" .. tostring(shouldDis))
+            if isValid and shouldDis then
+                print("[BurdJournals] Server: DISSOLVING JOURNAL after stat claim!")
+                BurdJournals.Server.dissolveJournal(player, freshJournal)
+            end
+        end
+    else
+        BurdJournals.Server.sendToClient(player, "error", {message = "Could not apply stat."})
+    end
+end
+
 function BurdJournals.Server.handleAbsorbSkill(player, args)
     if not args or not args.skillName then
 
@@ -1700,7 +1794,23 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
     end
 
     local journalMultiplier = BurdJournals.getSandboxOption("JournalXPMultiplier") or 1.0
-    local xpToAdd = baseXP * journalMultiplier
+    
+    -- Use client-provided skill book multiplier (client has the XP multiplier state)
+    -- Server validates it against the sandbox cap for security
+    local skillBookMultiplier = 1.0
+    print("[BurdJournals] Server: args.skillBookMultiplier = " .. tostring(args.skillBookMultiplier) .. " (type: " .. type(args.skillBookMultiplier) .. ")")
+    if args.skillBookMultiplier and type(args.skillBookMultiplier) == "number" then
+        local cap = BurdJournals.getSandboxOption("SkillBookMultiplierCap") or 2.0
+        print("[BurdJournals] Server: SkillBookMultiplierCap = " .. tostring(cap))
+        -- Clamp to valid range: 1.0 to cap (prevents cheating with impossibly high values)
+        skillBookMultiplier = math.max(1.0, math.min(args.skillBookMultiplier, cap))
+        print("[BurdJournals] Server: Final skillBookMultiplier = " .. tostring(skillBookMultiplier))
+    else
+        print("[BurdJournals] Server: skillBookMultiplier not provided or invalid, using 1.0")
+    end
+    
+    local xpToAdd = baseXP * journalMultiplier * skillBookMultiplier
+    print("[BurdJournals] Server: baseXP=" .. tostring(baseXP) .. ", journalMult=" .. tostring(journalMultiplier) .. ", bookMult=" .. tostring(skillBookMultiplier) .. ", xpToAdd=" .. tostring(xpToAdd))
 
     local perk = BurdJournals.getPerkByName(skillName)
 
@@ -1732,9 +1842,15 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
             shouldDis = BurdJournals.shouldDissolve(freshJournal, player)
         end
 
-        -- Apply XP directly on server using vanilla addXp function (42.13.2+ compatible)
-        if addXp and perk then
-            print("[BurdJournals] Server: Absorb - Applying " .. tostring(xpToAdd) .. " XP to " .. skillName .. " via addXp()")
+        -- Apply XP directly on server - use AddXP with useMultipliers=false since we already applied our own
+        if perk then
+            print("[BurdJournals] Server: Absorb - Applying " .. tostring(xpToAdd) .. " XP to " .. skillName .. " via AddXP (no game multipliers)")
+            -- AddXP signature: (perk, amount, ?, useMultipliers, ?, ?)
+            -- Set useMultipliers to false since we've already calculated with our skill book multiplier
+            player:getXp():AddXP(perk, xpToAdd, true, false, false, false)
+        elseif addXp then
+            -- Fallback to vanilla addXp if AddXP not available
+            print("[BurdJournals] Server: Absorb - Fallback using addXp() for " .. skillName)
             addXp(player, perk, xpToAdd)
         else
             -- Fallback for SP or if addXp unavailable
@@ -1765,7 +1881,14 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
 
             BurdJournals.Server.sendToClient(player, "journalDissolved", {
                 message = BurdJournals.getRandomDissolutionMessage(),
-                journalId = journalId
+                journalId = journalId,
+                -- Debug info for skill absorption before dissolution
+                skillName = skillName,
+                xpGained = xpToAdd,
+                debug_baseXP = baseXP,
+                debug_journalMult = journalMultiplier,
+                debug_bookMult = skillBookMultiplier,
+                debug_receivedMult = args.skillBookMultiplier,
             })
         else
 
@@ -1790,6 +1913,11 @@ function BurdJournals.Server.handleAbsorbSkill(player, args)
                 total = totalRewards,
                 journalId = journalId,
                 journalData = journalData,
+                -- Debug info
+                debug_baseXP = baseXP,
+                debug_journalMult = journalMultiplier,
+                debug_bookMult = skillBookMultiplier,
+                debug_receivedMult = args.skillBookMultiplier,
                 })
         end
     else
@@ -2243,7 +2371,8 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
         end
 
         if sendSyncPlayerFields then
-            sendSyncPlayerFields(player, 0x00000007)
+            -- Only sync recipes (0x4), not skills/traits (0x7 would sync all three)
+            sendSyncPlayerFields(player, 0x00000004)
         end
 
         BurdJournals.Server.sendToClient(player, "claimSuccess", {
@@ -2351,7 +2480,8 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
         end
 
         if sendSyncPlayerFields then
-            sendSyncPlayerFields(player, 0x00000007)
+            -- Only sync recipes (0x4), not skills/traits (0x7 would sync all three)
+            sendSyncPlayerFields(player, 0x00000004)
         end
 
         local updatedJournalData = BurdJournals.Server.copyJournalData(journal)
@@ -2448,6 +2578,16 @@ function BurdJournals.Server.handleEraseEntry(player, args)
         if journalData.claimedRecipes and journalData.claimedRecipes[entryName] then
             journalData.claimedRecipes[entryName] = nil
         end
+    elseif entryType == "stat" then
+        if journalData.stats and journalData.stats[entryName] then
+            journalData.stats[entryName] = nil
+            erased = true
+            BurdJournals.debugPrint("[BurdJournals] Server: Erased stat entry: " .. entryName)
+        end
+
+        if journalData.claimedStats and journalData.claimedStats[entryName] then
+            journalData.claimedStats[entryName] = nil
+        end
     end
 
     if erased then
@@ -2469,6 +2609,63 @@ function BurdJournals.Server.handleEraseEntry(player, args)
         BurdJournals.debugPrint("[BurdJournals] Server: Entry not found to erase: " .. entryType .. " - " .. entryName)
         BurdJournals.Server.sendToClient(player, "error", {message = "Entry not found."})
     end
+end
+
+-- Server-side handler for renaming journals (MP custom name persistence fix)
+-- This ensures the server has the correct name so it persists during item transfers
+function BurdJournals.Server.handleRenameJournal(player, args)
+    if not args then
+        BurdJournals.debugPrint("[BurdJournals] Server: RenameJournal - No args provided")
+        return
+    end
+
+    local journalId = args.journalId
+    local newName = args.newName
+
+    if not journalId or not newName then
+        BurdJournals.debugPrint("[BurdJournals] Server: RenameJournal - Missing required args")
+        return
+    end
+
+    -- Sanitize the name (basic protection)
+    if type(newName) ~= "string" or #newName > 100 then
+        BurdJournals.debugPrint("[BurdJournals] Server: RenameJournal - Invalid name")
+        return
+    end
+
+    local journal = BurdJournals.findItemById(player, journalId)
+    if not journal then
+        BurdJournals.debugPrint("[BurdJournals] Server: RenameJournal - Journal not found: " .. tostring(journalId))
+        return
+    end
+
+    -- Update the item's display name on the server
+    journal:setName(newName)
+    
+    -- Mark as custom name so PZ preserves it during serialization
+    if journal.setCustomName then
+        journal:setCustomName(true)
+    end
+
+    -- Store in ModData as backup
+    local modData = journal:getModData()
+    if not modData.BurdJournals then
+        modData.BurdJournals = {}
+    end
+    modData.BurdJournals.customName = newName
+
+    -- Transmit the updated data to all clients
+    if journal.transmitModData then
+        journal:transmitModData()
+    end
+
+    BurdJournals.debugPrint("[BurdJournals] Server: Journal renamed to: " .. newName)
+
+    -- Send confirmation to client
+    BurdJournals.Server.sendToClient(player, "renameSuccess", {
+        journalId = journalId,
+        newName = newName
+    })
 end
 
 function BurdJournals.Server.getBaselineCache()

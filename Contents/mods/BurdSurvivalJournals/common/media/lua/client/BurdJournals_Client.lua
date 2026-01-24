@@ -4,7 +4,8 @@ require "BurdJournals_Shared"
 BurdJournals = BurdJournals or {}
 BurdJournals.Client = BurdJournals.Client or {}
 
-BurdJournals.Client.BASELINE_VERSION = 2
+-- Version 3: Fixed recipe baseline capture when SeeNotLearntRecipe sandbox option is enabled
+BurdJournals.Client.BASELINE_VERSION = 4  -- v4: Clear recipe baseline for existing characters (fixes recipes not recordable bug)
 
 BurdJournals.Client._activeTickHandlers = {}
 BurdJournals.Client._tickHandlerIdCounter = 0
@@ -150,21 +151,25 @@ function BurdJournals.Client.showHaloMessage(player, message, color)
     if not player then return end
     color = color or BurdJournals.Client.HaloColors.INFO
 
-    if HaloTextHelper and HaloTextHelper.addTextWithArrow then
-
-        local haloColor = HaloTextHelper.getColorWhite()
-        if color == BurdJournals.Client.HaloColors.XP_GAIN then
-            haloColor = HaloTextHelper.getColorGreen()
-        elseif color == BurdJournals.Client.HaloColors.TRAIT_GAIN then
-            haloColor = HaloTextHelper.getColorGreen()
-        elseif color == BurdJournals.Client.HaloColors.RECIPE_GAIN then
-            haloColor = HaloTextHelper.getColorBlue()
-        elseif color == BurdJournals.Client.HaloColors.ERROR then
-            haloColor = HaloTextHelper.getColorRed()
+    if HaloTextHelper then
+        -- Use the correct HaloTextHelper methods based on color type
+        -- Note: Only use addGoodText/addBadText - addText has internal issues in B42
+        if color == BurdJournals.Client.HaloColors.ERROR then
+            -- Bad/error messages (red)
+            if HaloTextHelper.addBadText then
+                HaloTextHelper.addBadText(player, message)
+            else
+                player:Say(message)
+            end
+        else
+            -- All other messages use green (good) text for visibility
+            if HaloTextHelper.addGoodText then
+                HaloTextHelper.addGoodText(player, message)
+            else
+                player:Say(message)
+            end
         end
-        HaloTextHelper.addTextWithArrow(player, message, true, haloColor)
     else
-
         player:Say(message)
     end
 end
@@ -212,7 +217,7 @@ function BurdJournals.Client.onServerCommand(module, command, args)
         BurdJournals.Client.handleRecordSuccess(player, args)
 
     elseif command == "eraseSuccess" then
-        BurdJournals.Client.showHaloMessage(player, getText("UI_BurdJournals_JournalErased") or "Journal erased", BurdJournals.Client.HaloColors.INFO)
+        BurdJournals.Client.handleEraseSuccess(player, args)
 
     elseif command == "cleanSuccess" then
         local message = args and args.message or (getText("UI_BurdJournals_JournalCleaned") or "Journal cleaned")
@@ -505,6 +510,10 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
         local xpGained = args.xpGained or 0
 
+        -- DEBUG: Print what the server sent back
+        print("[BurdJournals] Client: SERVER RETURNED xpGained=" .. tostring(xpGained) .. " for skill=" .. tostring(args.skillName))
+        print("[BurdJournals] Client: SERVER DEBUG - baseXP=" .. tostring(args.debug_baseXP) .. ", journalMult=" .. tostring(args.debug_journalMult) .. ", bookMult=" .. tostring(args.debug_bookMult) .. ", receivedMult=" .. tostring(args.debug_receivedMult))
+
         local message = "+" .. BurdJournals.formatXP(xpGained) .. " " .. displayName
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
 
@@ -630,6 +639,25 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
             player:learnRecipe(args.recipeName)
             BurdJournals.debugPrint("[BurdJournals] Client: Learned recipe '" .. args.recipeName .. "' on client")
         end)
+
+    elseif args.statId then
+        -- Handle stat absorption (zombie kills, hours survived, etc.)
+        local statName = BurdJournals.getStatDisplayName and BurdJournals.getStatDisplayName(args.statId) or args.statId
+        local value = args.value or 0
+        local message = string.format(getText("UI_BurdJournals_StatClaimed") or "%s claimed!", statName)
+        BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
+
+        -- Apply the stat to the player on the client side
+        pcall(function()
+            if BurdJournals.applyStatAbsorption then
+                local applied = BurdJournals.applyStatAbsorption(player, args.statId, value)
+                if applied then
+                    BurdJournals.debugPrint("[BurdJournals] Client: Applied stat '" .. args.statId .. "' = " .. tostring(value))
+                else
+                    BurdJournals.debugPrint("[BurdJournals] Client: Failed to apply stat '" .. args.statId .. "'")
+                end
+            end
+        end)
     end
 
     if args.journalId and args.journalData then
@@ -665,7 +693,56 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
     end
 end
 
+function BurdJournals.Client.handleEraseSuccess(player, args)
+    if not args then return end
+
+    BurdJournals.debugPrint("[BurdJournals] Client: handleEraseSuccess received, journalId=" .. tostring(args.journalId))
+
+    -- Show the halo message
+    BurdJournals.Client.showHaloMessage(player, getText("UI_BurdJournals_JournalErased") or "Entry erased", BurdJournals.Client.HaloColors.INFO)
+
+    -- Apply updated journal data from server
+    if args.journalId and args.journalData then
+        BurdJournals.debugPrint("[BurdJournals] Client: Applying journal data from server for eraseSuccess")
+        local journal = BurdJournals.findItemById(player, args.journalId)
+        if journal then
+            local modData = journal:getModData()
+            modData.BurdJournals = args.journalData
+            BurdJournals.debugPrint("[BurdJournals] Client: Journal data applied successfully for eraseSuccess")
+        else
+            BurdJournals.debugPrint("[BurdJournals] Client: Could not find journal to apply eraseSuccess data")
+        end
+
+        -- Also update the panel's journal if it matches
+        if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+            local panel = BurdJournals.UI.MainPanel.instance
+            if panel.journal and panel.journal:getID() == args.journalId then
+                local panelModData = panel.journal:getModData()
+                BurdJournals.debugPrint("[BurdJournals] Client: Also updating panel.journal modData directly for eraseSuccess")
+                panelModData.BurdJournals = args.journalData
+            end
+        end
+    end
+
+    -- Refresh the UI to reflect the erased entry
+    if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
+        local panel = BurdJournals.UI.MainPanel.instance
+
+        BurdJournals.debugPrint("[BurdJournals] Client: Refreshing UI for eraseSuccess")
+        if panel.refreshCurrentList then
+            panel:refreshCurrentList()
+        elseif panel.refreshJournalData then
+            panel:refreshJournalData()
+        end
+    end
+end
+
 function BurdJournals.Client.handleJournalDissolved(player, args)
+    -- Debug info from skill absorption before dissolution
+    if args and args.skillName and args.xpGained then
+        print("[BurdJournals] Client: DISSOLVED - SERVER RETURNED xpGained=" .. tostring(args.xpGained) .. " for skill=" .. tostring(args.skillName))
+        print("[BurdJournals] Client: DISSOLVED - SERVER DEBUG - baseXP=" .. tostring(args.debug_baseXP) .. ", journalMult=" .. tostring(args.debug_journalMult) .. ", bookMult=" .. tostring(args.debug_bookMult) .. ", receivedMult=" .. tostring(args.debug_receivedMult))
+    end
 
     local message = args and args.message or BurdJournals.getRandomDissolutionMessage()
 
@@ -1056,9 +1133,15 @@ function BurdJournals.Client.captureBaseline(player, isNewCharacter)
             BurdJournals.debugPrint("[BurdJournals] Baseline version mismatch: stored v" .. storedVersion .. " vs current v" .. BurdJournals.Client.BASELINE_VERSION)
             local hoursAlive = player:getHoursSurvived() or 0
             if hoursAlive > 1 then
-
-                BurdJournals.debugPrint("[BurdJournals] Existing character - updating version flag only (not recalculating)")
+                -- Existing character with outdated baseline - update version flag
+                -- Also clear recipe baseline to fix issue where recipes were incorrectly baselined
+                -- (recipes should never be baselined for existing characters)
+                BurdJournals.debugPrint("[BurdJournals] Existing character - updating version flag and clearing recipe baseline")
                 modData.BurdJournals.baselineVersion = BurdJournals.Client.BASELINE_VERSION
+                modData.BurdJournals.recipeBaseline = {}  -- Clear incorrectly captured recipe baseline
+                if player.transmitModData then
+                    player:transmitModData()
+                end
                 return
             end
 
@@ -1461,6 +1544,49 @@ Events.OnPlayerDeath.Add(BurdJournals.Client.onPlayerDeath)
 
 if Events.EveryOneMinute then
     Events.EveryOneMinute.Add(BurdJournals.Client.checkLanguageChange)
+end
+
+-- Restore custom journal names when inventory UI refreshes (MP fix)
+-- This catches cases where item display names reset during MP item transfers
+BurdJournals.Client.restoreJournalNamesInContainer = function(container)
+    if not container then return end
+    
+    local items = container:getItems()
+    if not items then return end
+    
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        if item then
+            local fullType = item:getFullType()
+            if fullType and fullType:find("^BurdJournals%.") then
+                local modData = item:getModData()
+                if modData.BurdJournals and modData.BurdJournals.customName then
+                    if item:getName() ~= modData.BurdJournals.customName then
+                        BurdJournals.updateJournalName(item)
+                    end
+                end
+            end
+        end
+    end
+end
+
+if Events.OnRefreshInventoryWindowContainers then
+    Events.OnRefreshInventoryWindowContainers.Add(function(inventoryUI, reason)
+        local player = getPlayer()
+        if not player then return end
+        
+        -- Check main inventory
+        local inventory = player:getInventory()
+        if inventory then
+            BurdJournals.Client.restoreJournalNamesInContainer(inventory)
+        end
+        
+        -- Check equipped bags
+        local backpack = player:getClothingItem_Back()
+        if backpack and backpack:getInventory() then
+            BurdJournals.Client.restoreJournalNamesInContainer(backpack:getInventory())
+        end
+    end)
 end
 
 -- Chat command handler for /clearbaseline

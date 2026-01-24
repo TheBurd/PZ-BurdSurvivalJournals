@@ -441,6 +441,8 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
             totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
         elseif reward.type == "recipe" then
             totalTime = totalTime + (mainPanel and mainPanel:getRecipeLearningTime() or 0.7)
+        elseif reward.type == "stat" then
+            totalTime = totalTime + (mainPanel and mainPanel:getStatLearningTime() or 5.0)
         end
     end
 
@@ -508,6 +510,7 @@ function BurdJournals.LearnFromJournalAction:start()
             skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
             traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
             recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
+            statId = firstReward and firstReward.type == "stat" and firstReward.name or nil,
             isAbsorbAll = self.isAbsorbAll,
             progress = 0,
             totalTime = self.totalTimeSeconds,
@@ -531,6 +534,7 @@ function BurdJournals.LearnFromJournalAction:stop()
             skillName = nil,
             traitId = nil,
             recipeName = nil,
+            statId = nil,
             isAbsorbAll = false,
             progress = 0,
             totalTime = 0,
@@ -564,10 +568,14 @@ function BurdJournals.LearnFromJournalAction:perform()
     local isPlayerJournal = panel.isPlayerJournal or panel.mode == "view"
 
     for _, reward in ipairs(self.rewards) do
+        print("[BurdJournals] TimedAction processing reward: type=" .. tostring(reward.type) .. ", name=" .. tostring(reward.name) .. ", xp=" .. tostring(reward.xp))
         if reward.type == "skill" then
+            print("[BurdJournals] TimedAction: isPlayerJournal=" .. tostring(isPlayerJournal))
             if isPlayerJournal then
+                print("[BurdJournals] TimedAction: Calling sendClaimSkill")
                 panel:sendClaimSkill(reward.name, reward.xp, true)
             else
+                print("[BurdJournals] TimedAction: Calling sendAbsorbSkill for " .. tostring(reward.name))
                 panel:sendAbsorbSkill(reward.name, reward.xp, true)
             end
         elseif reward.type == "trait" then
@@ -577,12 +585,14 @@ function BurdJournals.LearnFromJournalAction:perform()
                 panel:sendAbsorbTrait(reward.name, true)
             end
         elseif reward.type == "recipe" then
-
             if isPlayerJournal then
                 panel:sendClaimRecipe(reward.name, true)
             else
                 panel:sendAbsorbRecipe(reward.name, true)
             end
+        elseif reward.type == "stat" then
+            -- Stats use sendClaimStat for both player and non-player journals
+            panel:sendClaimStat(reward.name, reward.value)
         end
     end
 
@@ -724,6 +734,7 @@ function BurdJournals.LearnFromJournalAction:perform()
         skillName = nil,
         traitId = nil,
         recipeName = nil,
+        statId = nil,
         isAbsorbAll = false,
         progress = 0,
         totalTime = 0,
@@ -1285,11 +1296,14 @@ function BurdJournals.EraseEntryAction:start()
     self.character:playSound("OpenBook")
 
     if self.mainPanel then
+        -- Preserve the queue when setting erasingState
+        local existingQueue = self.mainPanel.erasingState and self.mainPanel.erasingState.queue or {}
         self.mainPanel.erasingState = {
             active = true,
             entryType = self.entryType,
             entryName = self.entryName,
             progress = 0,
+            queue = existingQueue,
         }
     end
 end
@@ -1300,10 +1314,13 @@ function BurdJournals.EraseEntryAction:stop()
     self.character:playSound("CloseBook")
 
     if self.mainPanel then
+        -- Preserve the queue when resetting erasingState
+        local existingQueue = self.mainPanel.erasingState and self.mainPanel.erasingState.queue or {}
         self.mainPanel.erasingState = {
             active = false,
             entryType = nil,
             entryName = nil,
+            queue = existingQueue,
         }
     end
 
@@ -1319,15 +1336,17 @@ function BurdJournals.EraseEntryAction:perform()
     local panel = self.mainPanel
 
     if panel then
+        -- Preserve the queue when resetting erasingState
+        local existingQueue = panel.erasingState and panel.erasingState.queue or {}
         panel.erasingState = {
             active = false,
             entryType = nil,
             entryName = nil,
+            queue = existingQueue,
         }
     end
 
     if isClient() and not isServer() then
-
         sendClientCommand(player, "BurdJournals", "eraseEntry", {
             journalId = self.journal:getID(),
             entryType = self.entryType,
@@ -1338,6 +1357,11 @@ function BurdJournals.EraseEntryAction:perform()
         if panel and panel.eraseEntryDirectly then
             panel:eraseEntryDirectly(self.entryType, self.entryName)
         end
+    end
+
+    -- Process next item in erase queue
+    if panel and panel.processNextEraseInQueue then
+        panel:processNextEraseInQueue()
     end
 
     ISBaseTimedAction.perform(self)

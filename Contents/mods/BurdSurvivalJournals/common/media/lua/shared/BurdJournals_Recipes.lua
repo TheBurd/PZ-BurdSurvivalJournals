@@ -15,6 +15,19 @@
 require "BurdJournals_Shared"
 
 -- ============================================================
+--                  RECIPE CONDITIONAL CHECK
+-- ============================================================
+
+-- Build 42 OnTest / Build 41 canPerform signature
+-- Checks if player journals are enabled via sandbox option
+function BurdJournals_CanCraftPlayerJournal(sourceItem, result)
+    if BurdJournals and BurdJournals.isPlayerJournalsEnabled then
+        return BurdJournals.isPlayerJournalsEnabled()
+    end
+    return true
+end
+
+-- ============================================================
 --                    HELPER FUNCTION
 -- ============================================================
 

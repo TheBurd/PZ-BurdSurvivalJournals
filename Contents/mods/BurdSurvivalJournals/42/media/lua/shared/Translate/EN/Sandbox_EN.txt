@@ -30,6 +30,13 @@ Sandbox_EN = {
     Sandbox_BurdJournals_JournalXPMultiplier = "Journal XP Multiplier",
     Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "Multiplier for XP gained from journals (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). Applies to both worn and bloody journals.",
 
+    -- Skill Book Multiplier
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals = "Apply Skill Book Multipliers",
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals_tooltip = "When enabled, skill book XP multipliers (from reading skill books) will apply to XP absorbed from Worn and Bloody journals ONLY. Player Journals are not affected. The multiplier is capped by the setting below.",
+    
+    Sandbox_BurdJournals_SkillBookMultiplierCap = "Skill Book Multiplier Cap",
+    Sandbox_BurdJournals_SkillBookMultiplierCap_tooltip = "Maximum XP multiplier from skill books when absorbing skills from Worn and Bloody journals. Default 2x prevents overpowered early-game progression. Set to 16 to allow full skill book multipliers. Does not affect Player Journals.",
+
     -- Writing Requirements
     Sandbox_BurdJournals_RequirePenToWrite = "Require Pen to Write",
     Sandbox_BurdJournals_RequirePenToWrite_tooltip = "Require a pen or pencil to log skills in a clean journal.",

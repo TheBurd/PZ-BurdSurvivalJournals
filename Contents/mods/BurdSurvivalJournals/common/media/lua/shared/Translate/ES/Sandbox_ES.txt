@@ -1,4 +1,4 @@
-Sandbox_ES = {
+﻿Sandbox_ES = {
     -- TAB NAMES
     Sandbox_BurdJournals_Player = "Diarios - Jugador",
     Sandbox_BurdJournals_Loot = "Diarios - Botin",
@@ -30,6 +30,13 @@ Sandbox_ES = {
     -- XP Multiplier
     Sandbox_BurdJournals_JournalXPMultiplier = "Multiplicador de XP del Diario",
     Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "Multiplicador para XP ganada de diarios (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). Aplica tanto a diarios desgastados como sangrientos.",
+
+    -- Skill Book Multiplier
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals = "Aplicar Multiplicadores de Libros de Habilidad",
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals_tooltip = "Cuando estÃ¡ activado, los multiplicadores de XP de los libros de habilidad se aplican ÃšNICAMENTE al XP absorbido de diarios desgastados y sangrientos. Los diarios personales no se ven afectados. El multiplicador estÃ¡ limitado por la configuraciÃ³n de abajo.",
+    
+    Sandbox_BurdJournals_SkillBookMultiplierCap = "LÃ­mite del Multiplicador de Libros",
+    Sandbox_BurdJournals_SkillBookMultiplierCap_tooltip = "Multiplicador mÃ¡ximo de XP de libros al absorber habilidades de diarios desgastados y sangrientos. El valor predeterminado de 2x previene la progresiÃ³n excesiva al inicio. Establezca a 16 para permitir multiplicadores completos. No afecta los diarios personales.",
 
     -- Writing Requirements
     Sandbox_BurdJournals_RequirePenToWrite = "Requerir Boligrafo para Escribir",
@@ -190,3 +197,4 @@ Sandbox_ES = {
     Sandbox_BurdJournals_BatchTimeMultiplier = "Multiplicador de Tiempo de Lote",
     Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplicador para duracion de acciones en lote. Menor = lotes mas rapidos. Ejemplo: 15 recetas a 0.8s cada una = 12s normalmente. Con multiplicador 0.25 = 3s. Solo afecta 'Registrar Todo' y 'Absorber Todo', no clics individuales. Predeterminado: 0.25 (4x mas rapido)",
 }
+

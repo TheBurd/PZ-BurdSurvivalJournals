@@ -142,6 +142,7 @@ UI_FR = {
     UI_BurdJournals_BaselineReset = "Base réinitialisée !",
     UI_BurdJournals_BaselineInitializing = "Veuillez patienter - initialisation des données du personnage...",
     UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_XPBoosted = "(boosté)",
     UI_BurdJournals_JournalSyncFailed = "Erreur : Échec de la synchronisation du journal",
     UI_BurdJournals_EntryErased = "Entrée effacée : %s",
 

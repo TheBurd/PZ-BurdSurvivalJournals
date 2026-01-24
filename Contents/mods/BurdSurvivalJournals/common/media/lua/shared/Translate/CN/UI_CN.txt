@@ -1,4 +1,4 @@
-UI_CN = {
+﻿UI_CN = {
     -- Journal Types
     UI_BurdJournals_BlankJournal = "空白生存日志",
     UI_BurdJournals_FilledJournal = "已填写生存日志",
@@ -142,6 +142,7 @@ UI_CN = {
     UI_BurdJournals_BaselineReset = "基准已重置！",
     UI_BurdJournals_BaselineInitializing = "请稍候 - 角色数据初始化中...",
     UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_XPBoosted = "(åŠ æˆ)",
     UI_BurdJournals_JournalSyncFailed = "错误：日志同步失败",
     UI_BurdJournals_EntryErased = "已擦除条目：%s",
 
@@ -396,3 +397,4 @@ UI_CN = {
     UI_BurdJournals_BaselineCacheCleared = "Baseline & cache cleared! Fresh baseline captured.",
     UI_BurdJournals_CmdBaselineCleared = "[Journals] Your baseline has been cleared and recaptured.",
 }
+

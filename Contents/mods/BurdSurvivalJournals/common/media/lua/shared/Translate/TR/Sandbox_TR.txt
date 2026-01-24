@@ -1,4 +1,4 @@
-Sandbox_TR = {
+﻿Sandbox_TR = {
     -- TAB NAMES
     Sandbox_BurdJournals_Player = "Günlükler - Oyuncu",
     Sandbox_BurdJournals_Loot = "Günlükler - Ganimet",
@@ -26,6 +26,13 @@ Sandbox_TR = {
     -- XP Multiplier
     Sandbox_BurdJournals_JournalXPMultiplier = "Günlük TP Çarpanı",
     Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "Günlüklerden kazanılan TP için çarpan (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). Hem eskimiş hem kanlı günlükler için geçerlidir.",
+
+    -- Skill Book Multiplier
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals = "Beceri KitabÄ± Ã‡arpanlarÄ±nÄ± Uygula",
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals_tooltip = "EtkinleÅŸtirildiÄŸinde, beceri kitaplarÄ±nÄ±n TP Ã§arpanlarÄ± SADECE eskimiÅŸ ve kanlÄ± gÃ¼nlÃ¼klerden emilen TP'ye uygulanÄ±r. KiÅŸisel gÃ¼nlÃ¼kler etkilenmez. Ã‡arpan aÅŸaÄŸÄ±daki ayarla sÄ±nÄ±rlanÄ±r.",
+    
+    Sandbox_BurdJournals_SkillBookMultiplierCap = "Beceri KitabÄ± Ã‡arpan SÄ±nÄ±rÄ±",
+    Sandbox_BurdJournals_SkillBookMultiplierCap_tooltip = "EskimiÅŸ ve kanlÄ± gÃ¼nlÃ¼klerden beceri emerken maksimum TP Ã§arpanÄ±. VarsayÄ±lan 2x erken oyun aÅŸÄ±rÄ± ilerlemesini Ã¶nler. 16'ya ayarlayarak tam Ã§arpanlara izin verin. KiÅŸisel gÃ¼nlÃ¼kleri etkilemez.",
 
     -- Writing Requirements
     Sandbox_BurdJournals_RequirePenToWrite = "Yazmak İçin Kalem Gereksin",
@@ -162,4 +169,22 @@ Sandbox_TR = {
     -- Trait Settings
     Sandbox_BurdJournals_AllowNegativeTraits = "Olumsuz Özelliklere İzin Ver",
     Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "Etkinse, günlüklerde olumsuz özellikler belirebilir ve kaydedilebilir.",
+
+    -- Player Journal Dissolution
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution = "Allow Restored Journal Dissolution",
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution_tooltip = "Controls whether 'Restored' journals (player journals created from worn/bloody blanks) dissolve after all contents are claimed. Restored journals always display their origin status. Default: OFF (restored journals persist forever like clean journals).",
+
+    -- ============================================================
+    -- PERFORMANCE SETTINGS
+    -- ============================================================
+
+    Sandbox_BurdJournals_RecordBatchSize = "Record Batch Size",
+    Sandbox_BurdJournals_RecordBatchSize_tooltip = "How many skills/traits/recipes to record in a single action when using 'Record All' or 'Record Tab'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    Sandbox_BurdJournals_AbsorbBatchSize = "Absorb Batch Size",
+    Sandbox_BurdJournals_AbsorbBatchSize_tooltip = "How many skills/traits/recipes to absorb in a single action when using 'Absorb All'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    Sandbox_BurdJournals_BatchTimeMultiplier = "Batch Time Multiplier",
+    Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplier for batch action duration. Lower = faster batches. Example: 15 recipes at 0.8s each = 12s normally. With 0.25 multiplier = 3s. Only affects 'Record All' and 'Absorb All', not individual clicks. Default: 0.25 (4x faster)",
 }
+

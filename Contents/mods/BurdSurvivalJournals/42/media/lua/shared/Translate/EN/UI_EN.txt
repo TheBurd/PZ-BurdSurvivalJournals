@@ -161,8 +161,16 @@ UI_EN = {
     UI_BurdJournals_BaselineReset = "Baseline reset!",
     UI_BurdJournals_BaselineInitializing = "Please wait - character data initializing...",
     UI_BurdJournals_GainedXP = "+%s %s",
+    UI_BurdJournals_XPBoosted = "(boosted)",
     UI_BurdJournals_JournalSyncFailed = "Error: Journal sync failed",
     UI_BurdJournals_EntryErased = "Entry erased: %s",
+
+    -- Stat Claiming
+    UI_BurdJournals_ClaimingStatMP = "Claiming %s...",
+    UI_BurdJournals_StatClaimed = "%s claimed!",
+    UI_BurdJournals_StatClaimFailed = "Could not apply stat",
+    UI_BurdJournals_StatAlreadyClaimed = "Already claimed this stat",
+    UI_BurdJournals_StatTooLow = "Your current value is higher",
 
     -- Empty States
     UI_BurdJournals_NoRewardsAvailable = "No rewards available",

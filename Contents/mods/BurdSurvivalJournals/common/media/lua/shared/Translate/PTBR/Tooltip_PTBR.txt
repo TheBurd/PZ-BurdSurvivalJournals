@@ -113,4 +113,5 @@ Tooltip_PTBR = {
     Tooltip_BurdJournals_AgeToday = "Hoje",
     Tooltip_BurdJournals_Age1Day = "1 dia atrás",
     Tooltip_BurdJournals_AgeDays = "%d dias atrás",
+    Tooltip_BurdJournals_Contributors = "Contributors: %s",
 }

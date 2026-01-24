@@ -734,6 +734,13 @@ Events.OnPlayerUpdate.Add(function(player)
     checkPlayerInventory(player)
 end)
 
+-- Helper to check if item is a BurdJournals item (any type)
+local function isBurdJournalItem(item)
+    if not item then return false end
+    local fullType = item:getFullType()
+    return fullType and fullType:find("^BurdJournals%.") ~= nil
+end
+
 if Events.OnContainerUpdate then
     Events.OnContainerUpdate.Add(function(container)
 
@@ -749,6 +756,19 @@ if Events.OnContainerUpdate then
             local item = items:get(i)
             if isUninitializedJournal(item) then
                 BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
+            elseif isBurdJournalItem(item) then
+                -- Check if this journal has a custom name that needs restoring
+                -- This fixes the MP bug where custom names are lost on item transfer
+                local modData = item:getModData()
+                if modData.BurdJournals and modData.BurdJournals.customName then
+                    local currentName = item:getName()
+                    if currentName ~= modData.BurdJournals.customName then
+                        BurdJournals.updateJournalName(item)
+                        if item.transmitModData then
+                            item:transmitModData()
+                        end
+                    end
+                end
             end
         end
     end)

@@ -59,6 +59,23 @@ option BurdJournals.JournalXPMultiplier = {
     translation = BurdJournals_JournalXPMultiplier,
 }
 
+/* Skill Book Multiplier for Journal Absorption */
+option BurdJournals.SkillBookMultiplierForJournals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_SkillBookMultiplierForJournals,
+}
+
+option BurdJournals.SkillBookMultiplierCap = {
+    type = double,
+    min = 1.0,
+    max = 16.0,
+    default = 2.0,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_SkillBookMultiplierCap,
+}
+
 /* Writing Requirements */
 option BurdJournals.RequirePenToWrite = {
     type = boolean,

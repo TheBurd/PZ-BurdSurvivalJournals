@@ -750,7 +750,7 @@ function BurdJournals.ContextMenu.onConfirmAbsorbAll(target, button, journal)
     if button.internal == "YES" then
 
         BurdJournals.ContextMenu.pickUpThenDo(target, journal, function(player, j)
-            if not BurdJournals.UI then
+            if not BurdJournals.UI.MainPanel then
                 require "UI/BurdJournals_MainPanel"
             end
 
@@ -778,7 +778,7 @@ end
 function BurdJournals.ContextMenu.onOpenWornJournal(player, journal)
 
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
-        if not BurdJournals.UI then
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
 
@@ -791,7 +791,7 @@ end
 function BurdJournals.ContextMenu.onOpenBloodyJournal(player, journal)
 
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
-        if not BurdJournals.UI then
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
 
@@ -875,8 +875,10 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
             lastSendTime = now
 
             if reward.type == "skill" then
+                -- Calculate skill book multiplier on the client (where the state is known)
+                local skillBookMultiplier = BurdJournals.getSkillBookMultiplier(player, reward.name)
                 sendClientCommand(player, "BurdJournals", "absorbSkill",
-                    {journalId = journalId, skillName = reward.name})
+                    {journalId = journalId, skillName = reward.name, skillBookMultiplier = skillBookMultiplier})
             elseif reward.type == "trait" then
                 sendClientCommand(player, "BurdJournals", "absorbTrait",
                     {journalId = journalId, traitId = reward.name})
@@ -1071,7 +1073,7 @@ end
 function BurdJournals.ContextMenu.onOpenCleanJournal(player, journal)
 
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
-        if not BurdJournals.UI then
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
 
@@ -1096,7 +1098,7 @@ end
 function BurdJournals.ContextMenu.onClaimAllConfirm(player, journal)
 
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
-        if not BurdJournals.UI then
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
 
@@ -1147,12 +1149,30 @@ function BurdJournals.ContextMenu.onConfirmRename(target, button, journal)
     if button.internal == "OK" then
         local newName = button.parent.entry:getText()
         if newName and newName ~= "" then
+            -- Set name locally first for immediate feedback
             journal:setName(newName)
+            -- Mark as custom name so PZ preserves it during item serialization (MP transfers)
+            if journal.setCustomName then
+                journal:setCustomName(true)
+            end
 
             local modData = journal:getModData()
             if modData.BurdJournals then
                 modData.BurdJournals.customName = newName
+            end
 
+            -- In multiplayer, send command to server to update the name there too
+            -- This is CRITICAL for MP name persistence - the server must have the correct name
+            if isClient() and not isServer() then
+                local player = getPlayer()
+                if player then
+                    sendClientCommand(player, "BurdJournals", "renameJournal", {
+                        journalId = journal:getID(),
+                        newName = newName
+                    })
+                end
+            else
+                -- Single player or listen server - just transmit locally
                 if journal.transmitModData then
                     journal:transmitModData()
                 end
@@ -1200,7 +1220,7 @@ end
 function BurdJournals.ContextMenu.onRecordProgress(player, journal)
 
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
-        if not BurdJournals.UI then
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
 
@@ -1231,7 +1251,7 @@ end
 
 function BurdJournals.ContextMenu.onConfirmOverwrite(target, button, journal)
     if button.internal == "YES" then
-        if not BurdJournals.UI then
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
 

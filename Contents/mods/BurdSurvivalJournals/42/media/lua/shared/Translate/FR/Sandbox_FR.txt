@@ -1,4 +1,4 @@
-Sandbox_FR = {
+﻿Sandbox_FR = {
     -- TAB NAMES
     Sandbox_BurdJournals_Player = "Journaux - Joueur",
     Sandbox_BurdJournals_Loot = "Journaux - Butin",
@@ -29,6 +29,13 @@ Sandbox_FR = {
     -- XP Multiplier
     Sandbox_BurdJournals_JournalXPMultiplier = "Multiplicateur d'XP des journaux",
     Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "Multiplicateur pour l'XP gagnée via les journaux (0,25 = 25 %, 1,0 = 100 %, 2,0 = 200 %). S'applique aux journaux usés et ensanglantés.",
+
+    -- Skill Book Multiplier
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals = "Appliquer les multiplicateurs de livres de compÃ©tences",
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals_tooltip = "Lorsque activÃ©, les multiplicateurs XP des livres de compÃ©tences s'appliquent UNIQUEMENT Ã  l'XP absorbÃ©e des journaux usÃ©s et ensanglantÃ©s. Les journaux personnels ne sont pas affectÃ©s. Le multiplicateur est limitÃ© par le paramÃ¨tre ci-dessous.",
+    
+    Sandbox_BurdJournals_SkillBookMultiplierCap = "Plafond du multiplicateur de livre",
+    Sandbox_BurdJournals_SkillBookMultiplierCap_tooltip = "Multiplicateur XP maximum des livres lors de l'absorption des journaux usÃ©s et ensanglantÃ©s. Par dÃ©faut 2x pour Ã©viter une progression trop rapide. Mettre Ã  16 pour les multiplicateurs complets. N'affecte pas les journaux personnels.",
 
     -- Writing Requirements
     Sandbox_BurdJournals_RequirePenToWrite = "Nécessite un stylo pour écrire",

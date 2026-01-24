@@ -16,6 +16,14 @@ Sandbox_RU = {
     Sandbox_BurdJournals_DiminishingMinimum_tooltip = "Минимальный процент восстановления ниже которого бонус не может быть уменьшен (0-50%).",
     Sandbox_BurdJournals_JournalXPMultiplier = "Множитель Опыта Журналов",
     Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "Множитель получаемого из журналов опыта (0.25 = 25%, 1.0 = 100%, 2.0 = 200%). Применяется к потрёпанным и к окровавленным журналам)",
+
+    -- Skill Book Multiplier
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals = "Применять Множители Книг Навыков",
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals_tooltip = "При включении множители опыта от книг навыков применяются ТОЛЬКО к опыту из потрёпанных и окровавленных журналов. Не влияет на журналы игроков. Множитель ограничен настройкой ниже.",
+    
+    Sandbox_BurdJournals_SkillBookMultiplierCap = "Лимит Множителя Книг",
+    Sandbox_BurdJournals_SkillBookMultiplierCap_tooltip = "Максимальный множитель опыта от книг при поглощении навыков из потрёпанных и окровавленных журналов. По умолчанию 2x предотвращает слишком быстрое развитие. Установите 16 для полных множителей. Не влияет на журналы игроков.",
+
     Sandbox_BurdJournals_RequirePenToWrite = "Необходим Инструмент Для Записи",
     Sandbox_BurdJournals_RequirePenToWrite_tooltip = "Требовать ручку или карандаш для записи навыков в чистом журнале.",
     Sandbox_BurdJournals_PenUsesPerLog = "Использований Инструмента За Запись",
@@ -103,4 +111,22 @@ Sandbox_RU = {
     Sandbox_BurdJournals_AllowOthersToClaimFromJournals_tooltip = "Если включено другие игроки могут изучать навыки/черты из чужих персональных журналов.",
     Sandbox_BurdJournals_AllowNegativeTraits = "Позволить Отрицательные Черты",
     Sandbox_BurdJournals_AllowNegativeTraits_tooltip = "Если включено негативные черты могут появляться и быть записаны в журналах.",
+
+    -- Player Journal Dissolution
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution = "Allow Restored Journal Dissolution",
+    Sandbox_BurdJournals_AllowPlayerJournalDissolution_tooltip = "Controls whether 'Restored' journals (player journals created from worn/bloody blanks) dissolve after all contents are claimed. Restored journals always display their origin status. Default: OFF (restored journals persist forever like clean journals).",
+
+    -- ============================================================
+    -- PERFORMANCE SETTINGS
+    -- ============================================================
+
+    Sandbox_BurdJournals_RecordBatchSize = "Record Batch Size",
+    Sandbox_BurdJournals_RecordBatchSize_tooltip = "How many skills/traits/recipes to record in a single action when using 'Record All' or 'Record Tab'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    Sandbox_BurdJournals_AbsorbBatchSize = "Absorb Batch Size",
+    Sandbox_BurdJournals_AbsorbBatchSize_tooltip = "How many skills/traits/recipes to absorb in a single action when using 'Absorb All'. Higher values complete faster but show longer individual progress bars. Set to 1 for classic one-at-a-time behavior. Default: 15",
+
+    Sandbox_BurdJournals_BatchTimeMultiplier = "Batch Time Multiplier",
+    Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplier for batch action duration. Lower = faster batches. Example: 15 recipes at 0.8s each = 12s normally. With 0.25 multiplier = 3s. Only affects 'Record All' and 'Absorb All', not individual clicks. Default: 0.25 (4x faster)",
 }
+

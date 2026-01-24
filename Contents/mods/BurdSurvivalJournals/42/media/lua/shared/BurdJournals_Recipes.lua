@@ -1,12 +1,12 @@
 
 require "BurdJournals_Shared"
 
-function BurdJournals_CanCraftPlayerJournal(recipe, playerObj)
-
+-- Build 42 OnTest signature: function(sourceItem, result)
+-- We don't need the parameters, just checking sandbox option
+function BurdJournals_CanCraftPlayerJournal(sourceItem, result)
     if BurdJournals and BurdJournals.isPlayerJournalsEnabled then
         return BurdJournals.isPlayerJournalsEnabled()
     end
-
     return true
 end
 

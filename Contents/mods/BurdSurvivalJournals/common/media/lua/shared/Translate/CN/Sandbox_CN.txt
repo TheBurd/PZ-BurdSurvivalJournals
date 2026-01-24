@@ -1,4 +1,4 @@
-Sandbox_CN = {
+﻿Sandbox_CN = {
     -- TAB NAMES
     Sandbox_BurdJournals_Player = "日志 - 玩家设置",
     Sandbox_BurdJournals_Loot = "日志 - 战利品设置",
@@ -30,6 +30,13 @@ Sandbox_CN = {
     -- XP Multiplier
     Sandbox_BurdJournals_JournalXPMultiplier = "日志经验倍率",
     Sandbox_BurdJournals_JournalXPMultiplier_tooltip = "通过日志获取经验的倍率（0.25 = 25%，1.0 = 100%，2.0 = 200%）。该设置同时适用于破旧和沾血日志。",
+
+    -- Skill Book Multiplier
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals = "åº”ç”¨æŠ€èƒ½ä¹¦å€çŽ‡",
+    Sandbox_BurdJournals_SkillBookMultiplierForJournals_tooltip = "å¯ç”¨åŽï¼ŒæŠ€èƒ½ä¹¦çš„ç»éªŒå€çŽ‡å°†åº”ç”¨äºŽä»Žç ´æ—§å’Œæ²¾è¡€æ—¥å¿—å¸æ”¶çš„ç»éªŒã€‚çŽ©å®¶æ—¥å¿—ä¸å—å½±å“ã€‚å€çŽ‡å—ä¸‹æ–¹è®¾ç½®é™åˆ¶ã€‚",
+    
+    Sandbox_BurdJournals_SkillBookMultiplierCap = "æŠ€èƒ½ä¹¦å€çŽ‡ä¸Šé™",
+    Sandbox_BurdJournals_SkillBookMultiplierCap_tooltip = "å¸æ”¶æ—¥å¿—æŠ€èƒ½æ—¶çš„æœ€å¤§ç»éªŒå€çŽ‡ã€‚é»˜è®¤2å€å¯é˜²æ­¢å‰æœŸè¿‡å¿«æˆé•¿ã€‚è®¾ä¸º16å…è®¸å®Œæ•´æŠ€èƒ½ä¹¦å€çŽ‡ã€‚",
 
     -- Writing Requirements
     Sandbox_BurdJournals_RequirePenToWrite = "书写需要钢笔/铅笔",
@@ -192,3 +199,4 @@ Sandbox_CN = {
     Sandbox_BurdJournals_BatchTimeMultiplier = "Batch Time Multiplier",
     Sandbox_BurdJournals_BatchTimeMultiplier_tooltip = "Multiplier for batch action duration. Lower = faster batches. Example: 15 recipes at 0.8s each = 12s normally. With 0.25 multiplier = 3s. Only affects 'Record All' and 'Absorb All', not individual clicks. Default: 0.25 (4x faster)",
 }
+

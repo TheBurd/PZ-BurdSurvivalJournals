@@ -92,4 +92,5 @@ Tooltip_RU = {
     Tooltip_BurdJournals_AgeToday = "Сегодня",
     Tooltip_BurdJournals_Age1Day = "1 день назад",
     Tooltip_BurdJournals_AgeDays = "%d дня(дней) назад",
+    Tooltip_BurdJournals_Contributors = "Contributors: %s",
 }
