@@ -229,6 +229,144 @@ function BurdJournals.measureWrappedModalTextHeight(text, wrapWidth, font)
     return math.max(lineHeight, totalLines * lineHeight)
 end
 
+local function getModalPlayerNum(playerOrNum)
+    local asNum = tonumber(playerOrNum)
+    if asNum then
+        return math.max(0, math.floor(asNum))
+    end
+
+    local player = playerOrNum
+    if player and player.getPlayerNum then
+        local ok, pnum = safePcall(function()
+            return player:getPlayerNum()
+        end)
+        if ok and tonumber(pnum) then
+            return math.max(0, math.floor(tonumber(pnum)))
+        end
+    end
+    return 0
+end
+
+local function isModalJoypadDataConnected(joypadData)
+    if not joypadData then
+        return false
+    end
+
+    local hasConnectionSignal = false
+
+    if joypadData.isConnected then
+        local ok, connected = safePcall(function()
+            return joypadData:isConnected()
+        end)
+        if ok and connected ~= nil then
+            hasConnectionSignal = true
+            if connected ~= true then
+                return false
+            end
+        end
+    end
+
+    if joypadData.bConnected ~= nil then
+        hasConnectionSignal = true
+        if joypadData.bConnected ~= true then
+            return false
+        end
+    end
+
+    if joypadData.id ~= nil then
+        local jid = tonumber(joypadData.id)
+        if jid and jid < 0 then
+            return false
+        end
+        hasConnectionSignal = true
+    end
+
+    local controller = joypadData.controller
+    if controller ~= nil then
+        hasConnectionSignal = true
+        if controller.isGamepad then
+            local ok, isGamepad = safePcall(function()
+                return controller:isGamepad()
+            end)
+            if ok and isGamepad ~= true then
+                return false
+            end
+        end
+    end
+
+    return hasConnectionSignal
+end
+
+function BurdJournals.isJoypadActiveForPlayer(playerOrNum)
+    if not getJoypadData then
+        return false, nil, 0
+    end
+
+    local playerNum = getModalPlayerNum(playerOrNum)
+    local joypadData = getJoypadData(playerNum)
+    if not isModalJoypadDataConnected(joypadData) then
+        return false, joypadData, playerNum
+    end
+
+    return true, joypadData, playerNum
+end
+
+local function applyModalJoypadPrompt(button, textureOrNil)
+    if not button then
+        return
+    end
+    if textureOrNil and button.setJoypadButton then
+        button:setJoypadButton(textureOrNil)
+        return
+    end
+    if button.clearJoypadButton then
+        button:clearJoypadButton()
+    elseif button.setJoypadButton then
+        button:setJoypadButton(nil)
+    end
+end
+
+function BurdJournals.applyJoypadSupportToModal(modal, player, options)
+    if not modal then
+        return false
+    end
+
+    local opts = options or {}
+    if opts.prevFocus ~= nil then
+        modal.prevFocus = opts.prevFocus
+    end
+
+    if not getJoypadData or not setJoypadFocus then
+        return false
+    end
+
+    local playerNum = tonumber(opts.playerNum) or player
+    local joypadActive, joypadData, resolvedPlayerNum = BurdJournals.isJoypadActiveForPlayer(playerNum)
+    if not joypadActive then
+        applyModalJoypadPrompt(modal.yes, nil)
+        applyModalJoypadPrompt(modal.no, nil)
+        applyModalJoypadPrompt(modal.ok, nil)
+        applyModalJoypadPrompt(modal.cancel, nil)
+        return false
+    end
+
+    local textures = Joypad and Joypad.Texture or nil
+    if textures then
+        applyModalJoypadPrompt(modal.yes, textures.AButton)
+        applyModalJoypadPrompt(modal.no, textures.BButton)
+        applyModalJoypadPrompt(modal.ok, textures.AButton)
+        applyModalJoypadPrompt(modal.cancel, textures.BButton)
+    end
+
+    setJoypadFocus(resolvedPlayerNum, modal)
+    if updateJoypadFocus and joypadData then
+        safePcall(function()
+            updateJoypadFocus(joypadData)
+        end)
+    end
+    return true
+end
+
 function BurdJournals.createAdaptiveModalDialog(options)
     if not ISModalDialog then
         return nil
@@ -309,6 +447,12 @@ function BurdJournals.createAdaptiveModalDialog(options)
         safePcall(function() opts.afterInit(modal) end)
     end
     modal:addToUIManager()
+    if opts.joypadSupport ~= false then
+        BurdJournals.applyJoypadSupportToModal(modal, player, {
+            playerNum = opts.playerNum,
+            prevFocus = opts.prevFocus,
+        })
+    end
     return modal
 end
 
@@ -1695,11 +1839,74 @@ local function getTraitLabelFromDefinition(def, fallback)
     return fallback
 end
 
+local function translateTraitDisplayCandidate(candidate)
+    if type(candidate) ~= "string" or candidate == "" then
+        return nil
+    end
+    if not getText then
+        return nil
+    end
+    local translated = getText(candidate)
+    if translated and translated ~= "" and translated ~= candidate then
+        return translated
+    end
+    return nil
+end
+
+local function prettifyTraitDisplayFallback(traitId)
+    if type(traitId) ~= "string" or traitId == "" then
+        return nil
+    end
+
+    local pretty = normalizeTraitIdRaw(traitId) or traitId
+    pretty = string.gsub(pretty, "^UI_[Tt]rait_", "")
+    pretty = string.gsub(pretty, "_", " ")
+    pretty = string.gsub(pretty, "([%l])([%u])", "%1 %2")
+    pretty = string.gsub(pretty, "%s+", " ")
+    pretty = string.gsub(pretty, "^%s+", "")
+    pretty = string.gsub(pretty, "%s+$", "")
+
+    if pretty == "" then
+        return nil
+    end
+    return pretty
+end
+
+local function resolveTraitDisplayLabel(rawLabel, traitId)
+    local normalizedId = normalizeTraitIdRaw(traitId)
+
+    if type(rawLabel) == "string" and rawLabel ~= "" then
+        local translatedLabel = translateTraitDisplayCandidate(rawLabel)
+        if translatedLabel then
+            return translatedLabel
+        end
+        if not string.find(rawLabel, "^UI_") then
+            return rawLabel
+        end
+    end
+
+    if type(normalizedId) == "string" and normalizedId ~= "" then
+        local translatedById = translateTraitDisplayCandidate(normalizedId)
+        if translatedById then
+            return translatedById
+        end
+
+        local translatedByTraitKey = translateTraitDisplayCandidate("UI_trait_" .. normalizedId)
+        if translatedByTraitKey then
+            return translatedByTraitKey
+        end
+    end
+
+    return prettifyTraitDisplayFallback(normalizedId or traitId)
+end
+
 function BurdJournals.getTraitDisplayName(traitId)
     if not traitId then return "Unknown Trait" end
 
-    if BurdJournals._traitDisplayNameCache[traitId] then
-        return BurdJournals._traitDisplayNameCache[traitId]
+    local normalizedId = normalizeTraitIdRaw(traitId) or tostring(traitId)
+    local cacheKey = string.lower(tostring(normalizedId))
+    if BurdJournals._traitDisplayNameCache[cacheKey] then
+        return BurdJournals._traitDisplayNameCache[cacheKey]
     end
 
     local displayName = nil
@@ -1711,7 +1918,7 @@ function BurdJournals.getTraitDisplayName(traitId)
                 local def = allTraits:get(i)
                 if def then
                     local thisTraitId = getTraitIdFromDefinition(def)
-                    if thisTraitId and string.lower(thisTraitId) == string.lower(traitId) then
+                    if thisTraitId and string.lower(thisTraitId) == string.lower(normalizedId) then
                         displayName = getTraitLabelFromDefinition(def, displayName)
                         break
                     end
@@ -1721,17 +1928,18 @@ function BurdJournals.getTraitDisplayName(traitId)
     end
 
     if not displayName and TraitFactory and TraitFactory.getTrait then
-        local trait = TraitFactory.getTrait(traitId)
+        local trait = TraitFactory.getTrait(normalizedId) or TraitFactory.getTrait(tostring(traitId))
         if trait and trait.getLabel then
             displayName = trait:getLabel()
         end
     end
 
-    if not displayName then
-        displayName = traitId:gsub("(%l)(%u)", "%1 %2")
+    displayName = resolveTraitDisplayLabel(displayName, normalizedId)
+    if not displayName or displayName == "" then
+        displayName = tostring(normalizedId)
     end
 
-    BurdJournals._traitDisplayNameCache[traitId] = displayName
+    BurdJournals._traitDisplayNameCache[cacheKey] = displayName
 
     return displayName
 end
@@ -2619,6 +2827,7 @@ function BurdJournals.getSandboxOption(optionName)
         RequirePenToWrite = true,
         PenUsesPerLog = 1,
         RequireEraserToErase = true,
+        PersistDROnErase = false,
 
         LearningTimePerSkill = 3.0,
         LearningTimePerTrait = 5.0,
@@ -2655,7 +2864,7 @@ function BurdJournals.getSandboxOption(optionName)
         MaxRecipesPerJournal = 0,
 
         EnableWornJournalSpawns = true,
-        WornJournalSpawnChance = 2.0,
+        WornJournalSpawnChance = 1.0,
         WornJournalMinSkills = 1,
         WornJournalMaxSkills = 2,
         WornJournalMinXP = 25,
@@ -2668,7 +2877,7 @@ function BurdJournals.getSandboxOption(optionName)
         WornJournalForgetChance = 5,
 
         EnableBloodyJournalSpawns = true,
-        BloodyJournalSpawnChance = 0.5,
+        BloodyJournalSpawnChance = 0.3,
         BloodyJournalMinSkills = 2,
         BloodyJournalMaxSkills = 4,
         BloodyJournalMinXP = 50,
@@ -2677,7 +2886,7 @@ function BurdJournals.getSandboxOption(optionName)
         BloodyJournalMaxTraits = 2,
         BloodyJournalForgetChance = 5,
         EnableCursedJournalSpawns = true,
-        CursedJournalSpawnChance = 0.2,
+        CursedJournalSpawnChance = 0.08,
         CursedJournalMinSkills = 2,
         CursedJournalMaxSkills = 5,
         CursedJournalMinXP = 75,
@@ -3284,27 +3493,8 @@ function BurdJournals.isAdaptiveManagedTrait(traitId)
     return false
 end
 
-function BurdJournals.isLifestyleManagedTrait(traitId)
-    if not traitId then return false end
-
-    local normalizedTrait = normalizeTraitCompatId(traitId)
-    if normalizedTrait == "ftbad"
-        or normalizedTrait == "ftgood"
-        or normalizedTrait == "eldoradobad"
-        or normalizedTrait == "eldoradogood" then
-        return true
-    end
-
-    if BurdJournals.getTraitModId then
-        local sourceId = BurdJournals.getTraitModId(traitId)
-        local normalizedSource = sourceId and string.lower(tostring(sourceId)) or ""
-        if normalizedSource == "lifestyle" or normalizedSource == "lifestylehobbies" then
-            if normalizedTrait and (string.match(normalizedTrait, "good$") or string.match(normalizedTrait, "bad$")) then
-                return true
-            end
-        end
-    end
-
+function BurdJournals.isLifestyleManagedTrait(_traitId)
+    -- Deprecated compatibility hook: Lifestyle-specific transient trait blocking is removed.
     return false
 end
 
@@ -3315,10 +3505,6 @@ function BurdJournals.isTraitBlockedByModCompat(journalData, traitId)
     if isPlayerJournal and BurdJournals.isAdaptiveManagedTrait and BurdJournals.isAdaptiveManagedTrait(traitId) then
         return not BurdJournals.isAdaptiveTraitsManagedTraitRecordingEnabled()
     end
-    if isPlayerJournal and BurdJournals.isLifestyleManagedTrait and BurdJournals.isLifestyleManagedTrait(traitId) then
-        return true
-    end
-
     return false
 end
 
@@ -8485,6 +8671,588 @@ BurdJournals.PROFESSIONS = {
     {id = "unemployed", name = "Unemployed", nameKey = "UI_BurdJournals_ProfUnemployed", flavorKey = "UI_BurdJournals_FlavorUnemployed"},
 }
 
+BurdJournals.VANILLA_PROFESSION_SKILLS = {
+    fireofficer = {"Axe", "Doctor", "FirstAid", "Fitness", "Strength"},
+    policeofficer = {"Aiming", "Reloading", "FirstAid", "Fitness", "Sprinting"},
+    parkranger = {"Aiming", "Axe", "Spear", "Farming", "Fishing", "Trapping", "Foraging", "PlantScavenging", "Lightfoot", "Sneak"},
+    constructionworker = {"Blunt", "Carpentry", "Strength", "Maintenance"},
+    securityguard = {"Aiming", "Reloading", "Blunt", "SmallBlunt", "LongBlade"},
+    carpenter = {"Carpentry", "Woodwork"},
+    burglar = {"Blunt", "SmallBlunt", "SmallBlade", "Sprinting", "Lightfoot", "Nimble", "Sneak"},
+    chef = {"SmallBlade", "Cooking"},
+    repairman = {"Mechanics", "Maintenance"},
+    farmer = {"Farming", "Trapping", "Foraging", "PlantScavenging", "Cooking"},
+    fisherman = {"Spear", "Fishing", "Foraging"},
+    doctor = {"Doctor", "FirstAid", "SmallBlade"},
+    nurse = {"Doctor", "FirstAid", "Tailoring"},
+    lumberjack = {"Axe", "Carpentry", "Woodwork", "Strength"},
+    fitnessInstructor = {"Fitness", "Strength", "Sprinting", "Nimble"},
+    burgerflipper = {"Cooking"},
+    electrician = {"Electricity"},
+    engineer = {"Metalworking", "Electricity", "Mechanics"},
+    metalworker = {"Metalworking"},
+    mechanics = {"Metalworking", "Mechanics", "Maintenance"},
+    veteran = {"Aiming", "Reloading", "LongBlade", "Fitness", "Sneak"},
+    unemployed = {"Tailoring"},
+}
+
+BurdJournals._professionProfilesBySource = BurdJournals._professionProfilesBySource or {}
+BurdJournals._professionProfilesById = BurdJournals._professionProfilesById or {}
+BurdJournals._professionProfileListCache = BurdJournals._professionProfileListCache or nil
+BurdJournals._professionProfileListDirty = BurdJournals._professionProfileListDirty ~= false
+BurdJournals._vanillaProfessionProfilesRegistered = BurdJournals._vanillaProfessionProfilesRegistered == true
+
+local function _normalizeProfessionSourceId(sourceId)
+    if BurdJournals.normalizeFilterSourceId then
+        local normalized = BurdJournals.normalizeFilterSourceId(sourceId)
+        if normalized and normalized ~= "" then
+            return normalized
+        end
+    end
+    local source = string.lower(tostring(sourceId or "vanilla"))
+    if source == "base" then
+        return "vanilla"
+    end
+    if source == "" then
+        return "modded"
+    end
+    return source
+end
+
+local function _sanitizeProfessionIdFragment(text)
+    local value = string.lower(tostring(text or "modded"))
+    value = value:gsub("[^%w_]+", "_")
+    value = value:gsub("_+", "_")
+    value = value:gsub("^_+", "")
+    value = value:gsub("_+$", "")
+    if value == "" then
+        return "modded"
+    end
+    return value
+end
+
+local function _getTranslatedText(key, fallback)
+    if not key or key == "" then
+        return fallback
+    end
+    local translated = getText(key)
+    if translated and translated ~= "" and translated ~= key then
+        return translated
+    end
+    return fallback
+end
+
+local function _resolveProfessionDisplayName(nameKey, fallbackName)
+    if nameKey and nameKey ~= "" then
+        local translated = _getTranslatedText(nameKey, nil)
+        if translated then
+            return translated
+        end
+    end
+    return fallbackName
+end
+
+local function _normalizeProfileSkillId(skillName)
+    if not skillName then
+        return nil
+    end
+    local skillId = tostring(skillName)
+    local mapped = BurdJournals.SKILL_TO_PERK and BurdJournals.SKILL_TO_PERK[skillId] or nil
+    if mapped and mapped ~= "" then
+        skillId = mapped
+    end
+    return skillId
+end
+
+local function _profileListToSet(values, normalizer)
+    local asSet = {}
+    local asList = {}
+    if type(values) ~= "table" then
+        return asSet, asList
+    end
+
+    local function addValue(rawValue)
+        if not rawValue then return end
+        local normalized = rawValue
+        if normalizer then
+            normalized = normalizer(rawValue)
+        end
+        if not normalized or normalized == "" then
+            return
+        end
+        normalized = tostring(normalized)
+        if not asSet[normalized] then
+            asSet[normalized] = true
+            table.insert(asList, normalized)
+        end
+    end
+
+    local isArray = (#values > 0)
+    if isArray then
+        for _, value in ipairs(values) do
+            addValue(value)
+        end
+    else
+        for key, enabled in pairs(values) do
+            if enabled then
+                addValue(key)
+            end
+        end
+    end
+
+    return asSet, asList
+end
+
+local function _normalizeProfileDefinition(sourceId, rawProfile, fallbackId)
+    if type(rawProfile) ~= "table" then
+        return nil
+    end
+
+    local rawId = rawProfile.id or fallbackId
+    if type(rawId) ~= "string" or rawId == "" then
+        return nil
+    end
+
+    local skillSet, skills = _profileListToSet(rawProfile.skills, _normalizeProfileSkillId)
+    local traitSet, traits = _profileListToSet(rawProfile.traits, nil)
+    local recipeSet, recipes = _profileListToSet(rawProfile.recipes, nil)
+    local weights = type(rawProfile.weights) == "table" and rawProfile.weights or nil
+
+    return {
+        id = rawId,
+        sourceId = sourceId,
+        name = rawProfile.name,
+        nameKey = rawProfile.nameKey,
+        flavorKey = rawProfile.flavorKey,
+        priority = tonumber(rawProfile.priority) or 0,
+        weights = {
+            skills = tonumber(weights and (weights.skills or weights.skill)) or 3,
+            traits = tonumber(weights and (weights.traits or weights.trait)) or 2,
+            recipes = tonumber(weights and (weights.recipes or weights.recipe)) or 1,
+        },
+        skills = skills,
+        skillSet = skillSet,
+        traits = traits,
+        traitSet = traitSet,
+        recipes = recipes,
+        recipeSet = recipeSet,
+    }
+end
+
+local function _invalidateProfessionProfileCaches()
+    BurdJournals._professionProfileListDirty = true
+    BurdJournals._professionProfileListCache = nil
+end
+
+function BurdJournals.registerProfessionProfiles(modId, profiles)
+    if type(profiles) ~= "table" then
+        return 0
+    end
+
+    local sourceId = _normalizeProfessionSourceId(modId)
+    local byId = BurdJournals._professionProfilesById[sourceId] or {}
+    local bySource = BurdJournals._professionProfilesBySource[sourceId] or {}
+    local inserted = 0
+
+    for key, rawProfile in pairs(profiles) do
+        if type(rawProfile) == "table" then
+            local normalized = _normalizeProfileDefinition(sourceId, rawProfile, type(key) == "string" and key or nil)
+            if normalized then
+                byId[normalized.id] = normalized
+                bySource[normalized.id] = normalized
+                inserted = inserted + 1
+            end
+        end
+    end
+
+    BurdJournals._professionProfilesById[sourceId] = byId
+    BurdJournals._professionProfilesBySource[sourceId] = bySource
+    _invalidateProfessionProfileCaches()
+    return inserted
+end
+
+function BurdJournals.unregisterProfessionProfiles(modId)
+    local sourceId = _normalizeProfessionSourceId(modId)
+    if sourceId == "vanilla" then
+        return false
+    end
+    if BurdJournals._professionProfilesBySource[sourceId] or BurdJournals._professionProfilesById[sourceId] then
+        BurdJournals._professionProfilesBySource[sourceId] = nil
+        BurdJournals._professionProfilesById[sourceId] = nil
+        _invalidateProfessionProfileCaches()
+        return true
+    end
+    return false
+end
+
+local function _ensureVanillaProfessionProfiles()
+    if BurdJournals._vanillaProfessionProfilesRegistered then
+        return
+    end
+
+    local vanillaProfiles = {}
+    for _, prof in ipairs(BurdJournals.PROFESSIONS or {}) do
+        table.insert(vanillaProfiles, {
+            id = prof.id,
+            name = prof.name,
+            nameKey = prof.nameKey,
+            flavorKey = prof.flavorKey,
+            skills = BurdJournals.VANILLA_PROFESSION_SKILLS[prof.id] or {},
+            priority = 50,
+        })
+    end
+
+    BurdJournals.registerProfessionProfiles("Vanilla", vanillaProfiles)
+    BurdJournals._vanillaProfessionProfilesRegistered = true
+end
+
+local function _getAllRegisteredProfessionProfiles()
+    _ensureVanillaProfessionProfiles()
+
+    if not BurdJournals._professionProfileListDirty and BurdJournals._professionProfileListCache then
+        return BurdJournals._professionProfileListCache
+    end
+
+    local list = {}
+    for _, sourceProfiles in pairs(BurdJournals._professionProfilesBySource) do
+        for _, profile in pairs(sourceProfiles) do
+            table.insert(list, profile)
+        end
+    end
+
+    table.sort(list, function(a, b)
+        return tostring(a.id) < tostring(b.id)
+    end)
+
+    BurdJournals._professionProfileListCache = list
+    BurdJournals._professionProfileListDirty = false
+    return list
+end
+
+function BurdJournals.getProfessionProfileById(profileId)
+    if not profileId then
+        return nil
+    end
+    local target = tostring(profileId)
+    for _, profile in ipairs(_getAllRegisteredProfessionProfiles()) do
+        if profile.id == target then
+            return profile
+        end
+    end
+    return nil
+end
+
+local function _collectEntryNames(entries, normalizer)
+    local values = {}
+    local seen = {}
+    if type(entries) ~= "table" then
+        return values
+    end
+
+    local function addEntry(rawName)
+        if not rawName then
+            return
+        end
+        local normalized = rawName
+        if normalizer then
+            normalized = normalizer(rawName)
+        end
+        if not normalized or normalized == "" then
+            return
+        end
+        local text = tostring(normalized)
+        if not seen[text] then
+            seen[text] = true
+            table.insert(values, text)
+        end
+    end
+
+    local isArray = (#entries > 0)
+    if isArray then
+        for _, value in ipairs(entries) do
+            if type(value) == "string" then
+                addEntry(value)
+            end
+        end
+    else
+        for key, value in pairs(entries) do
+            if type(key) == "string" and value ~= nil and value ~= false then
+                addEntry(key)
+            end
+        end
+    end
+
+    return values
+end
+
+local function _formatGeneralistProfessionName(sourceDisplay)
+    local fallbackTemplate = "%s Generalist"
+    local template = _getTranslatedText("UI_BurdJournals_ProfGeneralistTemplate", fallbackTemplate)
+    if string.find(template, "%%1", 1, true) then
+        return string.gsub(template, "%%1", tostring(sourceDisplay))
+    end
+    if string.find(template, "%%s", 1, true) then
+        local ok, formatted = pcall(string.format, template, tostring(sourceDisplay))
+        if ok and formatted and formatted ~= "" then
+            return formatted
+        end
+    end
+    return tostring(sourceDisplay) .. " Generalist"
+end
+
+local function _resolveDominantSourceFromEntries(skillNames, traitNames, recipeNames)
+    local sourceScores = {}
+    local sourceDisplays = {}
+
+    local function addSourceVote(sourceId, weight)
+        local normalized = _normalizeProfessionSourceId(sourceId)
+        if normalized == "all" or normalized == "modded" then
+            return
+        end
+        sourceScores[normalized] = (sourceScores[normalized] or 0) + weight
+        if not sourceDisplays[normalized] then
+            sourceDisplays[normalized] = BurdJournals.getModSourceFromPrefix and BurdJournals.getModSourceFromPrefix(normalized) or normalized
+        end
+    end
+
+    for _, skillName in ipairs(skillNames or {}) do
+        local sourceId = BurdJournals.getSkillModId and BurdJournals.getSkillModId(skillName) or "Vanilla"
+        addSourceVote(sourceId, 3)
+    end
+    for _, traitId in ipairs(traitNames or {}) do
+        local sourceId = BurdJournals.getTraitModId and BurdJournals.getTraitModId(traitId) or "Vanilla"
+        addSourceVote(sourceId, 2)
+    end
+    for _, recipeName in ipairs(recipeNames or {}) do
+        local sourceId = BurdJournals.getRecipeModId and BurdJournals.getRecipeModId(recipeName) or "Vanilla"
+        addSourceVote(sourceId, 1)
+    end
+
+    local bestSourceId = nil
+    local bestScore = 0
+    for sourceId, score in pairs(sourceScores) do
+        if score > bestScore or (score == bestScore and bestSourceId and sourceId < bestSourceId) then
+            bestSourceId = sourceId
+            bestScore = score
+        end
+    end
+
+    return bestSourceId, sourceDisplays[bestSourceId]
+end
+
+function BurdJournals.inferProfessionFromEntries(entries, options)
+    options = options or {}
+
+    local defaultProfessionId = options.defaultProfessionId
+    local defaultProfessionName = options.defaultProfessionName
+    local defaultFlavorKey = options.defaultFlavorKey
+
+    local skillNames = _collectEntryNames(entries and entries.skills, _normalizeProfileSkillId)
+    local traitNames = _collectEntryNames(entries and entries.traits, nil)
+    local recipeNames = _collectEntryNames(entries and entries.recipes, nil)
+
+    local bestMatch = nil
+    for _, profile in ipairs(_getAllRegisteredProfessionProfiles()) do
+        local score = 0
+        local matchedSkills = 0
+
+        for _, skillName in ipairs(skillNames) do
+            if profile.skillSet[skillName] then
+                score = score + (profile.weights.skills or 3)
+                matchedSkills = matchedSkills + 1
+            end
+        end
+        for _, traitName in ipairs(traitNames) do
+            if profile.traitSet[traitName] then
+                score = score + (profile.weights.traits or 2)
+            end
+        end
+        for _, recipeName in ipairs(recipeNames) do
+            if profile.recipeSet[recipeName] then
+                score = score + (profile.weights.recipes or 1)
+            end
+        end
+
+        if score > 0 then
+            local isBetter = false
+            if not bestMatch then
+                isBetter = true
+            elseif score > bestMatch.score then
+                isBetter = true
+            elseif score == bestMatch.score then
+                if matchedSkills > bestMatch.matchedSkills then
+                    isBetter = true
+                elseif matchedSkills == bestMatch.matchedSkills then
+                    if (profile.priority or 0) > (bestMatch.profile.priority or 0) then
+                        isBetter = true
+                    elseif (profile.priority or 0) == (bestMatch.profile.priority or 0)
+                        and tostring(profile.id) < tostring(bestMatch.profile.id)
+                    then
+                        isBetter = true
+                    end
+                end
+            end
+
+            if isBetter then
+                bestMatch = {
+                    profile = profile,
+                    score = score,
+                    matchedSkills = matchedSkills,
+                }
+            end
+        end
+    end
+
+    if bestMatch and bestMatch.profile then
+        local profile = bestMatch.profile
+        local professionName = _resolveProfessionDisplayName(profile.nameKey, profile.name or defaultProfessionName)
+        return profile.id, professionName, profile.flavorKey or defaultFlavorKey
+    end
+
+    local dominantSourceId, dominantSourceDisplay = _resolveDominantSourceFromEntries(skillNames, traitNames, recipeNames)
+    if dominantSourceId and dominantSourceId ~= "vanilla" then
+        local displayName = dominantSourceDisplay or dominantSourceId
+        local professionId = "mod_generalist_" .. _sanitizeProfessionIdFragment(dominantSourceId)
+        local professionName = _formatGeneralistProfessionName(displayName)
+        return professionId, professionName, "UI_BurdJournals_FlavorModGeneralist"
+    end
+
+    return defaultProfessionId, defaultProfessionName, defaultFlavorKey
+end
+
+function BurdJournals.rollCoherentSkillsFromCoreSkills(coreSkills, minSkills, maxSkills, minXP, maxXP)
+    minSkills = math.max(1, math.floor(tonumber(minSkills) or 1))
+    maxSkills = math.max(minSkills, math.floor(tonumber(maxSkills) or minSkills))
+    minXP = math.max(0, math.floor(tonumber(minXP) or 25))
+    maxXP = math.max(minXP, math.floor(tonumber(maxXP) or minXP))
+
+    local targetCount = ZombRand(minSkills, maxSkills + 1)
+    local allSkills = BurdJournals.getAllowedSkills and BurdJournals.getAllowedSkills() or {}
+    if type(allSkills) ~= "table" or #allSkills == 0 then
+        return {}, 0, 0
+    end
+
+    local allowedSet = {}
+    for _, skillName in ipairs(allSkills) do
+        allowedSet[skillName] = true
+    end
+
+    local corePool = {}
+    local coreSet = {}
+
+    local function addCoreSkill(rawSkillName)
+        local normalizedSkill = _normalizeProfileSkillId(rawSkillName)
+        if not normalizedSkill or not allowedSet[normalizedSkill] or coreSet[normalizedSkill] then
+            return
+        end
+        coreSet[normalizedSkill] = true
+        table.insert(corePool, normalizedSkill)
+    end
+
+    if type(coreSkills) == "table" then
+        local isArray = (#coreSkills > 0)
+        if isArray then
+            for _, skillName in ipairs(coreSkills) do
+                addCoreSkill(skillName)
+            end
+        else
+            for skillName, enabled in pairs(coreSkills) do
+                if enabled then
+                    addCoreSkill(skillName)
+                end
+            end
+        end
+    end
+
+    local fallbackPool = {}
+    for _, skillName in ipairs(allSkills) do
+        if not coreSet[skillName] then
+            table.insert(fallbackPool, skillName)
+        end
+    end
+
+    for i = #corePool, 2, -1 do
+        local j = ZombRand(i) + 1
+        corePool[i], corePool[j] = corePool[j], corePool[i]
+    end
+    for i = #fallbackPool, 2, -1 do
+        local j = ZombRand(i) + 1
+        fallbackPool[i], fallbackPool[j] = fallbackPool[j], fallbackPool[i]
+    end
+
+    local selected = {}
+    local selectedSet = {}
+    local coreCount = 0
+    local fallbackCount = 0
+
+    local function trySelectSkill(skillName, fromCore)
+        if not skillName or selectedSet[skillName] then
+            return false
+        end
+
+        if Perks and BurdJournals.getPerkByName and not BurdJournals.getPerkByName(skillName) then
+            return false
+        end
+
+        selectedSet[skillName] = true
+        table.insert(selected, skillName)
+        if fromCore then
+            coreCount = coreCount + 1
+        else
+            fallbackCount = fallbackCount + 1
+        end
+        return true
+    end
+
+    local coreIndex = 1
+    while #selected < targetCount and coreIndex <= #corePool do
+        trySelectSkill(corePool[coreIndex], true)
+        coreIndex = coreIndex + 1
+    end
+
+    local fallbackIndex = 1
+    while #selected < targetCount and fallbackIndex <= #fallbackPool do
+        trySelectSkill(fallbackPool[fallbackIndex], false)
+        fallbackIndex = fallbackIndex + 1
+    end
+
+    local rolledSkills = {}
+    for _, skillName in ipairs(selected) do
+        local xp = ZombRand(minXP, maxXP + 1)
+        local level = BurdJournals.getSkillLevelFromXP and BurdJournals.getSkillLevelFromXP(xp, skillName) or math.floor(xp / 75)
+        rolledSkills[skillName] = {
+            xp = xp,
+            level = level
+        }
+    end
+
+    return rolledSkills, coreCount, fallbackCount
+end
+
+function BurdJournals.rollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    local profile = BurdJournals.getProfessionProfileById and BurdJournals.getProfessionProfileById(professionId) or nil
+    local coreSkills = profile and profile.skills or BurdJournals.VANILLA_PROFESSION_SKILLS[professionId]
+    return BurdJournals.rollCoherentSkillsFromCoreSkills(coreSkills or {}, minSkills, maxSkills, minXP, maxXP)
+end
+
+function BurdJournals.resolveProfessionForGeneratedEntries(defaultProfessionId, defaultProfessionName, defaultFlavorKey, skills, traits, recipes, coreCount, fallbackCount)
+    local core = tonumber(coreCount) or 0
+    local fallback = tonumber(fallbackCount) or 0
+    if fallback > core and BurdJournals.inferProfessionFromEntries then
+        local inferredId, inferredName, inferredFlavor = BurdJournals.inferProfessionFromEntries({
+            skills = skills,
+            traits = traits,
+            recipes = recipes,
+        }, {
+            defaultProfessionId = defaultProfessionId,
+            defaultProfessionName = defaultProfessionName,
+            defaultFlavorKey = defaultFlavorKey,
+        })
+        return inferredId or defaultProfessionId, inferredName or defaultProfessionName, inferredFlavor or defaultFlavorKey
+    end
+    return defaultProfessionId, defaultProfessionName, defaultFlavorKey
+end
+
 function BurdJournals.getRandomProfession()
     local professions = BurdJournals.PROFESSIONS
     local prof = professions[ZombRand(#professions) + 1]
@@ -8680,11 +9448,8 @@ function BurdJournals.getSkillBaseline(player, skillName)
         if not hasBaseline then
             return 0
         end
-        local perk = BurdJournals.getPerkByName(skillName)
-        if perk and perk.getTotalXpForLevel then
-            -- Entry to Level 5 = getTotalXpForLevel(4) (XP to complete level 4)
-            return perk:getTotalXpForLevel(4) or 0
-        end
+        -- Passive skill thresholds are known and stable; avoid perk:getTotalXpForLevel()
+        -- because the game API can report inconsistent passive values.
         return BurdJournals.PASSIVE_XP_THRESHOLDS[5] or 37500
     end
     
@@ -9725,6 +10490,200 @@ local function resolveTraitDefinition(traitDef, traitObj)
     return nil
 end
 
+local function buildTraitLifecycleIdSet(traitId)
+    local ids = {}
+    local seen = {}
+
+    local function addId(rawId)
+        if rawId == nil then
+            return
+        end
+        local normalized = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(rawId) or tostring(rawId)
+        local key = string.lower(tostring(normalized))
+        if key ~= "" and not seen[key] then
+            seen[key] = true
+            ids[#ids + 1] = normalized
+        end
+    end
+
+    addId(traitId)
+    if BurdJournals.getTraitAliases then
+        for _, alias in ipairs(BurdJournals.getTraitAliases(tostring(traitId))) do
+            addId(alias)
+        end
+    end
+
+    return ids, seen
+end
+
+local function resolveTraitDefinitionById(traitId)
+    if traitId == nil or not (CharacterTraitDefinition and CharacterTraitDefinition.getTraits) then
+        return nil
+    end
+
+    local ids, lookup = buildTraitLifecycleIdSet(traitId)
+    if #ids == 0 then
+        return nil
+    end
+
+    local allTraits = CharacterTraitDefinition.getTraits()
+    if not (allTraits and allTraits.size and allTraits.get) then
+        return nil
+    end
+
+    for i = 0, allTraits:size() - 1 do
+        local def = allTraits:get(i)
+        if def then
+            local defType = def.getType and def:getType() or nil
+            local defName = (defType and traitTypeToName(defType)) or ""
+            local defLabel = def.getLabel and def:getLabel() or ""
+            local candidates = {defName, defLabel}
+
+            for _, candidate in ipairs(candidates) do
+                if candidate and tostring(candidate) ~= "" then
+                    local normalizedCandidate = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(candidate) or tostring(candidate)
+                    local lowerCandidate = string.lower(tostring(normalizedCandidate))
+                    if lookup[lowerCandidate] then
+                        return def
+                    end
+                    if BurdJournals.traitIdsMatch then
+                        for _, id in ipairs(ids) do
+                            if BurdJournals.traitIdsMatch(normalizedCandidate, id) then
+                                return def
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+function BurdJournals.reconcileTraitXpBoostLevels(player, traitId, direction, context)
+    if not player or traitId == nil then
+        return false
+    end
+
+    local directionSign = tonumber(direction) or 0
+    if directionSign == 0 then
+        return false
+    end
+    directionSign = directionSign >= 0 and 1 or -1
+
+    local ctx = (type(context) == "table") and context or nil
+    local traitDef = ctx and ctx.traitDef or nil
+    local traitObj = ctx and ctx.traitObj or nil
+
+    traitDef = resolveTraitDefinition(traitDef, traitObj)
+    if not traitDef then
+        local resolvedTraitId = ctx and (ctx.resolvedTraitId or ctx.resolvedTraitName) or nil
+        traitDef = resolveTraitDefinitionById(resolvedTraitId or traitId)
+    end
+
+    if not traitDef then
+        return false
+    end
+
+    return applyTraitBoostLevelAdjustments(player, traitDef, directionSign, traitId)
+end
+
+local function isSmokerTraitLifecycleId(traitId)
+    if traitId == nil then
+        return false
+    end
+    if BurdJournals.traitIdsMatch and BurdJournals.traitIdsMatch(traitId, "Smoker") then
+        return true
+    end
+    local normalized = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(traitId) or tostring(traitId)
+    return string.lower(tostring(normalized)) == "smoker"
+end
+
+local function applySmokerTraitRemovalEffects(player)
+    if not player or not player.getStats then
+        return false
+    end
+    local stats = player:getStats()
+    if not stats then
+        return false
+    end
+
+    local nicotineStress = 0
+    if stats.getStressFromCigarettes then
+        local okNicotine, nicotineValue = pcall(function()
+            return stats:getStressFromCigarettes()
+        end)
+        if okNicotine then
+            nicotineStress = tonumber(nicotineValue) or 0
+        end
+    end
+
+    local changed = false
+    if stats.setStressFromCigarettes then
+        local okSet = pcall(function()
+            stats:setStressFromCigarettes(0)
+        end)
+        changed = changed or okSet
+    end
+
+    if nicotineStress > 0 and stats.getStress and stats.setStress then
+        local okStress, currentStress = pcall(function()
+            return stats:getStress()
+        end)
+        if okStress then
+            local currentStressNum = tonumber(currentStress) or 0
+            local adjustedStress = math.max(0, math.min(1, currentStressNum - nicotineStress))
+            local okAdjust = pcall(function()
+                stats:setStress(adjustedStress)
+            end)
+            changed = changed or okAdjust
+        end
+    end
+
+    return changed
+end
+
+function BurdJournals.applyTraitLifecycleSideEffects(player, traitId, eventName, context)
+    if not player or traitId == nil then
+        return false
+    end
+
+    local eventKey = string.lower(tostring(eventName or ""))
+    if eventKey == "added" then
+        eventKey = "trait_added"
+    elseif eventKey == "removed" then
+        eventKey = "trait_removed"
+    end
+    if eventKey ~= "trait_added" and eventKey ~= "trait_removed" then
+        return false
+    end
+
+    local changed = false
+    local direction = (eventKey == "trait_added") and 1 or -1
+    local okReconcile, reconciled = pcall(function()
+        return BurdJournals.reconcileTraitXpBoostLevels(player, traitId, direction, context)
+    end)
+    if okReconcile and reconciled == true then
+        changed = true
+    end
+
+    if eventKey == "trait_removed" and isSmokerTraitLifecycleId(traitId) then
+        local okSmoker, smokerChanged = pcall(function()
+            return applySmokerTraitRemovalEffects(player)
+        end)
+        if okSmoker and smokerChanged == true then
+            changed = true
+        end
+    end
+
+    return changed
+end
+
+function BurdJournals.applyTraitRemovalSideEffects(player, traitId, context)
+    return BurdJournals.applyTraitLifecycleSideEffects(player, traitId, "trait_removed", context)
+end
+
 function BurdJournals.safeAddTrait(player, traitId)
     if not player or not traitId then return false end
 
@@ -9831,8 +10790,12 @@ function BurdJournals.safeAddTrait(player, traitId)
             player:modifyTraitXPBoost(traitForBoost, false)
         end
 
-        if traitDef then
-            applyTraitBoostLevelAdjustments(player, traitDef, 1, traitId)
+        if BurdJournals.applyTraitLifecycleSideEffects then
+            BurdJournals.applyTraitLifecycleSideEffects(player, traitId, "trait_added", {
+                traitDef = traitDef,
+                traitObj = traitObj,
+                source = "safeAddTrait",
+            })
         end
 
         if SyncXp then
@@ -9988,8 +10951,12 @@ function BurdJournals.safeRemoveTrait(player, traitId)
         end
 
         if removed then
-            if traitDef then
-                applyTraitBoostLevelAdjustments(player, traitDef, -1, traitId)
+            if BurdJournals.applyTraitLifecycleSideEffects then
+                BurdJournals.applyTraitLifecycleSideEffects(player, traitId, "trait_removed", {
+                    traitDef = traitDef,
+                    traitObj = traitObj,
+                    source = "safeRemoveTrait",
+                })
             end
 
             local traitForBoost = traitDef and traitDef.getType and traitDef:getType() or traitObj

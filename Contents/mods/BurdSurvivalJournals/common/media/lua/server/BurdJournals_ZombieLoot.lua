@@ -131,55 +131,14 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
     local maxSkills = BurdJournals.getSandboxOption("BloodyJournalMaxSkills") or 4
     local traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or 15
 
-    local numSkills = ZombRand(minSkills, maxSkills + 1)
-
-    local availableSkills = {}
-    local usedSkills = {}
-    for _, skill in ipairs(profession.skills) do
-        table.insert(availableSkills, skill)
-        usedSkills[skill] = true
+    local skills, coreCount, fallbackCount = nil, 0, 0
+    if BurdJournals.rollCoherentSkillsFromCoreSkills then
+        skills, coreCount, fallbackCount = BurdJournals.rollCoherentSkillsFromCoreSkills(profession.skills or {}, minSkills, maxSkills, minXP, maxXP)
+    else
+        skills = BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     end
-
-    if #availableSkills < numSkills then
-        local allSkills = BurdJournals.getAllowedSkills()
-        local extraSkills = {}
-
-        for _, skill in ipairs(allSkills) do
-            if not usedSkills[skill] then
-                table.insert(extraSkills, skill)
-            end
-        end
-
-        for i = #extraSkills, 2, -1 do
-            local j = ZombRand(i) + 1
-            extraSkills[i], extraSkills[j] = extraSkills[j], extraSkills[i]
-        end
-
-        local needed = numSkills - #availableSkills
-        for i = 1, math.min(needed, #extraSkills) do
-            table.insert(availableSkills, extraSkills[i])
-        end
-    end
-
-    if #availableSkills == 0 then
+    if not skills or not BurdJournals.hasAnyEntries(skills) then
         return nil
-    end
-
-    for i = #availableSkills, 2, -1 do
-        local j = ZombRand(i) + 1
-        availableSkills[i], availableSkills[j] = availableSkills[j], availableSkills[i]
-    end
-
-    local skills = {}
-    for i = 1, math.min(numSkills, #availableSkills) do
-        local skillName = availableSkills[i]
-        local skillXP = ZombRand(minXP, maxXP + 1)
-        local level = BurdJournals.getSkillLevelFromXP and BurdJournals.getSkillLevelFromXP(skillXP, skillName) or 0
-
-        skills[skillName] = {
-            xp = skillXP,
-            level = level
-        }
     end
 
     local traits = nil
@@ -241,6 +200,8 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
         recipes = BurdJournals.generateRandomRecipesSeeded(numRecipes, worldAge)
     end
 
+    local professionId = profession.id
+    local flavorKey = profession.flavorKey
     local forgetSlot = BurdJournals.rollForgetSlotForType and BurdJournals.rollForgetSlotForType("bloody")
 
     -- Get translated name, with robust fallback for server-side getText() issues
@@ -255,11 +216,24 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
         professionName = profession.name
     end
     
+    if BurdJournals.resolveProfessionForGeneratedEntries then
+        professionId, professionName, flavorKey = BurdJournals.resolveProfessionForGeneratedEntries(
+            professionId,
+            professionName,
+            flavorKey,
+            skills,
+            traits,
+            recipes,
+            coreCount,
+            fallbackCount
+        )
+    end
+
     local journalData = {
         author = survivorName,
-        profession = profession.id,  -- Also store the profession ID for lookup
+        profession = professionId,  -- Also store the profession ID for lookup
         professionName = professionName,
-        flavorKey = profession.flavorKey,
+        flavorKey = flavorKey,
         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
         skills = skills,
         traits = traits,
@@ -290,7 +264,7 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
 
     local cursedSpawnsEnabled = BurdJournals.getSandboxOption("EnableCursedJournalSpawns")
     if cursedSpawnsEnabled ~= false then
-        local cursedDropChance = tonumber(BurdJournals.getSandboxOption("CursedJournalSpawnChance")) or 0.2
+        local cursedDropChance = tonumber(BurdJournals.getSandboxOption("CursedJournalSpawnChance")) or 0.08
         local cursedRoll = ZombRandFloat(0, 100)
         if cursedRoll <= cursedDropChance then
             local square = zombie:getSquare()
@@ -351,7 +325,7 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
     local spawnsEnabled = BurdJournals.getSandboxOption("EnableBloodyJournalSpawns")
     if spawnsEnabled == false then return end
 
-    local dropChance = BurdJournals.getSandboxOption("BloodyJournalSpawnChance") or 0.5
+    local dropChance = BurdJournals.getSandboxOption("BloodyJournalSpawnChance") or 0.3
     local roll = ZombRandFloat(0, 100)
     if roll > dropChance then return end
 
@@ -458,7 +432,7 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
         processedContainers[containerKey] = true
     end
 
-    local spawnChance = BurdJournals.getSandboxOption("WornJournalSpawnChance") or 2.0
+    local spawnChance = BurdJournals.getSandboxOption("WornJournalSpawnChance") or 1.0
 
     local finalChance = (spawnChance * baseWeight) / 100.0
 

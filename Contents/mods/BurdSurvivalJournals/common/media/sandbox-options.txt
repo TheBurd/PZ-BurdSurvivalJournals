@@ -96,6 +96,13 @@ option BurdJournals.RequireEraserToErase = {
     translation = BurdJournals_RequireEraserToErase,
 }
 
+option BurdJournals.PersistDROnErase = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_Player,
+    translation = BurdJournals_PersistDROnErase,
+}
+
 /* Baseline Restriction - Only record earned progress (anti-exploit) */
 option BurdJournals.EnableBaselineRestriction = {
     type = boolean,
@@ -255,7 +262,7 @@ option BurdJournals.WornJournalSpawnChance = {
     type = double,
     min = 0.1,
     max = 100.0,
-    default = 2.0,
+    default = 1.0,
     page = BurdJournals_Loot,
     translation = BurdJournals_WornJournalSpawnChance,
 }
@@ -391,7 +398,7 @@ option BurdJournals.BloodyJournalSpawnChance = {
     type = double,
     min = 0.1,
     max = 100.0,
-    default = 0.5,
+    default = 0.3,
     page = BurdJournals_Loot,
     translation = BurdJournals_BloodyJournalSpawnChance,
 }
@@ -518,7 +525,7 @@ option BurdJournals.CursedJournalSpawnChance = {
     type = double,
     min = 0.0,
     max = 100.0,
-    default = 0.2,
+    default = 0.08,
     page = BurdJournals_Loot,
     translation = BurdJournals_CursedJournalSpawnChance,
 }

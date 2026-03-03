@@ -119,7 +119,7 @@ local function onFillContainer(roomName, containerType, itemContainer)
 
     cleanupTracking()
 
-    local spawnChance = BurdJournals.getSandboxOption("WornJournalSpawnChance") or 2.0
+    local spawnChance = BurdJournals.getSandboxOption("WornJournalSpawnChance") or 1.0
 
     local finalChance = (spawnChance * baseWeight) / 100.0
 
@@ -230,55 +230,23 @@ BurdJournals.WorldSpawn.SkillProfessionMap = {
 }
 
 function BurdJournals.WorldSpawn.inferProfessionFromSkills(skills)
-    if not skills then
-        return BurdJournals.WorldSpawn.getRandomProfession()
+    local fallbackId, fallbackName, fallbackFlavor = BurdJournals.WorldSpawn.getRandomProfession()
+    if BurdJournals.inferProfessionFromEntries then
+        return BurdJournals.inferProfessionFromEntries({
+            skills = skills
+        }, {
+            defaultProfessionId = fallbackId,
+            defaultProfessionName = fallbackName,
+            defaultFlavorKey = fallbackFlavor,
+        })
     end
-
-    local professionScores = {}
-
-    for skillName, _ in pairs(skills) do
-        local matchingProfessions = BurdJournals.WorldSpawn.SkillProfessionMap[skillName]
-        if matchingProfessions then
-            for i, profId in ipairs(matchingProfessions) do
-
-                local weight = #matchingProfessions - i + 1
-                professionScores[profId] = (professionScores[profId] or 0) + weight
-            end
-        end
-    end
-
-    local bestProfId = nil
-    local bestScore = 0
-    for profId, score in pairs(professionScores) do
-        if score > bestScore then
-            bestScore = score
-            bestProfId = profId
-        end
-    end
-
-    if bestProfId then
-        for _, prof in ipairs(BurdJournals.WorldSpawn.Professions) do
-            if prof.id == bestProfId then
-                -- Get translated name, with robust fallback for server-side getText() issues
-                local profName = nil
-                if prof.nameKey then
-                    local translated = getText(prof.nameKey)
-                    if translated and translated ~= "" and translated ~= prof.nameKey then
-                        profName = translated
-                    end
-                end
-                if not profName or profName == "" then
-                    profName = prof.name
-                end
-                return prof.id, profName, prof.flavorKey
-            end
-        end
-    end
-
-    return BurdJournals.WorldSpawn.getRandomProfession()
+    return fallbackId, fallbackName, fallbackFlavor
 end
 
 function BurdJournals.WorldSpawn.getRandomProfession()
+    if BurdJournals.getRandomProfession then
+        return BurdJournals.getRandomProfession()
+    end
     local professions = BurdJournals.WorldSpawn.Professions
     local prof = professions[ZombRand(#professions) + 1]
 
@@ -308,41 +276,14 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
     local minSkills = BurdJournals.getSandboxOption("WornJournalMinSkills") or 1
     local maxSkills = BurdJournals.getSandboxOption("WornJournalMaxSkills") or 2
 
-    local numSkills = ZombRand(minSkills, maxSkills + 1)
-
-    local availableSkills = {}
-    local allSkills = BurdJournals.getAllowedSkills()
-    for _, skill in ipairs(allSkills) do
-        table.insert(availableSkills, skill)
+    local skills, coreCount, fallbackCount = nil, 0, 0
+    if BurdJournals.rollCoherentSkillsForProfession then
+        skills, coreCount, fallbackCount = BurdJournals.rollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    else
+        skills = BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     end
-
-    if #availableSkills == 0 then
+    if not skills or not BurdJournals.hasAnyEntries(skills) then
         return nil
-    end
-
-    for i = #availableSkills, 2, -1 do
-        local j = ZombRand(i) + 1
-        availableSkills[i], availableSkills[j] = availableSkills[j], availableSkills[i]
-    end
-
-    local skills = {}
-    for i = 1, math.min(numSkills, #availableSkills) do
-        local skillName = availableSkills[i]
-
-        -- Validate skill has a real perk before adding to journal
-        local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
-        if not perk then
-            BurdJournals.debugPrint("[BurdJournals] WorldSpawn: Skipped invalid skill '" .. tostring(skillName) .. "' (no perk found)")
-        else
-            local skillXP = ZombRand(minXP, maxXP + 1)
-
-            local level = BurdJournals.getSkillLevelFromXP and BurdJournals.getSkillLevelFromXP(skillXP, skillName) or 0
-
-            skills[skillName] = {
-                xp = skillXP,
-                level = level
-            }
-        end
     end
 
     local recipes = nil
@@ -407,6 +348,19 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
 
     local forgetSlot = BurdJournals.rollForgetSlotForType and BurdJournals.rollForgetSlotForType("worn")
 
+    if BurdJournals.resolveProfessionForGeneratedEntries then
+        professionId, professionName, flavorKey = BurdJournals.resolveProfessionForGeneratedEntries(
+            professionId,
+            professionName,
+            flavorKey,
+            skills,
+            traits,
+            recipes,
+            coreCount,
+            fallbackCount
+        )
+    end
+
     local journalData = {
         uuid = BurdJournals.generateUUID(),
         author = survivorName,
@@ -443,41 +397,14 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
     local maxSkills = BurdJournals.getSandboxOption("BloodyJournalMaxSkills") or 4
     local traitChance = BurdJournals.getSandboxOption("BloodyJournalTraitChance") or 15
 
-    local numSkills = ZombRand(minSkills, maxSkills + 1)
-
-    local availableSkills = {}
-    local allSkills = BurdJournals.getAllowedSkills()
-    for _, skill in ipairs(allSkills) do
-        table.insert(availableSkills, skill)
+    local skills, coreCount, fallbackCount = nil, 0, 0
+    if BurdJournals.rollCoherentSkillsForProfession then
+        skills, coreCount, fallbackCount = BurdJournals.rollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    else
+        skills = BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     end
-
-    if #availableSkills == 0 then
+    if not skills or not BurdJournals.hasAnyEntries(skills) then
         return nil
-    end
-
-    for i = #availableSkills, 2, -1 do
-        local j = ZombRand(i) + 1
-        availableSkills[i], availableSkills[j] = availableSkills[j], availableSkills[i]
-    end
-
-    local skills = {}
-    for i = 1, math.min(numSkills, #availableSkills) do
-        local skillName = availableSkills[i]
-
-        -- Validate skill has a real perk before adding to journal
-        local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
-        if not perk then
-            BurdJournals.debugPrint("[BurdJournals] WorldSpawn: Skipped invalid skill '" .. tostring(skillName) .. "' (no perk found)")
-        else
-            local skillXP = ZombRand(minXP, maxXP + 1)
-
-            local level = BurdJournals.getSkillLevelFromXP and BurdJournals.getSkillLevelFromXP(skillXP, skillName) or 0
-
-            skills[skillName] = {
-                xp = skillXP,
-                level = level
-            }
-        end
     end
 
     local traits = {}
@@ -525,6 +452,19 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
         end
     else
         BurdJournals.debugPrint("[BurdJournals] WorldSpawn Bloody: Recipe roll failed (" .. recipeRoll .. " >= " .. recipeChance .. ")")
+    end
+
+    if BurdJournals.resolveProfessionForGeneratedEntries then
+        professionId, professionName, flavorKey = BurdJournals.resolveProfessionForGeneratedEntries(
+            professionId,
+            professionName,
+            flavorKey,
+            skills,
+            traits,
+            recipes,
+            coreCount,
+            fallbackCount
+        )
     end
 
     local forgetSlot = BurdJournals.rollForgetSlotForType and BurdJournals.rollForgetSlotForType("bloody")
@@ -614,6 +554,28 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
 
         local survivorName = BurdJournals.WorldSpawn.SurvivorNames[ZombRand(#BurdJournals.WorldSpawn.SurvivorNames) + 1]
         local professionId, professionName, flavorKey = BurdJournals.WorldSpawn.getRandomProfession()
+        local skills, coreCount, fallbackCount = nil, 0, 0
+        if BurdJournals.rollCoherentSkillsForProfession then
+            skills, coreCount, fallbackCount = BurdJournals.rollCoherentSkillsForProfession(professionId, 2, 4, 50, 150)
+        else
+            skills = BurdJournals.generateRandomSkills(2, 4, 50, 150)
+        end
+        if not skills or not BurdJournals.hasAnyEntries(skills) then
+            skills = BurdJournals.generateRandomSkills(2, 4, 50, 150)
+            coreCount, fallbackCount = 0, 0
+        end
+        if BurdJournals.resolveProfessionForGeneratedEntries then
+            professionId, professionName, flavorKey = BurdJournals.resolveProfessionForGeneratedEntries(
+                professionId,
+                professionName,
+                flavorKey,
+                skills,
+                nil,
+                nil,
+                coreCount,
+                fallbackCount
+            )
+        end
         journalData = {
             uuid = BurdJournals.generateUUID(),
             author = survivorName,
@@ -621,7 +583,7 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
             professionName = professionName,
             flavorKey = flavorKey,
             timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
-            skills = BurdJournals.generateRandomSkills(2, 4, 50, 150),
+            skills = skills,
             traits = {},
             isWorn = false,
             isBloody = false,

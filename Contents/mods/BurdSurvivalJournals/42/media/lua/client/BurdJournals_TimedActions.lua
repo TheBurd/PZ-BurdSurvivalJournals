@@ -486,6 +486,8 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
             totalTime = totalTime + (mainPanel and mainPanel:getSkillLearningTime() or 3.0)
         elseif reward.type == "trait" then
             totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
+        elseif reward.type == "forget" then
+            totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
         elseif reward.type == "recipe" then
             totalTime = totalTime + (mainPanel and mainPanel:getRecipeLearningTime() or 0.7)
         elseif reward.type == "stat" then
@@ -566,6 +568,7 @@ function BurdJournals.LearnFromJournalAction:start()
             active = true,
             skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
             traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
+            forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
             recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
             statId = firstReward and firstReward.type == "stat" and firstReward.name or nil,
             isAbsorbAll = self.isAbsorbAll,
@@ -591,6 +594,7 @@ function BurdJournals.LearnFromJournalAction:stop()
             active = false,
             skillName = nil,
             traitId = nil,
+            forgetTraitId = nil,
             recipeName = nil,
             statId = nil,
             isAbsorbAll = false,
@@ -650,12 +654,16 @@ function BurdJournals.LearnFromJournalAction:perform()
     -- Collect all skill rewards for batch processing
     local skillRewards = {}
     local otherRewards = {}
+    local hasForgetReward = false
     
     for _, reward in ipairs(self.rewards) do
         if reward.type == "skill" then
             table.insert(skillRewards, reward)
         else
             table.insert(otherRewards, reward)
+            if reward.type == "forget" then
+                hasForgetReward = true
+            end
         end
     end
     
@@ -665,6 +673,10 @@ function BurdJournals.LearnFromJournalAction:perform()
     local isMultiplayerClient = isClient and isClient() and not isServer()
     local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
     local canUseBatchServerCommand = isMultiplayerClient and not (journalData and journalData.isDebugSpawned)
+    if canUseBatchServerCommand and hasForgetReward then
+        -- Forget-slot claims are single-use and not part of batch claim payloads.
+        canUseBatchServerCommand = false
+    end
 
     if canUseBatchServerCommand then
         local batchPayload = {
@@ -719,6 +731,8 @@ function BurdJournals.LearnFromJournalAction:perform()
                 else
                     panel:sendAbsorbTrait(reward.name, true)
                 end
+            elseif reward.type == "forget" then
+                panel:sendClaimForgetSlot(reward.name)
             elseif reward.type == "recipe" then
                 if isPlayerJournal then
                     panel:sendClaimRecipe(reward.name, true)
@@ -782,6 +796,7 @@ function BurdJournals.LearnFromJournalAction:perform()
                 active = true,
                 skillName = nextReward.type == "skill" and nextReward.name or nil,
                 traitId = nextReward.type == "trait" and nextReward.name or nil,
+                forgetTraitId = nextReward.type == "forget" and nextReward.name or nil,
                 recipeName = nextReward.type == "recipe" and nextReward.name or nil,
                 isAbsorbAll = false,
                 progress = 0,
@@ -837,6 +852,7 @@ function BurdJournals.LearnFromJournalAction:perform()
                 active = true,
                 skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
                 traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
+                forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
                 recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
                 isAbsorbAll = true,
                 progress = 0,
@@ -874,6 +890,7 @@ function BurdJournals.LearnFromJournalAction:perform()
         active = false,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = nil,
         isAbsorbAll = false,

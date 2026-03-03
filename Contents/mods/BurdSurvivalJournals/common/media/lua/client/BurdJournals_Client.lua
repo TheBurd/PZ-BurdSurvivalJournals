@@ -1458,6 +1458,9 @@ local function showCursedThemedModal(player, yesNo, richText, plainText, callbac
     end
 
     modal:addToUIManager()
+    if BurdJournals.applyJoypadSupportToModal then
+        BurdJournals.applyJoypadSupportToModal(modal, player)
+    end
     return modal
 end
 
@@ -3728,6 +3731,10 @@ function BurdJournals.Client.handleBaselineRegistered(player, args)
     else
         BurdJournals.debugPrint("[BurdJournals] Failed to register baseline with server")
     end
+
+    if args.success and BurdJournals.Client.requestServerBaseline then
+        BurdJournals.Client.requestServerBaseline()
+    end
 end
 
 -- Handler for server-wide baseline clear (admin command response)
@@ -5098,14 +5105,30 @@ function BurdJournals.Client.Debug.cmdReset(player, args)
                 local toRemove = {}
                 for i = 0, playerTraits:size() - 1 do
                     local trait = playerTraits:get(i)
-                    local traitId = tostring(trait)
+                    local traitId = trait and trait.getName and trait:getName() or tostring(trait)
                     if not startingTraits[traitId] then
-                        table.insert(toRemove, trait)
+                        table.insert(toRemove, {
+                            id = traitId,
+                            trait = trait,
+                        })
                     end
                 end
                 
-                for _, trait in ipairs(toRemove) do
-                    player:getCharacterTraits():remove(trait)
+                for _, entry in ipairs(toRemove) do
+                    local removed = false
+                    if BurdJournals.safeRemoveTrait then
+                        removed = BurdJournals.safeRemoveTrait(player, entry.id) == true
+                    end
+                    if not removed and entry.trait and player:getCharacterTraits() and player:getCharacterTraits().remove then
+                        player:getCharacterTraits():remove(entry.trait)
+                        removed = not (player.hasTrait and player:hasTrait(entry.trait))
+                        if removed and BurdJournals.applyTraitLifecycleSideEffects then
+                            BurdJournals.applyTraitLifecycleSideEffects(player, entry.id, "trait_removed", {
+                                traitObj = entry.trait,
+                                source = "cmdReset_traits_direct_fallback",
+                            })
+                        end
+                    end
                 end
                 
                 BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] Removed %d earned traits", #toRemove), {r=0.3, g=1, b=0.5}, true)

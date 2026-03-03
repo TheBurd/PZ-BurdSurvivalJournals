@@ -198,4 +198,6 @@ Sandbox_PL = {
     Sandbox_BurdJournals_AllowAdaptiveTraitsManagedTraitRecording_tooltip = "Compatibility toggle for Adaptive Traits (Mod ID: AdaptiveTraits). When disabled (default), AdaptiveTraits-managed traits are hidden from player journal recording and claiming while existing journal data is preserved.",
     Sandbox_BurdJournals_AllowVhsSkillRecording = "Zezwol na zapisywanie PD z VHS",
     Sandbox_BurdJournals_AllowVhsSkillRecording_tooltip = "Opcja zgodnosci dla PD umiejetnosci z nagran VHS. Po wylaczeniu (domyslnie) sledzone PD z VHS sa wykluczane z zapisu dziennika gracza.",
+    Sandbox_BurdJournals_PersistDROnErase = "Persist DR on Erase",
+    Sandbox_BurdJournals_PersistDROnErase_tooltip = "When enabled, erasing/restoring and re-writing a journal keeps diminishing-returns read progress instead of resetting it.",
 }

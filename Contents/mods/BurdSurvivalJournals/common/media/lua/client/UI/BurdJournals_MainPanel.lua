@@ -1,9 +1,10 @@
 
 require "BurdJournals_Shared"
-require "ISUI/ISPanel"
+require "ISUI/ISPanelJoypad"
 require "ISUI/ISButton"
 require "ISUI/ISLabel"
 require "ISUI/ISScrollingListBox"
+require "ISUI/ISModalDialog"
 require "TimedActions/ISInventoryTransferUtil"
 
 BurdJournals = BurdJournals or {}
@@ -342,6 +343,16 @@ local function getXPForLevel(skillName, level)
     if level <= 0 then return 0 end
     if level > 10 then level = 10 end
 
+    if BurdJournals.getXPThresholdForLevel then
+        local ok, threshold = pcall(function()
+            return BurdJournals.getXPThresholdForLevel(skillName, level)
+        end)
+        threshold = tonumber(threshold)
+        if ok and threshold and threshold >= 0 then
+            return threshold
+        end
+    end
+
     -- For passive skills (Fitness/Strength), use our verified thresholds
     if skillName == "Fitness" or skillName == "Strength" then
         return PASSIVE_XP_THRESHOLDS[level] or 0
@@ -376,13 +387,39 @@ local function shouldAddPassiveBaselineForDisplay(journalData, player)
 end
 
 local function getXPWithBaselineForDisplay(skillName, recordedXP, journalData, player)
+    local storedXP = math.max(0, tonumber(recordedXP) or 0)
     if (skillName == "Fitness" or skillName == "Strength")
         and shouldAddPassiveBaselineForDisplay(journalData, player) then
-        -- Use our verified baseline XP for level 5 (37500)
-        local baselineXP = PASSIVE_XP_THRESHOLDS[5] or 37500
-        return baselineXP + (recordedXP or 0)
+        -- Compatibility: some legacy player journals were saved with absolute XP
+        -- while marked as recordedWithBaseline=true. In that case do not shift again.
+        if player
+            and player.getXp
+            and type(journalData) == "table"
+            and journalData.isPlayerCreated == true
+            and journalData.recordedWithBaseline == true
+            and BurdJournals.getPerkByName
+            and BurdJournals.getSkillBaseline then
+            local perk = BurdJournals.getPerkByName(skillName)
+            if perk then
+                local okActual, actualXP = pcall(function()
+                    return player:getXp():getXP(perk)
+                end)
+                actualXP = math.max(0, tonumber(actualXP) or 0)
+                if okActual and actualXP > 0 then
+                    local baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
+                    local earnedXP = math.max(0, actualXP - baselineXP)
+                    if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
+                        return storedXP
+                    end
+                end
+            end
+        end
+
+        -- Use canonical passive baseline XP for level 5.
+        local baselineXP = (BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[5]) or PASSIVE_XP_THRESHOLDS[5] or 37500
+        return baselineXP + storedXP
     end
-    return recordedXP or 0
+    return storedXP
 end
 
 local function isSkillVisibleForJournal(journalData, skillName)
@@ -505,6 +542,56 @@ local function resolveJournalRecordingModeForPlayer(journalData, player)
     return useBaseline, autoRepaired
 end
 
+local function shouldForceBaselineRecordingMode(journalData, player, legacyAbsoluteDetected)
+    if not legacyAbsoluteDetected then
+        return false
+    end
+    if type(journalData) ~= "table" or journalData.isPlayerCreated ~= true then
+        return false
+    end
+    if journalData.recordedWithBaseline ~= true then
+        return false
+    end
+    if BurdJournals.shouldEnforceBaseline then
+        return BurdJournals.shouldEnforceBaseline(player) == true
+    end
+    return false
+end
+
+local function isLikelyAbsoluteSkillEntryForBaseline(journalData, player, skillName, storedXP, currentXP, baselineXP)
+    local stored = tonumber(storedXP) or 0
+    if stored <= 0 then
+        return false
+    end
+    if type(journalData) ~= "table" or journalData.isPlayerCreated ~= true then
+        return false
+    end
+    if journalData.recordedWithBaseline ~= true then
+        return false
+    end
+    if BurdJournals.shouldEnforceBaseline and not BurdJournals.shouldEnforceBaseline(player) then
+        return false
+    end
+    if not player or not player.getXp then
+        return false
+    end
+
+    local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
+    if not perk then
+        return false
+    end
+
+    local actualXP = math.max(0, tonumber(currentXP) or player:getXp():getXP(perk) or 0)
+    local baseline = math.max(
+        0,
+        tonumber(baselineXP)
+            or tonumber(BurdJournals.getSkillBaseline and BurdJournals.getSkillBaseline(player, skillName) or 0)
+            or 0
+    )
+    local earnedXP = math.max(0, actualXP - baseline)
+    return stored > (earnedXP + 0.001) and stored <= (actualXP + 0.001)
+end
+
 local function isLikelyNewCharacterForBaseline(player)
     if not player then
         return false
@@ -537,7 +624,9 @@ local function queueNewCharacterBaselineCapture(panel)
         if ticksWaited >= 5 then
             Events.OnTick.Remove(delayedCapture)
             BurdJournals.Client.captureBaseline(panel.player, true)
-            if panel.populateRecordList then
+            if panel.refreshCurrentList then
+                panel:refreshCurrentList()
+            elseif panel.populateRecordList then
                 panel:populateRecordList()
             end
         end
@@ -558,11 +647,16 @@ local function ensureBaselineReadyForRecording(panel, useBaseline, contextTag)
 
     if isLikelyNewCharacterForBaseline(panel.player) then
         queueNewCharacterBaselineCapture(panel)
+        if BurdJournals.Client
+            and BurdJournals.Client.requestServerBaseline
+            and not BurdJournals.Client._awaitingServerBaseline then
+            BurdJournals.Client.requestServerBaseline()
+        end
         return false, true
     end
 
     BurdJournals.debugPrint("[BurdJournals] " .. tostring(contextTag)
-        .. ": baseline missing for existing character; skipping auto-capture and continuing without baseline enforcement")
+        .. ": baseline missing for existing character; continuing without baseline enforcement until baseline is set manually")
     if BurdJournals.Client
         and BurdJournals.Client.requestServerBaseline
         and not BurdJournals.Client._awaitingServerBaseline then
@@ -687,6 +781,25 @@ end
 -- Helper to calculate level with override support (for when stored level is more accurate)
 local function calculateLevelProgressWithOverride(skillName, totalXP, storedLevel)
     local level, progress, xpInLevel, xpRange = calculateLevelProgress(skillName, totalXP)
+    local isPassive = (BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(skillName))
+        or (skillName == "Fitness" or skillName == "Strength")
+
+    if isPassive and storedLevel and storedLevel >= 0 then
+        local clampedStored = math.max(0, math.min(10, tonumber(storedLevel) or 0))
+        local xpCurrentStart = getXPForLevel(skillName, clampedStored)
+        local xpNextStart = getXPForLevel(skillName, clampedStored + 1)
+        local passiveProgress = 0
+        if clampedStored >= 10 then
+            passiveProgress = 1
+        else
+            local span = xpNextStart - xpCurrentStart
+            if span > 0 then
+                passiveProgress = math.min(1, math.max(0, ((tonumber(totalXP) or 0) - xpCurrentStart) / span))
+            end
+        end
+        return clampedStored, passiveProgress, math.max(0, (tonumber(totalXP) or 0) - xpCurrentStart), math.max(0, xpNextStart - xpCurrentStart)
+    end
+
     -- If stored level is provided and higher than calculated (can happen with passive skills),
     -- use stored level but don't show phantom progress (set to 0, not 1.0)
     if storedLevel and storedLevel > 0 and storedLevel > level then
@@ -828,11 +941,11 @@ local function isEligibleJournalReturnContainer(player, container)
     return true
 end
 
-BurdJournals.UI.MainPanel = ISPanel:derive("BurdJournals.UI.MainPanel")
+BurdJournals.UI.MainPanel = ISPanelJoypad:derive("BurdJournals.UI.MainPanel")
 BurdJournals.UI.MainPanel.instance = nil
 
 function BurdJournals.UI.MainPanel:new(x, y, width, height, player, journal, mode)
-    local o = ISPanel:new(x, y, width, height)
+    local o = ISPanelJoypad:new(x, y, width, height)
     setmetatable(o, self)
     self.__index = self
     o.player = player
@@ -847,6 +960,7 @@ function BurdJournals.UI.MainPanel:new(x, y, width, height, player, journal, mod
         active = false,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = nil,
         isAbsorbAll = false,
@@ -861,12 +975,895 @@ function BurdJournals.UI.MainPanel:new(x, y, width, height, player, journal, mod
     o.processingQueue = false
     o.confirmDialog = nil
     o.borrowReturnContainer = nil
+    o.prevJoypadFocus = nil
+    o.controllerHintShown = false
+    o.listFocusActive = false
+    o.listEnterGuardUntilMs = 0
+    o.listEntryConsumeA = false
+    o.lastListSelectedIndex = nil
+    o.lastListContextKey = nil
+    o.controllerPromptsActive = false
+    o.controllerPromptStyleToken = nil
+    o._promptTrackedButtons = {}
 
     return o
 end
 
 function BurdJournals.UI.MainPanel:initialise()
-    ISPanel.initialise(self)
+    ISPanelJoypad.initialise(self)
+end
+
+function BurdJournals.UI.MainPanel:isJoypadActive()
+    if BurdJournals and BurdJournals.isJoypadActiveForPlayer then
+        return BurdJournals.isJoypadActiveForPlayer(self.playerNum or 0)
+    end
+    if not getJoypadData then
+        return false, nil
+    end
+    local joypadData = getJoypadData(self.playerNum or 0)
+    if not joypadData then
+        return false, nil
+    end
+    if joypadData.isConnected and not joypadData:isConnected() then
+        return false, joypadData
+    end
+    if joypadData.id ~= nil and joypadData.id == -1 then
+        return false, joypadData
+    end
+    return true, joypadData
+end
+
+function BurdJournals.UI.MainPanel:isControlVisible(control)
+    if not control then
+        return false
+    end
+    if control.getIsVisible then
+        return control:getIsVisible()
+    end
+    if control.isVisible then
+        return control:isVisible()
+    end
+    return true
+end
+
+function BurdJournals.UI.MainPanel:getNowMs()
+    return getTimestampMs and getTimestampMs() or 0
+end
+
+function BurdJournals.UI.MainPanel:getListSelectionContextKey()
+    local tab = self.currentTab or "skills"
+    local filter = "all"
+    if self.filterState and self.filterState[tab] then
+        filter = tostring(self.filterState[tab].current or "all")
+    end
+    local search = tostring(self.searchQuery or "")
+    return table.concat({
+        tostring(self.mode or "view"),
+        tostring(tab),
+        filter,
+        search,
+    }, "|")
+end
+
+function BurdJournals.UI.MainPanel:isSelectableListRow(index)
+    if not self.skillList or type(self.skillList.items) ~= "table" then
+        return false
+    end
+    local row = self.skillList.items[tonumber(index) or -1]
+    local item = row and row.item
+    return item ~= nil and not item.isHeader and not item.isEmpty
+end
+
+function BurdJournals.UI.MainPanel:isPrimaryActionAvailableForItem(item)
+    if not item then
+        return false
+    end
+
+    if self.mode == "log" then
+        return item.canRecord == true
+    end
+
+    if self.mode == "view" then
+        if item.isSkill then
+            return item.canClaim == true
+        end
+        if item.isTrait then
+            return not item.alreadyKnown and not item.isClaimed
+        end
+        if item.isRecipe then
+            return not item.alreadyKnown and not item.isClaimed
+        end
+        if item.isStat then
+            return item.canClaim and not item.alreadyClaimed
+        end
+        return false
+    end
+
+    if self.mode == "absorb" then
+        if item.isSkill then
+            return not item.isClaimed
+        end
+        if item.isForgetSlot then
+            return not item.isClaimed
+        end
+        if item.isTrait then
+            return not item.alreadyKnown and not item.isClaimed
+        end
+        if item.isRecipe then
+            return not item.alreadyKnown and not item.isClaimed
+        end
+        return false
+    end
+
+    return false
+end
+
+function BurdJournals.UI.MainPanel:findFirstSelectableListIndex(preferActionable)
+    if not self.skillList or type(self.skillList.items) ~= "table" then
+        return nil
+    end
+
+    local firstSelectable = nil
+    for i, row in ipairs(self.skillList.items) do
+        local item = row and row.item
+        if item and not item.isHeader and not item.isEmpty then
+            if not firstSelectable then
+                firstSelectable = i
+            end
+            if preferActionable and self:isPrimaryActionAvailableForItem(item) then
+                return i
+            end
+        end
+    end
+
+    return firstSelectable
+end
+
+function BurdJournals.UI.MainPanel:rememberListSelection()
+    if not self.skillList then
+        return
+    end
+
+    local selected = tonumber(self.skillList.selected) or -1
+    if self:isSelectableListRow(selected) then
+        self.lastListSelectedIndex = selected
+        self.lastListContextKey = self:getListSelectionContextKey()
+    end
+end
+
+function BurdJournals.UI.MainPanel:ensureListSelection(preferActionable)
+    if not self.skillList or type(self.skillList.items) ~= "table" then
+        return nil
+    end
+
+    local contextKey = self:getListSelectionContextKey()
+    local selected = tonumber(self.skillList.selected) or -1
+    if self:isSelectableListRow(selected) then
+        self.lastListSelectedIndex = selected
+        self.lastListContextKey = contextKey
+        return selected
+    end
+
+    local targetIndex = nil
+    if self.lastListContextKey == contextKey and self:isSelectableListRow(self.lastListSelectedIndex) then
+        targetIndex = tonumber(self.lastListSelectedIndex)
+    end
+    if not targetIndex then
+        targetIndex = self:findFirstSelectableListIndex(preferActionable == true)
+    end
+
+    if targetIndex and self:isSelectableListRow(targetIndex) then
+        self.skillList.selected = targetIndex
+        if self.skillList.ensureVisible then
+            self.skillList:ensureVisible(targetIndex)
+        end
+        self.lastListSelectedIndex = targetIndex
+        self.lastListContextKey = contextKey
+        return targetIndex
+    end
+
+    return nil
+end
+
+function BurdJournals.UI.MainPanel:isListRowFocusedInPanel()
+    if not self.skillList then
+        return false
+    end
+
+    local focusedChild = self.getJoypadFocus and self:getJoypadFocus() or nil
+    if focusedChild == self.skillList then
+        return true
+    end
+
+    local rowIndex = select(1, self:findJoypadControl(self.skillList))
+    if not rowIndex then
+        return false
+    end
+    return (tonumber(self.joypadIndexY) or -1) == rowIndex
+end
+
+function BurdJournals.UI.MainPanel:isListFocusAmbiguous()
+    return self.skillList ~= nil and not self.listFocusActive and self:isListRowFocusedInPanel()
+end
+
+function BurdJournals.UI.MainPanel:isListEnterGuardActive()
+    return (tonumber(self.listEnterGuardUntilMs) or 0) > self:getNowMs()
+end
+
+function BurdJournals.UI.MainPanel:enterListJoypadFocus(joypadData)
+    if not self.skillList or not joypadData then
+        return false
+    end
+
+    self:ensureListSelection(false)
+    self.listFocusActive = true
+    self.listEnterGuardUntilMs = self:getNowMs() + 180
+    self.listEntryConsumeA = true
+    if self.skillList.setJoypadFocused then
+        self.skillList:setJoypadFocused(true, joypadData)
+    end
+    joypadData.focus = self.skillList
+    if updateJoypadFocus then
+        updateJoypadFocus(joypadData)
+    end
+    return true
+end
+
+function BurdJournals.UI.MainPanel:exitListJoypadFocus(joypadData)
+    self.listFocusActive = false
+    self.listEnterGuardUntilMs = 0
+    self.listEntryConsumeA = false
+    self:rememberListSelection()
+
+    local data = joypadData
+    if not data and getJoypadData then
+        data = getJoypadData(self.playerNum or 0)
+    end
+
+    if self.skillList and data and self.skillList.setJoypadFocused then
+        self.skillList:setJoypadFocused(false, data)
+    end
+
+    local rowIndex, colIndex = self:findJoypadControl(self.skillList)
+    if rowIndex then
+        self.joypadIndexY = rowIndex
+        self.joypadButtons = self.joypadButtonsY and self.joypadButtonsY[rowIndex] or nil
+        self.joypadIndex = colIndex or 1
+    end
+
+    if data and setJoypadFocus then
+        setJoypadFocus(self.playerNum, self)
+        if updateJoypadFocus then
+            updateJoypadFocus(data)
+        end
+    end
+
+    return true
+end
+
+function BurdJournals.UI.MainPanel:addJoypadRow(controls)
+    if type(controls) ~= "table" then
+        return
+    end
+    local row = {}
+    for _, control in ipairs(controls) do
+        if self:isControlVisible(control) then
+            table.insert(row, control)
+        end
+    end
+    if #row > 0 then
+        table.insert(self.joypadButtonsY, row)
+    end
+end
+
+function BurdJournals.UI.MainPanel:findJoypadControl(control)
+    if not control or type(self.joypadButtonsY) ~= "table" then
+        return nil, nil
+    end
+    for rowIndex, row in ipairs(self.joypadButtonsY) do
+        for colIndex, rowControl in ipairs(row) do
+            if rowControl == control then
+                return rowIndex, colIndex
+            end
+        end
+    end
+    return nil, nil
+end
+
+function BurdJournals.UI.MainPanel:rebuildJoypadRows()
+    if not self.joypadButtonsY then
+        self.joypadButtonsY = {}
+    end
+
+    local joypadData = getJoypadData and getJoypadData(self.playerNum or 0) or nil
+    local panelHadFocus = joypadData and joypadData.focus == self
+    local listHadFocus = joypadData and self.skillList and joypadData.focus == self.skillList
+    self.listFocusActive = listHadFocus == true
+    local preferredControl = nil
+    if panelHadFocus and self.getJoypadFocus then
+        preferredControl = self:getJoypadFocus()
+    end
+
+    self.joypadButtonsY = {}
+
+    self:addJoypadRow({
+        self.headerStateBadgeBtn,
+        self.headerUuidBadgeBtn,
+        self.headerRefreshBtn,
+    })
+
+    if self.tabs and self.tabButtons then
+        local tabRow = {}
+        for _, tab in ipairs(self.tabs) do
+            local btn = self.tabButtons[tab.id]
+            if self:isControlVisible(btn) then
+                table.insert(tabRow, btn)
+            end
+        end
+        self:addJoypadRow(tabRow)
+    end
+
+    if self.filterBarVisible then
+        local filterRow = {}
+        if self:isControlVisible(self.filterScrollLeftBtn) then
+            table.insert(filterRow, self.filterScrollLeftBtn)
+        end
+        if self.filterTabButtons then
+            for _, btn in ipairs(self.filterTabButtons) do
+                if self:isControlVisible(btn) then
+                    table.insert(filterRow, btn)
+                end
+            end
+        end
+        if self:isControlVisible(self.filterScrollRightBtn) then
+            table.insert(filterRow, self.filterScrollRightBtn)
+        end
+        self:addJoypadRow(filterRow)
+    end
+
+    self:addJoypadRow({
+        self.searchEntry,
+        self.searchClearBtn,
+    })
+
+    if self:isControlVisible(self.skillList) then
+        self.skillList.joypadParent = self
+        self:addJoypadRow({ self.skillList })
+    end
+
+    local footerRow = {}
+    if self.mode == "log" then
+        if self:isControlVisible(self.recordTabBtn) then
+            table.insert(footerRow, self.recordTabBtn)
+        end
+        if self:isControlVisible(self.recordAllBtn) then
+            table.insert(footerRow, self.recordAllBtn)
+        end
+    else
+        if self:isControlVisible(self.absorbTabBtn) then
+            table.insert(footerRow, self.absorbTabBtn)
+        end
+        if self:isControlVisible(self.absorbAllBtn) then
+            table.insert(footerRow, self.absorbAllBtn)
+        end
+    end
+    if self:isControlVisible(self.dissolveBtn) then
+        table.insert(footerRow, self.dissolveBtn)
+    end
+    if self:isControlVisible(self.closeBottomBtn) then
+        table.insert(footerRow, self.closeBottomBtn)
+    end
+    self:addJoypadRow(footerRow)
+
+    if #self.joypadButtonsY == 0 then
+        self.joypadButtons = nil
+        self.joypadIndex = 0
+        self.joypadIndexY = 0
+        self.listFocusActive = false
+        self:refreshControllerPrompts(true)
+        return
+    end
+
+    if panelHadFocus then
+        local rowIndex, colIndex = self:findJoypadControl(preferredControl)
+        if not rowIndex and self.joypadIndexY and self.joypadIndexY >= 1 and self.joypadIndexY <= #self.joypadButtonsY then
+            local currentRow = self:getVisibleChildren(self.joypadIndexY)
+            if #currentRow > 0 then
+                rowIndex = self.joypadIndexY
+                colIndex = math.min(math.max(self.joypadIndex or 1, 1), #currentRow)
+            end
+        end
+        if not rowIndex then
+            rowIndex = self:getMinVisibleRow()
+            if rowIndex == -1 then
+                rowIndex = 1
+            end
+            colIndex = 1
+        end
+
+        self.joypadIndexY = rowIndex
+        self.joypadButtons = self.joypadButtonsY[rowIndex]
+        local visibleChildren = self:getVisibleChildren(rowIndex)
+        if #visibleChildren > 0 then
+            self.joypadIndex = math.min(math.max(colIndex or 1, 1), #visibleChildren)
+            local child = visibleChildren[self.joypadIndex]
+            if child and child ~= self.skillList then
+                child:setJoypadFocused(true, joypadData)
+            end
+        else
+            self.joypadIndex = 1
+        end
+    elseif listHadFocus then
+        if not self:isControlVisible(self.skillList) and setJoypadFocus then
+            self.listFocusActive = false
+            setJoypadFocus(self.playerNum, self)
+            if updateJoypadFocus and joypadData then
+                updateJoypadFocus(joypadData)
+            end
+        else
+            self:ensureListSelection(false)
+        end
+    else
+        self.listFocusActive = false
+        local firstRow = self:getMinVisibleRow()
+        if firstRow ~= -1 then
+            self.joypadIndexY = firstRow
+            self.joypadButtons = self.joypadButtonsY[firstRow]
+            local firstChildren = self:getVisibleChildren(firstRow)
+            self.joypadIndex = (#firstChildren > 0) and 1 or 0
+        end
+    end
+
+    self:refreshControllerPrompts(true)
+end
+
+function BurdJournals.UI.MainPanel:wireSkillListJoypad()
+    if not self.skillList then
+        return
+    end
+
+    local list = self.skillList
+    list.joypadParent = self
+    list.mainPanel = self
+
+    list.onJoypadDownInParent = function(listbox, button, joypadData)
+        local panel = listbox.mainPanel
+        if not panel or not joypadData then
+            return false
+        end
+
+        if button == Joypad.AButton then
+            return panel:enterListJoypadFocus(joypadData)
+        end
+
+        if button == Joypad.YButton then
+            return true
+        end
+
+        if button == Joypad.LBumper then
+            panel:cycleTopTab(-1)
+            return true
+        end
+
+        if button == Joypad.RBumper then
+            panel:cycleTopTab(1)
+            return true
+        end
+
+        if button == Joypad.XButton then
+            panel:showFeedback(
+                getText("UI_BurdJournals_ControllerNoSecondaryAction") or "No secondary action for this entry",
+                {r=0.95, g=0.75, b=0.4}
+            )
+            return true
+        end
+
+        return false
+    end
+
+    list.onJoypadDown = function(listbox, button, joypadData)
+        local panel = listbox.mainPanel
+        if not panel then
+            ISScrollingListBox.onJoypadDown(listbox, button, joypadData)
+            return
+        end
+        panel.listFocusActive = true
+
+        if button == Joypad.BButton then
+            panel:exitListJoypadFocus(joypadData)
+            return
+        end
+
+        if button == Joypad.AButton then
+            if panel.listEntryConsumeA then
+                panel.listEntryConsumeA = false
+                return
+            end
+            if panel:isListEnterGuardActive() then
+                return
+            end
+            local item = panel:getSelectedListItem()
+            if not item or not panel:performPrimaryListAction(item) then
+                panel:showFeedback(
+                    getText("UI_BurdJournals_ControllerNoPrimaryAction") or "No primary action for this entry",
+                    {r=0.95, g=0.75, b=0.4}
+                )
+            end
+            return
+        end
+
+        if button == Joypad.XButton then
+            local item = panel:getSelectedListItem()
+            if not item or not panel:performSecondaryListAction(item) then
+                panel:showFeedback(
+                    getText("UI_BurdJournals_ControllerNoSecondaryAction") or "No secondary action for this entry",
+                    {r=0.95, g=0.75, b=0.4}
+                )
+            end
+            return
+        end
+
+        if button == Joypad.YButton then
+            if not panel:performTabBatchAction() then
+                panel:showFeedback(
+                    getText("UI_BurdJournals_ControllerNoTabAction") or "No tab action available right now",
+                    {r=0.95, g=0.75, b=0.4}
+                )
+            end
+            return
+        end
+
+        if button == Joypad.LBumper then
+            panel:cycleTopTab(-1)
+            return
+        end
+
+        if button == Joypad.RBumper then
+            panel:cycleTopTab(1)
+            return
+        end
+
+        ISScrollingListBox.onJoypadDown(listbox, button, joypadData)
+        panel:rememberListSelection()
+    end
+end
+
+function BurdJournals.UI.MainPanel:getSelectedListItem()
+    if not self.skillList or type(self.skillList.items) ~= "table" then
+        return nil
+    end
+
+    local selected = self:ensureListSelection(true)
+    local maxItems = #self.skillList.items
+    if not selected or selected < 1 or selected > maxItems then
+        return nil
+    end
+
+    local row = self.skillList.items[selected]
+    local item = row and row.item
+    if not item or item.isHeader or item.isEmpty then
+        return nil
+    end
+    self.lastListSelectedIndex = selected
+    self.lastListContextKey = self:getListSelectionContextKey()
+    return item
+end
+
+function BurdJournals.UI.MainPanel:performPrimaryListAction(item)
+    if not item then
+        return false
+    end
+
+    if self.mode == "log" then
+        if not item.canRecord then
+            if item.isAtBaseline then
+                self:showFeedback(getText("UI_BurdJournals_CantRecordStartingSkills") or "Can't record starting skills", {r=0.7, g=0.5, b=0.3})
+            elseif item.isStartingTrait then
+                self:showFeedback(getText("UI_BurdJournals_CantRecordStartingTraits") or "Can't record starting traits", {r=0.7, g=0.5, b=0.3})
+            end
+            return false
+        end
+        if item.isSkill then
+            self:recordSkill(item.skillName, item.xp, item.level)
+            return true
+        end
+        if item.isTrait then
+            self:recordTrait(item.traitId)
+            return true
+        end
+        if item.isStat then
+            self:recordStat(item.statId, item.currentValue)
+            return true
+        end
+        if item.isRecipe then
+            self:recordRecipe(item.recipeName)
+            return true
+        end
+        return false
+    end
+
+    if self.mode == "view" then
+        if item.isSkill and item.canClaim then
+            self:claimSkill(item.skillName, item.xp)
+            return true
+        end
+        if item.isTrait and not item.alreadyKnown and not item.isClaimed then
+            self:claimTrait(item.traitId)
+            return true
+        end
+        if item.isRecipe and not item.alreadyKnown and not item.isClaimed then
+            self:claimRecipe(item.recipeName)
+            return true
+        end
+        if item.isStat and item.canClaim and not item.alreadyClaimed then
+            self:claimStat(item.statId, item.recordedValue)
+            return true
+        end
+        return false
+    end
+
+    if self.mode == "absorb" then
+        if item.isSkill and not item.isClaimed then
+            self:absorbSkill(item.skillName, item.xp)
+            return true
+        end
+        if item.isForgetSlot and not item.isClaimed then
+            self:claimForgetTrait(item.traitId)
+            return true
+        end
+        if item.isTrait and not item.alreadyKnown and not item.isClaimed then
+            self:absorbTrait(item.traitId)
+            return true
+        end
+        if item.isRecipe and not item.alreadyKnown and not item.isClaimed then
+            self:absorbRecipe(item.recipeName)
+            return true
+        end
+        return false
+    end
+
+    return false
+end
+
+function BurdJournals.UI.MainPanel:performSecondaryListAction(item)
+    if self.mode ~= "view" or not item then
+        return false
+    end
+
+    if item.isSkill then
+        self:eraseSkillEntry(item.skillName)
+        return true
+    end
+    if item.isTrait then
+        self:eraseTraitEntry(item.traitId)
+        return true
+    end
+    if item.isRecipe then
+        self:eraseRecipeEntry(item.recipeName)
+        return true
+    end
+    if item.isStat then
+        self:eraseStatEntry(item.statId)
+        return true
+    end
+    return false
+end
+
+function BurdJournals.UI.MainPanel:performTabBatchAction()
+    if self.mode == "log" then
+        self:onRecordTab()
+        return true
+    end
+    if self.mode == "view" then
+        self:onClaimTab()
+        return true
+    end
+    if self.mode == "absorb" then
+        self:onAbsorbTab()
+        return true
+    end
+    return false
+end
+
+function BurdJournals.UI.MainPanel:cycleTopTab(direction)
+    if not self.tabs or #self.tabs <= 1 then
+        return false
+    end
+
+    local dir = tonumber(direction) or 0
+    if dir == 0 then
+        return false
+    end
+
+    local currentIndex = 1
+    for i, tab in ipairs(self.tabs) do
+        if tab.id == self.currentTab then
+            currentIndex = i
+            break
+        end
+    end
+
+    local nextIndex = currentIndex + dir
+    if nextIndex < 1 then
+        nextIndex = #self.tabs
+    elseif nextIndex > #self.tabs then
+        nextIndex = 1
+    end
+
+    local nextTab = self.tabs[nextIndex]
+    if not nextTab or not self.tabButtons then
+        return false
+    end
+
+    local btn = self.tabButtons[nextTab.id]
+    if not btn then
+        return false
+    end
+
+    self:onTabClick(btn)
+    return true
+end
+
+function BurdJournals.UI.MainPanel:getControllerPromptStyleToken()
+    local core = getCore and getCore() or nil
+    local style = "default"
+    if core and core.getOptionControllerButtonStyle then
+        style = tostring(core:getOptionControllerButtonStyle())
+    end
+
+    local textures = Joypad and Joypad.Texture or nil
+    local aBtn = textures and textures.AButton or nil
+    local bBtn = textures and textures.BButton or nil
+    local xBtn = textures and textures.XButton or nil
+    return style .. "|" .. tostring(aBtn) .. "|" .. tostring(bBtn) .. "|" .. tostring(xBtn)
+end
+
+function BurdJournals.UI.MainPanel:getPromptTextureForAction(actionKey)
+    if not self.controllerPromptsActive then
+        return nil
+    end
+    local textures = Joypad and Joypad.Texture or nil
+    if not textures then
+        return nil
+    end
+    if actionKey == "A" then
+        return textures.AButton
+    end
+    if actionKey == "B" then
+        return textures.BButton
+    end
+    if actionKey == "X" then
+        return textures.XButton
+    end
+    if actionKey == "Y" then
+        return textures.YButton
+    end
+    return nil
+end
+
+function BurdJournals.UI.MainPanel:applyJoypadPrompt(button, textureOrNil)
+    if not button then
+        return
+    end
+    if textureOrNil and button.setJoypadButton then
+        button:setJoypadButton(textureOrNil)
+        return
+    end
+    if button.clearJoypadButton then
+        button:clearJoypadButton()
+    elseif button.setJoypadButton then
+        button:setJoypadButton(nil)
+    end
+end
+
+function BurdJournals.UI.MainPanel:clearAllJoypadPrompts()
+    if type(self._promptTrackedButtons) == "table" then
+        for _, button in ipairs(self._promptTrackedButtons) do
+            self:applyJoypadPrompt(button, nil)
+        end
+    end
+    self._promptTrackedButtons = {}
+end
+
+function BurdJournals.UI.MainPanel:refreshControllerPrompts(force)
+    local joypadActive = self:isJoypadActive()
+    local styleToken = joypadActive and self:getControllerPromptStyleToken() or nil
+    if not force
+        and self.controllerPromptsActive == joypadActive
+        and self.controllerPromptStyleToken == styleToken
+    then
+        return
+    end
+
+    self.controllerPromptsActive = joypadActive
+    self.controllerPromptStyleToken = styleToken
+    self:clearAllJoypadPrompts()
+
+    if not joypadActive then
+        return
+    end
+
+    local tracked = {}
+    local function addPrompt(button, texture)
+        if not button or tracked[button] then
+            return
+        end
+        tracked[button] = true
+        self:applyJoypadPrompt(button, texture)
+        table.insert(self._promptTrackedButtons, button)
+    end
+
+    local yPrompt = self:getPromptTextureForAction("Y")
+
+    addPrompt(self.recordTabBtn, yPrompt)
+    addPrompt(self.absorbTabBtn, yPrompt)
+end
+
+function BurdJournals.UI.MainPanel:drawPillLabelWithPrompt(listbox, x, y, w, h, text, textColor, promptKey)
+    if not listbox then
+        return
+    end
+
+    local label = tostring(text or "")
+    local color = textColor or {r=1, g=1, b=1, a=1}
+    local font = UIFont.Small
+    local textWidth = getTextManager():MeasureStringX(font, label)
+    local textY = y + 4
+    local promptTexture = promptKey and self:getPromptTextureForAction(promptKey) or nil
+
+    if not promptTexture then
+        listbox:drawText(label, x + (w - textWidth) / 2, textY, color.r, color.g, color.b, color.a or 1, font)
+        return
+    end
+
+    local iconSize = math.max(10, math.min(h - 6, 14))
+    local gap = 3
+    local totalWidth = iconSize + gap + textWidth
+    if totalWidth > (w - 2) then
+        listbox:drawText(label, x + (w - textWidth) / 2, textY, color.r, color.g, color.b, color.a or 1, font)
+        return
+    end
+
+    local startX = x + (w - totalWidth) / 2
+    listbox:drawTextureScaledAspect(promptTexture, startX, y + (h - iconSize) / 2, iconSize, iconSize, 1, 1, 1, 1)
+    listbox:drawText(label, startX + iconSize + gap, textY, color.r, color.g, color.b, color.a or 1, font)
+end
+
+function BurdJournals.UI.MainPanel:isSelectedDrawItem(listbox, item)
+    if not listbox or not item or type(listbox.items) ~= "table" then
+        return false
+    end
+    local selectedIndex = tonumber(listbox.selected) or -1
+    if selectedIndex < 1 or selectedIndex > #listbox.items then
+        return false
+    end
+    return listbox.items[selectedIndex] == item
+end
+
+function BurdJournals.UI.MainPanel:drawSelectedRowOutline(listbox, item, cardX, cardY, cardW, cardH)
+    if not self:isSelectedDrawItem(listbox, item) then
+        return
+    end
+
+    local joypadFocusedList = self.listFocusActive == true
+    local outerA = joypadFocusedList and 0.95 or 0.75
+    local innerA = joypadFocusedList and 0.85 or 0.65
+    local outer = {r=0.45, g=0.78, b=0.95}
+    local inner = {r=0.28, g=0.62, b=0.82}
+
+    listbox:drawRectBorder(cardX - 1, cardY - 1, cardW + 2, cardH + 2, outerA, outer.r, outer.g, outer.b)
+    listbox:drawRectBorder(cardX + 1, cardY + 1, cardW - 2, cardH - 2, innerA, inner.r, inner.g, inner.b)
+end
+
+function BurdJournals.UI.MainPanel:showControllerHintOnce()
+    if self.controllerHintShown then
+        return
+    end
+    self.controllerHintShown = true
+    self:showFeedback(
+        getText("UI_BurdJournals_ControllerHintHybrid") or "Controller: A Select, B Back, X Erase, Y Tab Action, LB/RB Switch Tabs",
+        {r=0.62, g=0.84, b=1.0}
+    )
 end
 
 function BurdJournals.UI.MainPanel:createTabs(tabs, startY, themeColors)
@@ -944,6 +1941,15 @@ end
 function BurdJournals.UI.MainPanel:onTabClick(button)
     local tabId = button.internal
     if tabId == self.currentTab then return end
+
+    if self.listFocusActive then
+        self:exitListJoypadFocus(nil)
+    end
+    if self.skillList then
+        self.skillList.selected = -1
+    end
+    self.lastListSelectedIndex = nil
+    self.lastListContextKey = nil
 
     self.currentTab = tabId
 
@@ -1096,6 +2102,11 @@ end
 
 function BurdJournals.UI.MainPanel:clearSearch()
     self.searchQuery = ""
+    if self.skillList then
+        self.skillList.selected = -1
+    end
+    self.lastListSelectedIndex = nil
+    self.lastListContextKey = nil
     if self.searchEntry then
         self.searchEntry:setText("")
         self.searchEntry.lastSearchText = ""
@@ -1283,6 +2294,12 @@ function BurdJournals.UI.MainPanel:onFilterTabClick(button)
         return
     end
 
+    if self.skillList then
+        self.skillList.selected = -1
+    end
+    self.lastListSelectedIndex = nil
+    self.lastListContextKey = nil
+
     self.filterState[currentTab].current = filterId
 
     self:updateFilterTabStyles()
@@ -1315,12 +2332,14 @@ function BurdJournals.UI.MainPanel:onFilterScrollLeft()
     local maxOffset = math.max(0, tonumber(self.filterScrollMax) or 0)
     self.filterScrollOffset = math.max(0, math.min(maxOffset, (tonumber(self.filterScrollOffset) or 0) - 50))
     self:updateFilterTabPositions()
+    self:rebuildJoypadRows()
 end
 
 function BurdJournals.UI.MainPanel:onFilterScrollRight()
     local maxOffset = math.max(0, tonumber(self.filterScrollMax) or 0)
     self.filterScrollOffset = math.max(0, math.min(maxOffset, (tonumber(self.filterScrollOffset) or 0) + 50))
     self:updateFilterTabPositions()
+    self:rebuildJoypadRows()
 end
 
 function BurdJournals.UI.MainPanel:updateFilterTabPositions()
@@ -1390,6 +2409,8 @@ function BurdJournals.UI.MainPanel:passesFilter(modSource)
 end
 
 function BurdJournals.UI.MainPanel:refreshCurrentList()
+    self:rememberListSelection()
+
     if self.mode == "log" then
         self:populateRecordList()
     elseif self.mode == "view" then
@@ -1397,6 +2418,9 @@ function BurdJournals.UI.MainPanel:refreshCurrentList()
     elseif self.mode == "absorb" then
         self:populateAbsorptionList()
     end
+
+    self:ensureListSelection(self.listFocusActive)
+    self:rebuildJoypadRows()
 end
 
 function BurdJournals.UI.MainPanel:getHeaderJournalUUID()
@@ -1438,6 +2462,8 @@ function BurdJournals.UI.MainPanel:updateHeaderUUIDTooltip()
         self.headerUuidBadgeBtn.tooltip = tooltip
         self.headerUuidBadgeBtn:setVisible(uuid ~= nil)
     end
+
+    self:rebuildJoypadRows()
 end
 
 function BurdJournals.UI.MainPanel:onHeaderCopyUUID()
@@ -1771,7 +2797,7 @@ function BurdJournals.UI.MainPanel:forceCurrentTabRebuild()
 end
 
 function BurdJournals.UI.MainPanel:createChildren()
-    ISPanel.createChildren(self)
+    ISPanelJoypad.createChildren(self)
     
     -- Register this panel for baseline change notifications
     self:registerOpenPanel()
@@ -1913,6 +2939,7 @@ function BurdJournals.UI.MainPanel:refreshJournalData()
         end
     end
 
+    self:rememberListSelection()
     if self.mode == "log" then
 
         if self.skillList then
@@ -1936,6 +2963,7 @@ function BurdJournals.UI.MainPanel:refreshJournalData()
         end
     end
 
+    self:ensureListSelection(self.listFocusActive)
     self:updateHeaderUUIDTooltip()
 end
 
@@ -2147,21 +3175,13 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
                 local claimBtnStart = listbox:getWidth() - btnW - margin
 
                 if x >= claimBtnStart and not item.isClaimed then
-
-                    if item.isSkill then
-                        listbox.mainPanel:absorbSkill(item.skillName, item.xp)
-                    elseif item.isForgetSlot then
-                        listbox.mainPanel:claimForgetTrait(item.traitId)
-                    elseif item.isTrait and not item.alreadyKnown then
-                        listbox.mainPanel:absorbTrait(item.traitId)
-                    elseif item.isRecipe and not item.alreadyKnown then
-                        listbox.mainPanel:absorbRecipe(item.recipeName)
-                    end
+                    listbox.mainPanel:performPrimaryListAction(item)
                 end
             end
         end
         return true
     end
+    self:wireSkillListJoypad()
     self:addChild(self.skillList)
     y = y + listHeight
 
@@ -2202,7 +3222,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     local isWorn = BurdJournals.isWorn and BurdJournals.isWorn(self.journal) or false
     local showDissolveBtn = (isWorn or isBloody or isCursedReward) and BurdJournals.shouldDissolve and true or false
 
-    local btnSpacing = 6
+    local btnSpacing = 12
     local numButtons = showDissolveBtn and 4 or 3
     local totalBtnWidth = btnWidth * numButtons + btnSpacing * (numButtons - 1)
     local btnStartX = (self.width - totalBtnWidth) / 2
@@ -2263,6 +3283,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self:addChild(self.closeBottomBtn)
 
     self:populateAbsorptionList()
+    self:rebuildJoypadRows()
 end
 
 -- Manual dissolve button handler for worn/bloody journals
@@ -2294,6 +3315,12 @@ function BurdJournals.UI.MainPanel:onDissolveJournal()
         )
         modal:initialise()
         modal:addToUIManager()
+        if BurdJournals.applyJoypadSupportToModal then
+            BurdJournals.applyJoypadSupportToModal(modal, self.player, {
+                playerNum = self.playerNum,
+                prevFocus = self,
+            })
+        end
     end
 end
 
@@ -2347,13 +3374,18 @@ function BurdJournals.UI.MainPanel:onAbsorbTab()
 end
 
 function BurdJournals.UI.MainPanel:prerender()
-    ISPanel.prerender(self)
+    ISPanelJoypad.prerender(self)
 
     if self.searchPendingRefresh and self.searchEntry then
         self.searchPendingRefresh = false
         local currentText = self.searchEntry:getText() or ""
         if currentText ~= self.searchEntry.lastSearchText then
             self.searchEntry.lastSearchText = currentText
+            if self.skillList then
+                self.skillList.selected = -1
+            end
+            self.lastListSelectedIndex = nil
+            self.lastListContextKey = nil
             self.searchQuery = currentText
             self:refreshCurrentList()
         end
@@ -2625,6 +3657,14 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             end
         end
     end
+
+    local joypadActive, joypadData = self:isJoypadActive()
+    if joypadActive and joypadData then
+        self.listFocusActive = (self.skillList ~= nil and joypadData.focus == self.skillList)
+    else
+        self.listFocusActive = false
+    end
+    self:refreshControllerPrompts(false)
 end
 
 function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
@@ -2711,6 +3751,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     self:drawRectBorder(cardX, cardY, cardW, cardH, 0.6, borderColor.r, borderColor.g, borderColor.b)
 
     self:drawRect(cardX, cardY, 4, cardH, 0.9, accent.r, accent.g, accent.b)
+    mainPanel:drawSelectedRowOutline(self, item, cardX, cardY, cardW, cardH)
 
     local textX = cardX + padding + 4
     local textColor = data.isClaimed and {r=0.4, g=0.4, b=0.4} or {r=0.95, g=0.9, b=0.85}
@@ -2882,8 +3923,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                 self:drawRect(btnX, btnY, btnW, btnH, 0.7, accentColor.r * 0.6, accentColor.g * 0.6, accentColor.b * 0.6)
                 self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, accentColor.r, accentColor.g, accentColor.b)
                 local btnText = getText("UI_BurdJournals_Absorb")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -2891,8 +3931,10 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     if data.isTrait then
 
         local learningState = mainPanel.learningState
-        local isLearningThis = learningState.active and not learningState.isAbsorbAll
-                              and learningState.traitId == data.traitId
+        local isLearningThis = learningState.active and not learningState.isAbsorbAll and (
+            (data.isForgetSlot and learningState.forgetTraitId == data.traitId) or
+            ((not data.isForgetSlot) and learningState.traitId == data.traitId)
+        )
         local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll
                                    and not data.isClaimed and not data.alreadyKnown and not data.isForgetSlot
 
@@ -2982,7 +4024,8 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
             local btnH = 24
             local btnX = cardX + cardW - btnW - 10
             local btnY = cardY + (cardH - btnH) / 2
-            local isInBatch = isInCurrentAbsorbBatch(learningState, "trait", data.traitId)
+            local batchType = data.isForgetSlot and "forget" or "trait"
+            local isInBatch = isInCurrentAbsorbBatch(learningState, batchType, data.traitId)
 
             if isQueued then
 
@@ -2998,7 +4041,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                 local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
                 local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
                 self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
-            elseif learningState.active and not learningState.isAbsorbAll and not data.isForgetSlot then
+            elseif learningState.active and not learningState.isAbsorbAll then
 
                 self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.35, 0.25)
                 self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.5, 0.35)
@@ -3015,8 +4058,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                     self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.7, 0.5, 0.25)
                 end
                 local btnText = data.isForgetSlot and (getText("UI_BurdJournals_BtnForget") or "FORGET") or getText("UI_BurdJournals_BtnClaim")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=0.95, b=0.85, a=1}, "A")
             end
         end
     end
@@ -3129,8 +4171,7 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
                 self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.5)
                 self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnClaim")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=0.9, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -3342,6 +4383,7 @@ end
 
 function BurdJournals.UI.MainPanel:refreshAbsorptionList()
     BurdJournals.debugPrint("[BurdJournals] UI: refreshAbsorptionList called")
+    self:rememberListSelection()
 
     local journalData = BurdJournals.getJournalData(self.journal)
     local claimedCount = journalData and journalData.claimedSkills and BurdJournals.countTable(journalData.claimedSkills) or 0
@@ -3400,6 +4442,8 @@ function BurdJournals.UI.MainPanel:refreshAbsorptionList()
     else
         self:populateAbsorptionList()
     end
+    self:ensureListSelection(self.listFocusActive)
+    self:rebuildJoypadRows()
 end
 
 function BurdJournals.UI.MainPanel:getReadingSpeedMultiplier()
@@ -3507,6 +4551,43 @@ function BurdJournals.UI.MainPanel:startLearningTrait(traitId)
         active = true,
         skillName = nil,
         traitId = traitId,
+        forgetTraitId = nil,
+        isAbsorbAll = false,
+        progress = 0,
+        totalTime = self:getTraitLearningTime(),
+        startTime = getTimestampMs and getTimestampMs() or 0,
+        pendingRewards = rewards,
+        currentIndex = 1,
+        queue = {},
+    }
+
+    Events.OnTick.Add(BurdJournals.UI.MainPanel.onLearningTickStatic)
+
+    self:playSound(BurdJournals.Sounds.PAGE_TURN)
+
+    return true
+end
+
+function BurdJournals.UI.MainPanel:startLearningForgetTrait(traitId)
+    if self.learningState.active then
+        return false
+    end
+
+    if not (BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(self.player, traitId)) then
+        return false
+    end
+
+    local rewards = {{type = "forget", name = traitId}}
+
+    if BurdJournals.queueLearnAction then
+        return BurdJournals.queueLearnAction(self.player, self.journal, rewards, false, self)
+    end
+
+    self.learningState = {
+        active = true,
+        skillName = nil,
+        traitId = nil,
+        forgetTraitId = traitId,
         isAbsorbAll = false,
         progress = 0,
         totalTime = self:getTraitLearningTime(),
@@ -3538,6 +4619,7 @@ function BurdJournals.UI.MainPanel:startLearningRecipe(recipeName)
         active = true,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = recipeName,
         isAbsorbAll = false,
         progress = 0,
@@ -3589,6 +4671,7 @@ function BurdJournals.UI.MainPanel:startLearningStat(statId, value)
         active = true,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = statId,
         isAbsorbAll = false,
@@ -3738,6 +4821,7 @@ function BurdJournals.UI.MainPanel:startLearningAll()
         active = true,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = nil,
         isAbsorbAll = true,
@@ -3888,6 +4972,7 @@ function BurdJournals.UI.MainPanel:startLearningTab(tabId)
         active = true,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = nil,
         isAbsorbAll = true,
@@ -3919,6 +5004,7 @@ function BurdJournals.UI.MainPanel:cancelLearning()
         active = false,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         isAbsorbAll = false,
         progress = 0,
         totalTime = 0,
@@ -4149,8 +5235,11 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
 
     local journalData = BurdJournals.getJournalData(self.journal) or {}
     local useBaseline, autoRepairedMode = resolveJournalRecordingModeForPlayer(journalData, self.player)
+    if shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
+        useBaseline = true
+    end
     if autoRepairedMode then
-        BurdJournals.debugPrint("[BurdJournals] startRecordingAll: detected legacy absolute journal entries while baseline flag was set; using absolute mode for this pass")
+        BurdJournals.debugPrint("[BurdJournals] startRecordingAll: detected legacy absolute journal entries while baseline flag was set; forcing baseline-mode recording so entries can be repaired")
     end
 
     local baselineReady, normalizedUseBaseline = ensureBaselineReadyForRecording(self, useBaseline, "startRecordingAll")
@@ -4185,8 +5274,10 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
                 end
 
                 local earnedXP = math.max(0, currentXP - baselineXP)
+                local needsBaselineRepair = useBaseline
+                    and isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
 
-                if earnedXP > 0 and earnedXP > recordedXP then
+                if earnedXP > 0 and (earnedXP > recordedXP or needsBaselineRepair) then
                     table.insert(pendingRecords, {type = "skill", name = skillName, xp = earnedXP, level = currentLevel})
                 end
             end
@@ -4301,8 +5392,11 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
 
     local journalData = BurdJournals.getJournalData(self.journal) or {}
     local useBaseline, autoRepairedMode = resolveJournalRecordingModeForPlayer(journalData, self.player)
+    if shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
+        useBaseline = true
+    end
     if autoRepairedMode then
-        BurdJournals.debugPrint("[BurdJournals] startRecordingTab: detected legacy absolute journal entries while baseline flag was set; using absolute mode for this pass")
+        BurdJournals.debugPrint("[BurdJournals] startRecordingTab: detected legacy absolute journal entries while baseline flag was set; forcing baseline-mode recording so entries can be repaired")
     end
 
     local baselineReady, normalizedUseBaseline = ensureBaselineReadyForRecording(self, useBaseline, "startRecordingTab")
@@ -4339,8 +5433,10 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
                     end
 
                     local earnedXP = math.max(0, currentXP - baselineXP)
+                    local needsBaselineRepair = useBaseline
+                        and isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
 
-                    if earnedXP > 0 and earnedXP > recordedXP then
+                    if earnedXP > 0 and (earnedXP > recordedXP or needsBaselineRepair) then
                         table.insert(pendingRecords, {type = "skill", name = skillName, xp = earnedXP, level = currentLevel})
                     end
                 end
@@ -4915,6 +6011,7 @@ function BurdJournals.UI.MainPanel:completeLearning()
                 active = true,
                 skillName = nextReward.name,
                 traitId = nil,
+                forgetTraitId = nil,
                 recipeName = nil,
                 statId = nil,
                 isAbsorbAll = false,
@@ -4930,6 +6027,7 @@ function BurdJournals.UI.MainPanel:completeLearning()
                 active = true,
                 skillName = nil,
                 traitId = nextReward.name,
+                forgetTraitId = nil,
                 recipeName = nil,
                 statId = nil,
                 isAbsorbAll = false,
@@ -4940,11 +6038,28 @@ function BurdJournals.UI.MainPanel:completeLearning()
                 currentIndex = 1,
                 queue = savedQueue,
             }
+        elseif nextReward.type == "forget" then
+            self.learningState = {
+                active = true,
+                skillName = nil,
+                traitId = nil,
+                forgetTraitId = nextReward.name,
+                recipeName = nil,
+                statId = nil,
+                isAbsorbAll = false,
+                progress = 0,
+                totalTime = self:getTraitLearningTime(),
+                startTime = getTimestampMs and getTimestampMs() or 0,
+                pendingRewards = {{type = "forget", name = nextReward.name}},
+                currentIndex = 1,
+                queue = savedQueue,
+            }
         elseif nextReward.type == "recipe" then
             self.learningState = {
                 active = true,
                 skillName = nil,
                 traitId = nil,
+                forgetTraitId = nil,
                 recipeName = nextReward.name,
                 statId = nil,
                 isAbsorbAll = false,
@@ -4960,6 +6075,7 @@ function BurdJournals.UI.MainPanel:completeLearning()
                 active = true,
                 skillName = nil,
                 traitId = nil,
+                forgetTraitId = nil,
                 recipeName = nil,
                 statId = nextReward.name,
                 isAbsorbAll = false,
@@ -4994,6 +6110,7 @@ function BurdJournals.UI.MainPanel:completeLearning()
         active = false,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = nil,
         isAbsorbAll = false,
@@ -5092,6 +6209,8 @@ function BurdJournals.UI.MainPanel:startRewardProcessor()
             else
                 panel:sendAbsorbTrait(reward.name, skipRefresh)
             end
+        elseif reward.type == "forget" then
+            panel:sendClaimForgetSlot(reward.name)
         elseif reward.type == "recipe" then
             if reward.isPlayerJournal then
                 panel:sendClaimRecipe(reward.name, skipRefresh)
@@ -5752,7 +6871,7 @@ function BurdJournals.UI.MainPanel:addToQueue(rewardType, name, xpOrValue)
 
     -- Check if already being learned
     if self.learningState.skillName == name or self.learningState.traitId == name or
-       self.learningState.recipeName == name or self.learningState.statId == name then
+       self.learningState.forgetTraitId == name or self.learningState.recipeName == name or self.learningState.statId == name then
         return false
     end
 
@@ -6088,7 +7207,7 @@ function BurdJournals.UI.MainPanel:checkDissolution(forceAutoDissolve)
 end
 
 function BurdJournals.UI.MainPanel:update()
-    ISPanel.update(self)
+    ISPanelJoypad.update(self)
 
     if self.feedbackTicks and self.feedbackTicks > 0 then
         self.feedbackTicks = self.feedbackTicks - 1
@@ -6133,6 +7252,135 @@ function BurdJournals.UI.MainPanel:onClose()
     end
 
     self:doClose()
+end
+
+function BurdJournals.UI.MainPanel:isJoypadFocusWithinPanel(joypadData)
+    if not joypadData then
+        return false
+    end
+    if isJoypadFocusOnElementOrDescendant then
+        return isJoypadFocusOnElementOrDescendant(self.playerNum, self) == true
+    end
+    local focus = joypadData.focus
+    while focus do
+        if focus == self then
+            return true
+        end
+        focus = focus.parent
+    end
+    return false
+end
+
+function BurdJournals.UI.MainPanel:activateJoypadFocus()
+    local joypadActive, joypadData = self:isJoypadActive()
+    if not joypadActive or not joypadData or not setJoypadFocus then
+        return
+    end
+
+    if joypadData.focus ~= self then
+        self.prevJoypadFocus = joypadData.focus
+    end
+    setJoypadFocus(self.playerNum, self)
+    if updateJoypadFocus then
+        updateJoypadFocus(joypadData)
+    end
+end
+
+function BurdJournals.UI.MainPanel:restoreJoypadFocusAfterClose()
+    local _, joypadData = self:isJoypadActive()
+    if not joypadData or not setJoypadFocus then
+        self.prevJoypadFocus = nil
+        return
+    end
+
+    local shouldRestore = self:isJoypadFocusWithinPanel(joypadData)
+    if shouldRestore then
+        local restoreFocus = self.prevJoypadFocus
+        local cursor = restoreFocus
+        while cursor do
+            if cursor == self then
+                restoreFocus = nil
+                break
+            end
+            cursor = cursor.parent
+        end
+
+        setJoypadFocus(self.playerNum, restoreFocus)
+        if updateJoypadFocus then
+            updateJoypadFocus(joypadData)
+        end
+    end
+
+    self.prevJoypadFocus = nil
+end
+
+function BurdJournals.UI.MainPanel:onGainJoypadFocus(joypadData)
+    ISPanelJoypad.onGainJoypadFocus(self, joypadData)
+    self:rebuildJoypadRows()
+    self:refreshControllerPrompts(true)
+end
+
+function BurdJournals.UI.MainPanel:onLoseJoypadFocus(joypadData)
+    ISPanelJoypad.onLoseJoypadFocus(self, joypadData)
+    self.listFocusActive = false
+    self:clearJoypadFocus(joypadData)
+end
+
+function BurdJournals.UI.MainPanel:onJoypadDown(button, joypadData)
+    local focusedChild = self.getJoypadFocus and self:getJoypadFocus() or nil
+    local textEntryFocused = focusedChild and focusedChild.Type == "ISTextEntryBox"
+    local listPreEntry = self:isListFocusAmbiguous()
+
+    if button == Joypad.LBumper then
+        self:cycleTopTab(-1)
+        return
+    end
+
+    if button == Joypad.RBumper then
+        self:cycleTopTab(1)
+        return
+    end
+
+    if button == Joypad.BButton then
+        if self.listFocusActive and focusedChild == self.skillList then
+            self:exitListJoypadFocus(joypadData)
+            return
+        end
+        self:onClose()
+        return
+    end
+
+    if button == Joypad.AButton and not textEntryFocused and listPreEntry then
+        if self:enterListJoypadFocus(joypadData) then
+            return
+        end
+    end
+
+    if button == Joypad.YButton and not textEntryFocused then
+        if listPreEntry then
+            return
+        end
+        if not self:performTabBatchAction() then
+            self:showFeedback(
+                getText("UI_BurdJournals_ControllerNoTabAction") or "No tab action available right now",
+                {r=0.95, g=0.75, b=0.4}
+            )
+        end
+        return
+    end
+
+    if button == Joypad.XButton and not textEntryFocused and self.listFocusActive and focusedChild == self.skillList then
+        local item = self:getSelectedListItem()
+        if not item or not self:performSecondaryListAction(item) then
+            self:showFeedback(
+                getText("UI_BurdJournals_ControllerNoSecondaryAction") or "No secondary action for this entry",
+                {r=0.95, g=0.75, b=0.4}
+            )
+        end
+        return
+    end
+
+    ISPanelJoypad.onJoypadDown(self, button, joypadData)
 end
 
 function BurdJournals.UI.MainPanel:setBorrowReturnContainer(returnContainer)
@@ -6202,96 +7450,125 @@ function BurdJournals.UI.MainPanel:doClose()
     -- Unregister from baseline change notifications
     self:unregisterOpenPanel()
 
+    self.listFocusActive = false
+    self:clearAllJoypadPrompts()
     self:tryReturnBorrowedJournal()
+    self:restoreJoypadFocusAfterClose()
 
     self:setVisible(false)
     self:removeFromUIManager()
     BurdJournals.UI.MainPanel.instance = nil
 end
 
-function BurdJournals.UI.MainPanel:showCloseConfirmDialog()
+function BurdJournals.UI.MainPanel:onCloseConfirmDialogResult(button)
+    self.confirmDialog = nil
+    if not button then
+        return
+    end
+    if button.internal == "NO" then
+        self:doClose()
+    end
+end
 
+function BurdJournals.UI.MainPanel:showCloseConfirmDialog()
     if self.confirmDialog then
+        if self.confirmDialog.bringToTop then
+            self.confirmDialog:bringToTop()
+        end
+        local joypadActive, joypadData = self:isJoypadActive()
+        if joypadActive and setJoypadFocus then
+            setJoypadFocus(self.playerNum, self.confirmDialog)
+            if updateJoypadFocus and joypadData then
+                updateJoypadFocus(joypadData)
+            end
+        end
         return
     end
 
-    local dialogW = 280
-    local dialogH = 120
-    local dialogX = (getCore():getScreenWidth() - dialogW) / 2
-    local dialogY = (getCore():getScreenHeight() - dialogH) / 2
-
-    local dialog = ISPanel:new(dialogX, dialogY, dialogW, dialogH)
-    dialog:initialise()
-    dialog:instantiate()
-    dialog.backgroundColor = {r=0.15, g=0.15, b=0.15, a=0.98}
-    dialog.borderColor = {r=0.6, g=0.5, b=0.3, a=1}
-    dialog.moveWithMouse = true
-    dialog.mainPanel = self
-
-    self.confirmDialog = dialog
-
-    local warningText = getText("UI_BurdJournals_StateReading") or "You are still reading!"
-    local warningLabel = ISLabel:new(dialogW/2, 20, 20, warningText, 1, 0.9, 0.7, 1, UIFont.Medium, true)
-    dialog:addChild(warningLabel)
-
+    local warningText = getText("UI_BurdJournals_StateReading") or "Reading..."
     local subText = getText("UI_BurdJournals_ConfirmCancelLearning") or "Cancel learning and close?"
-    local subLabel = ISLabel:new(dialogW/2, 44, 16, subText, 0.8, 0.75, 0.65, 1, UIFont.Small, true)
-    dialog:addChild(subLabel)
-
     local keepText = getText("UI_BurdJournals_BtnKeepReading") or "Keep Reading"
     local closeText = getText("UI_BurdJournals_BtnCancelClose") or "Cancel & Close"
-    local keepTextW = getTextManager():MeasureStringX(UIFont.Small, keepText) + 20
-    local closeTextW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
-    local btnW = math.max(100, keepTextW, closeTextW)
-    local btnH = 28
-    local btnSpacing = 20
-    local btnStartX = (dialogW - btnW * 2 - btnSpacing) / 2
-    local btnY = 75
+    local promptText = warningText .. "\n" .. subText
 
-    local dialogRef = dialog
-    local mainPanelRef = self
-
-    local keepBtn = ISButton:new(btnStartX, btnY, btnW, btnH, keepText, dialog, function(btn)
-
-        if mainPanelRef then
-            mainPanelRef.confirmDialog = nil
-        end
-        if dialogRef then
-            dialogRef:setVisible(false)
-            dialogRef:removeFromUIManager()
-        end
-    end)
-    keepBtn:initialise()
-    keepBtn:instantiate()
-    keepBtn.borderColor = {r=0.4, g=0.6, b=0.4, a=1}
-    keepBtn.backgroundColor = {r=0.2, g=0.3, b=0.2, a=0.9}
-    keepBtn.textColor = {r=0.9, g=1, b=0.9, a=1}
-    dialog:addChild(keepBtn)
-
-    local closeBtn = ISButton:new(btnStartX + btnW + btnSpacing, btnY, btnW, btnH, closeText, dialog, function(btn)
-
-        if mainPanelRef then
-            mainPanelRef.confirmDialog = nil
+    local function configureModal(modal)
+        if not modal then
+            return
         end
 
-        if dialogRef then
-            dialogRef:setVisible(false)
-            dialogRef:removeFromUIManager()
+        modal.prevFocus = self
+        modal.moveWithMouse = true
+        if modal.yes then
+            modal.yes:setTitle(keepText)
+            modal.yes.borderColor = {r=0.4, g=0.6, b=0.4, a=1}
+            modal.yes.backgroundColor = {r=0.2, g=0.3, b=0.2, a=0.9}
+            modal.yes.textColor = {r=0.9, g=1, b=0.9, a=1}
+        end
+        if modal.no then
+            modal.no:setTitle(closeText)
+            modal.no.borderColor = {r=0.6, g=0.3, b=0.3, a=1}
+            modal.no.backgroundColor = {r=0.35, g=0.15, b=0.15, a=0.9}
+            modal.no.textColor = {r=1, g=0.85, b=0.85, a=1}
         end
 
-        if mainPanelRef then
-            mainPanelRef:doClose()
+        -- Safe default: A/B keeps reading. Explicit close uses X.
+        modal.onGainJoypadFocus = function(dialog, joypadData)
+            ISModalDialog.onGainJoypadFocus(dialog, joypadData)
+            if dialog.yes and dialog.no then
+                dialog:setISButtonForA(dialog.yes)
+                dialog:setISButtonForB(dialog.yes)
+                dialog:setISButtonForX(dialog.no)
+            end
         end
-    end)
-    closeBtn:initialise()
-    closeBtn:instantiate()
-    closeBtn.borderColor = {r=0.6, g=0.3, b=0.3, a=1}
-    closeBtn.backgroundColor = {r=0.35, g=0.15, b=0.15, a=0.9}
-    closeBtn.textColor = {r=1, g=0.85, b=0.85, a=1}
-    dialog:addChild(closeBtn)
+    end
 
-    dialog:addToUIManager()
-    dialog:bringToTop()
+    local dialog = nil
+    if BurdJournals.createAdaptiveModalDialog then
+        dialog = BurdJournals.createAdaptiveModalDialog({
+            player = self.player,
+            target = self,
+            text = promptText,
+            yesNo = true,
+            onClick = BurdJournals.UI.MainPanel.onCloseConfirmDialogResult,
+            minWidth = 360,
+            maxWidth = 700,
+            minHeight = 170,
+            afterInit = configureModal,
+            joypadSupport = false,
+        })
+    else
+        local x = getCore():getScreenWidth() / 2 - 180
+        local y = getCore():getScreenHeight() / 2 - 80
+        dialog = ISModalDialog:new(
+            x, y,
+            360, 160,
+            promptText,
+            true,
+            self,
+            BurdJournals.UI.MainPanel.onCloseConfirmDialogResult,
+            self.playerNum
+        )
+        dialog:initialise()
+        configureModal(dialog)
+        dialog:addToUIManager()
+    end
+
+    if not dialog then
+        return
+    end
+
+    self.confirmDialog = dialog
+    if dialog.bringToTop then
+        dialog:bringToTop()
+    end
+
+    local joypadActive, joypadData = self:isJoypadActive()
+    if joypadActive and setJoypadFocus then
+        setJoypadFocus(self.playerNum, dialog)
+        if updateJoypadFocus and joypadData then
+            updateJoypadFocus(joypadData)
+        end
+    end
 end
 
 function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
@@ -6309,7 +7586,7 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
 
     local baseWidth = 410
     local btnPadding = 20
-    local btnSpacing = 8
+    local btnSpacing = 12
     local minBtnWidth = 90
 
     local allTabNames = {
@@ -6458,6 +7735,7 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
     panel:initialise()
     panel:addToUIManager()
     BurdJournals.UI.MainPanel.instance = panel
+    panel:activateJoypadFocus()
 
     return panel
 end
@@ -6574,30 +7852,13 @@ function BurdJournals.UI.MainPanel:createLogUI()
                 local mainBtnStart = listbox:getWidth() - btnW - margin
 
                 if x >= mainBtnStart then
-
-                    if not item.canRecord then
-
-                        if item.isAtBaseline then
-                            listbox.mainPanel:showFeedback(getText("UI_BurdJournals_CantRecordStartingSkills") or "Can't record starting skills", {r=0.7, g=0.5, b=0.3})
-                        elseif item.isStartingTrait then
-                            listbox.mainPanel:showFeedback(getText("UI_BurdJournals_CantRecordStartingTraits") or "Can't record starting traits", {r=0.7, g=0.5, b=0.3})
-                        end
-                        return
-                    end
-                    if item.isSkill then
-                        listbox.mainPanel:recordSkill(item.skillName, item.xp, item.level)
-                    elseif item.isTrait then
-                        listbox.mainPanel:recordTrait(item.traitId)
-                    elseif item.isStat then
-                        listbox.mainPanel:recordStat(item.statId, item.currentValue)
-                    elseif item.isRecipe then
-                        listbox.mainPanel:recordRecipe(item.recipeName)
-                    end
+                    listbox.mainPanel:performPrimaryListAction(item)
                 end
             end
         end
         return true
     end
+    self:wireSkillListJoypad()
     self:addChild(self.skillList)
     y = y + listHeight
 
@@ -6632,7 +7893,7 @@ function BurdJournals.UI.MainPanel:createLogUI()
     local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
     local btnWidth = math.max(90, maxRecordTabW, recordAllW, closeW)
 
-    local btnSpacing = 8
+    local btnSpacing = 12
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
     local btnStartX = (self.width - totalBtnWidth) / 2
     local btnY = self.footerY + 32
@@ -6664,6 +7925,7 @@ function BurdJournals.UI.MainPanel:createLogUI()
     -- Legacy baseline debug buttons removed - use BSJ Debug Center (Baseline tab) instead
     
     self:populateRecordList()
+    self:rebuildJoypadRows()
 end
 
 -- Legacy baseline debug functions removed - use BSJ Debug Center (Baseline tab) instead
@@ -6680,8 +7942,11 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
     end
 
     local useBaselineForJournal, autoRepairedMode = resolveJournalRecordingModeForPlayer(journalData, self.player)
+    if shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
+        useBaselineForJournal = true
+    end
     if autoRepairedMode then
-        BurdJournals.debugPrint("[BurdJournals] populateRecordList: detected legacy absolute journal entries while baseline flag was set; using absolute mode for display")
+        BurdJournals.debugPrint("[BurdJournals] populateRecordList: detected legacy absolute journal entries while baseline flag was set; forcing baseline-mode display so entries can be repaired")
     end
 
     -- Only enforce baseline capture when this journal is recording in baseline mode.
@@ -6735,8 +8000,9 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                             end
 
                             local earnedXP = math.max(0, currentXP - baselineXP)
-
-                            local canRecord = earnedXP > recordedXP
+                            local needsBaselineRepair = useBaseline
+                                and isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
+                            local canRecord = earnedXP > recordedXP or needsBaselineRepair
 
                             -- For passive skills (Fitness/Strength), use level-based check since XP can be tricky
                             local isPassiveSkill = (skillName == "Fitness" or skillName == "Strength")
@@ -6774,6 +8040,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                                 baselineXP = baselineXP,
                                 baselineLevel = baselineLevel,
                                 earnedXP = earnedXP,
+                                needsBaselineRepair = needsBaselineRepair,
                                 isAtBaseline = isAtBaseline,
                                 isPassiveSkill = isPassiveSkill,
                                 modSource = modSource,
@@ -7009,6 +8276,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
     else
         self:drawRect(cardX, cardY, 4, cardH, 0.5, 0.3, 0.35, 0.3)
     end
+    mainPanel:drawSelectedRowOutline(self, item, cardX, cardY, cardW, cardH)
 
     local textX = cardX + padding + 4
     local textColor = data.canRecord and {r=0.95, g=0.95, b=1.0} or {r=0.5, g=0.55, b=0.5}
@@ -7255,8 +8523,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
                 self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.35)
                 self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.5)
                 local btnText = getText("UI_BurdJournals_BtnRecord")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -7355,8 +8622,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
                 self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.25)
                 self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.4)
                 local btnText = getText("UI_BurdJournals_BtnRecord")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 0.9, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=0.9, a=1}, "A")
             end
         end
     end
@@ -7439,8 +8705,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
                 self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.4, 0.45)
                 self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.35, 0.55, 0.6)
                 local btnText = getText("UI_BurdJournals_BtnRecord")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -7527,8 +8792,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
                 self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.3, 0.55, 0.6)
                 self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.5, 0.75, 0.8)
                 local btnText = getText("UI_BurdJournals_BtnRecord")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -7737,33 +9001,16 @@ function BurdJournals.UI.MainPanel:createViewUI()
 
                 if x >= eraseBtnStart then
                     if hasEraser and x >= eraseBtnStart and x < eraseBtnStart + btnW then
-
-                        if item.isSkill then
-                            listbox.mainPanel:eraseSkillEntry(item.skillName)
-                        elseif item.isTrait then
-                            listbox.mainPanel:eraseTraitEntry(item.traitId)
-                        elseif item.isRecipe then
-                            listbox.mainPanel:eraseRecipeEntry(item.recipeName)
-                        elseif item.isStat then
-                            listbox.mainPanel:eraseStatEntry(item.statId)
-                        end
+                        listbox.mainPanel:performSecondaryListAction(item)
                     elseif showClaimBtn and x >= claimBtnStart then
-
-                        if item.isSkill and item.canClaim then
-                            listbox.mainPanel:claimSkill(item.skillName, item.xp)
-                        elseif item.isTrait and not item.alreadyKnown and not item.isClaimed then
-                            listbox.mainPanel:claimTrait(item.traitId)
-                        elseif item.isRecipe and not item.alreadyKnown and not item.isClaimed then
-                            listbox.mainPanel:claimRecipe(item.recipeName)
-                        elseif item.isStat and item.canClaim and not item.alreadyClaimed then
-                            listbox.mainPanel:claimStat(item.statId, item.recordedValue)
-                        end
+                        listbox.mainPanel:performPrimaryListAction(item)
                     end
                 end
             end
         end
         return true
     end
+    self:wireSkillListJoypad()
     self:addChild(self.skillList)
     y = y + listHeight
 
@@ -7798,7 +9045,7 @@ function BurdJournals.UI.MainPanel:createViewUI()
     local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
     local btnWidth = math.max(90, maxClaimTabW, claimAllW, closeW)
 
-    local btnSpacing = 8
+    local btnSpacing = 12
     local totalBtnWidth = btnWidth * 3 + btnSpacing * 2
     local btnStartX = (self.width - totalBtnWidth) / 2
     local btnY = self.footerY + 32
@@ -7828,6 +9075,7 @@ function BurdJournals.UI.MainPanel:createViewUI()
     self:addChild(self.closeBottomBtn)
 
     self:populateViewList()
+    self:rebuildJoypadRows()
 end
 
 function BurdJournals.UI.MainPanel:populateViewList()
@@ -8199,8 +9447,7 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
             self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
             self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
             local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-            local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
-            self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+            mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
         end
     end
 
@@ -8229,8 +9476,7 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
             self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.4, 0.5)
             self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.55, 0.65)
             local btnText = getText("UI_BurdJournals_BtnClaim")
-            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-            self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+            mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
         end
     end
 end
@@ -8306,6 +9552,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
     else
         self:drawRect(cardX, cardY, 4, cardH, 0.5, 0.3, 0.3, 0.3)
     end
+    mainPanel:drawSelectedRowOutline(self, item, cardX, cardY, cardW, cardH)
 
     local textX = cardX + padding + 4
     local textColor = canInteract and {r=0.95, g=0.95, b=1.0} or {r=0.5, g=0.5, b=0.5}
@@ -8422,8 +9669,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
                 self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
                 local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-                local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
-                self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
             end
         end
 
@@ -8456,8 +9702,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.55)
                 self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnClaim")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -8574,8 +9819,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
                 self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
                 local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-                local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
-                self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
             end
         end
 
@@ -8609,8 +9853,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.55)
                 self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.7)
                 local btnText = getText("UI_BurdJournals_BtnClaim")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=0.9, g=1, b=1, a=1}, "A")
             end
         end
     end
@@ -8710,8 +9953,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
                 self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
                 local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-                local eraseTextW = getTextManager():MeasureStringX(UIFont.Small, eraseText)
-                self:drawText(eraseText, eraseBtnX + (btnW - eraseTextW) / 2, btnY + 4, 1, 0.9, 0.9, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
             end
         end
 
@@ -8740,8 +9982,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
                 self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 1, 0.4, 0.7, 0.55)
 
                 local btnText = getText("UI_BurdJournals_Absorb") or "CLAIM"
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
+                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=0.9, g=1, b=1, a=1}, "A")
             end
         end
 
@@ -8819,12 +10060,19 @@ function BurdJournals.UI.MainPanel:claimForgetTrait(traitId)
         return
     end
 
-    if self.learningState and self.learningState.active then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+    if self.learningState and self.learningState.active and not self.learningState.isAbsorbAll then
+        if self:addToQueue("forget", traitId) then
+            local traitName = safeGetTraitName(traitId)
+            self:showFeedback(string.format(getText("UI_BurdJournals_Queued") or "Queued: %s", traitName), {r=0.7, g=0.8, b=0.9})
+        else
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+        end
         return
     end
 
-    self:sendClaimForgetSlot(traitId)
+    if not self:startLearningForgetTrait(traitId) then
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+    end
 end
 
 function BurdJournals.UI.MainPanel:sendClaimForgetSlot(traitId)

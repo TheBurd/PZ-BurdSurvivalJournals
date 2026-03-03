@@ -62,6 +62,29 @@ local function safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     return skills
 end
 
+local function safeRollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    if BurdJournals and BurdJournals.rollCoherentSkillsForProfession then
+        return BurdJournals.rollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    end
+    return safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP), 0, 0
+end
+
+local function safeResolveGeneratedProfession(professionId, professionName, flavorKey, skills, traits, recipes, coreCount, fallbackCount)
+    if BurdJournals and BurdJournals.resolveProfessionForGeneratedEntries then
+        return BurdJournals.resolveProfessionForGeneratedEntries(
+            professionId,
+            professionName,
+            flavorKey,
+            skills,
+            traits,
+            recipes,
+            coreCount,
+            fallbackCount
+        )
+    end
+    return professionId, professionName, flavorKey
+end
+
 local function safeGenerateSurvivorName()
     if BurdJournals and BurdJournals.generateRandomSurvivorName then
         return BurdJournals.generateRandomSurvivorName()
@@ -251,6 +274,22 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         end
     end
 
+    local skills, coreCount, fallbackCount = safeRollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    if not skills or not (BurdJournals and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(skills)) then
+        skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP)
+        coreCount, fallbackCount = 0, 0
+    end
+    professionId, professionName, flavorKey = safeResolveGeneratedProfession(
+        professionId,
+        professionName,
+        flavorKey,
+        skills,
+        {},
+        recipes,
+        coreCount,
+        fallbackCount
+    )
+
     local modData = item:getModData()
     modData.BurdJournals = {
         uuid = safeGenerateUUID(),
@@ -269,7 +308,7 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
         readSessionCount = 0,
         currentSessionReadCount = 0,
         skillReadCounts = {},
-        skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
+        skills = skills,
         recipes = recipes,
         traits = {},
         claimedSkills = {},
@@ -324,6 +363,11 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
     if BurdJournals and BurdJournals.getRandomProfession then
         professionId, professionName, flavorKey = BurdJournals.getRandomProfession()
     end
+    local skills, coreCount, fallbackCount = safeRollCoherentSkillsForProfession(professionId, minSkills, maxSkills, minXP, maxXP)
+    if not skills or not (BurdJournals and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(skills)) then
+        skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP)
+        coreCount, fallbackCount = 0, 0
+    end
 
     local traits = {}
     if ZombRand(100) < traitChance then
@@ -368,6 +412,17 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
         end
     end
 
+    professionId, professionName, flavorKey = safeResolveGeneratedProfession(
+        professionId,
+        professionName,
+        flavorKey,
+        skills,
+        traits,
+        recipes,
+        coreCount,
+        fallbackCount
+    )
+
     local modData = item:getModData()
     modData.BurdJournals = {
         uuid = safeGenerateUUID(),
@@ -386,7 +441,7 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
         readSessionCount = 0,
         currentSessionReadCount = 0,
         skillReadCounts = {},
-        skills = safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP),
+        skills = skills,
         traits = traits,
         recipes = recipes,
         claimedSkills = {},

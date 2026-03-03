@@ -495,4 +495,10 @@ UI_PL = {
     UI_BurdJournals_DebugSpawnOwnerAuthor = "Journal Author:",
     UI_BurdJournals_DebugSpawnOwnerNone = "None",
     UI_BurdJournals_DebugSpawnOwnerCustom = "Custom...",
+    UI_BurdJournals_ControllerHintHybrid = "Controller: A Select, B Back, X Erase, Y Tab Action, LB/RB Switch Tabs",
+    UI_BurdJournals_ControllerNoPrimaryAction = "No primary action for this entry",
+    UI_BurdJournals_ControllerNoSecondaryAction = "No secondary action for this entry",
+    UI_BurdJournals_ControllerNoTabAction = "No tab action available right now",
+    UI_BurdJournals_FlavorModGeneralist = "Notes from a capable outsider...",
+    UI_BurdJournals_ProfGeneralistTemplate = "%s Generalist",
 }

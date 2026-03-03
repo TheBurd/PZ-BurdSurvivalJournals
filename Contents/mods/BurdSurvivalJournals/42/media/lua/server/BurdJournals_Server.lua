@@ -253,7 +253,7 @@ local function getCursedServerText(key, fallback)
     return fallback
 end
 
-local function buildCursedRewardSkills()
+local function buildCursedRewardSkills(professionId)
     local out = {}
     local allowed = (BurdJournals.getAllowedSkills and BurdJournals.getAllowedSkills()) or {}
     if #allowed == 0 then return out end
@@ -267,6 +267,19 @@ local function buildCursedRewardSkills()
     local maxSkills = tonumber(BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("CursedJournalMaxSkills")) or 5
     minSkills = math.max(1, math.floor(minSkills))
     maxSkills = math.max(minSkills, math.floor(maxSkills))
+    if BurdJournals.rollCoherentSkillsForProfession and professionId then
+        local coherentSkills, coreCount, fallbackCount = BurdJournals.rollCoherentSkillsForProfession(
+            professionId,
+            minSkills,
+            maxSkills,
+            minXP,
+            maxXP
+        )
+        if coherentSkills and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(coherentSkills) then
+            return coherentSkills, coreCount, fallbackCount
+        end
+    end
+
     local numSkills = ZombRand(minSkills, maxSkills + 1)
 
     local candidates = {}
@@ -287,7 +300,7 @@ local function buildCursedRewardSkills()
             level = level,
         }
     end
-    return out
+    return out, 0, BurdJournals.countTable and BurdJournals.countTable(out) or 0
 end
 
 local function buildCursedRewardTraits()
@@ -355,6 +368,32 @@ function BurdJournals.Server.generateCursedRewardProfile(sourceData)
         professionId, professionName, flavorKey = BurdJournals.getRandomProfession and BurdJournals.getRandomProfession() or {"survivor", "Survivor", "UI_BurdJournals_BloodyFlavor"}
     end
 
+    local sourceSkills = (type(source.skills) == "table" and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(source.skills)) and source.skills or nil
+    local skillsCoreCount = tonumber(source.coreSkillCount) or 0
+    local skillsFallbackCount = tonumber(source.fallbackSkillCount) or 0
+    local generatedSkills = sourceSkills
+    if not generatedSkills then
+        generatedSkills, skillsCoreCount, skillsFallbackCount = buildCursedRewardSkills(professionId)
+    end
+
+    local generatedTraits = (type(source.traits) == "table" and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(source.traits))
+        and source.traits or buildCursedRewardTraits()
+    local generatedRecipes = (type(source.recipes) == "table" and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(source.recipes))
+        and source.recipes or buildCursedRewardRecipes()
+
+    if BurdJournals.resolveProfessionForGeneratedEntries then
+        professionId, professionName, flavorKey = BurdJournals.resolveProfessionForGeneratedEntries(
+            professionId,
+            professionName,
+            flavorKey or "UI_BurdJournals_BloodyFlavor",
+            generatedSkills,
+            generatedTraits,
+            generatedRecipes,
+            skillsCoreCount,
+            skillsFallbackCount
+        )
+    end
+
     local profile = {
         uuid = source.uuid or (BurdJournals.generateUUID and BurdJournals.generateUUID()) or tostring(ZombRand(999999999)),
         author = source.author or ((BurdJournals.generateRandomSurvivorName and BurdJournals.generateRandomSurvivorName()) or "Unknown Survivor"),
@@ -362,9 +401,9 @@ function BurdJournals.Server.generateCursedRewardProfile(sourceData)
         professionName = professionName,
         flavorKey = flavorKey or "UI_BurdJournals_BloodyFlavor",
         timestamp = tonumber(source.timestamp) or (worldAge - ZombRand(24, 720)),
-        skills = source.skills or buildCursedRewardSkills(),
-        traits = source.traits or buildCursedRewardTraits(),
-        recipes = source.recipes or buildCursedRewardRecipes(),
+        skills = generatedSkills or {},
+        traits = generatedTraits,
+        recipes = generatedRecipes,
         stats = type(source.stats) == "table" and source.stats or {},
         forgetSlot = BurdJournals.rollForgetSlotForType and BurdJournals.rollForgetSlotForType("cursed", source.forgetSlot)
             or (source.forgetSlot == true and true or nil),
@@ -531,6 +570,24 @@ local function removeTraitAuthoritatively(player, traitId)
     end
 
     local removed = not hasTraitNow()
+    if removed and BurdJournals.applyTraitLifecycleSideEffects then
+        local resolvedTraitName = nil
+        if resolvedTrait and resolvedTrait.getName then
+            local okName, nameValue = pcall(function()
+                return resolvedTrait:getName()
+            end)
+            if okName then
+                resolvedTraitName = nameValue
+            end
+        end
+        pcall(function()
+            BurdJournals.applyTraitLifecycleSideEffects(player, traitId, "trait_removed", {
+                traitObj = resolvedTrait,
+                resolvedTraitName = resolvedTraitName,
+                source = "removeTraitAuthoritatively_fallback",
+            })
+        end)
+    end
     if removed and resolvedTrait and player.modifyTraitXPBoost then
         pcall(function()
             player:modifyTraitXPBoost(resolvedTrait, true)
@@ -2667,6 +2724,16 @@ function BurdJournals.Server.getSkillClaimTargetXP(player, journalData, skillNam
     return targetXP, baselineXP, baselineSuppressed
 end
 
+local function isLikelyAbsoluteSkillEntryForBaseline(storedXP, earnedXP, actualXP)
+    local stored = math.max(0, tonumber(storedXP) or 0)
+    local earned = math.max(0, tonumber(earnedXP) or 0)
+    local actual = math.max(0, tonumber(actualXP) or 0)
+    if stored <= 0 or actual <= 0 then
+        return false
+    end
+    return stored > (earned + 0.001) and stored <= (actual + 0.001)
+end
+
 function BurdJournals.Server.validateSkillPayload(skills, player, useBaselineOverride)
     if skills == nil then return nil end
     if type(skills) ~= "table" then
@@ -4242,6 +4309,67 @@ function BurdJournals.Server.handleInitializeJournal(player, args)
     })
 end
 
+local function copyPositiveDRNumberMap(sourceMap)
+    local out = {}
+    local hasAny = false
+    local normalized = sourceMap
+    if type(normalized) ~= "table" and BurdJournals.normalizeTable then
+        normalized = BurdJournals.normalizeTable(normalized)
+    end
+    if type(normalized) == "table" then
+        for mapKey, rawValue in pairs(normalized) do
+            if mapKey ~= nil then
+                local numericValue = math.max(0, tonumber(rawValue) or 0)
+                if numericValue > 0 then
+                    out[mapKey] = numericValue
+                    hasAny = true
+                end
+            end
+        end
+    end
+    return out, hasAny
+end
+
+local function extractJournalDRCarryForward(sourceJournalData, player)
+    if BurdJournals.getSandboxOption("PersistDROnErase") ~= true then
+        return nil
+    end
+    if type(sourceJournalData) ~= "table" then
+        return nil
+    end
+
+    local projected = sourceJournalData
+    if BurdJournals.Server and BurdJournals.Server.deepCopy then
+        local copied = BurdJournals.Server.deepCopy(sourceJournalData)
+        if type(copied) == "table" then
+            projected = copied
+        end
+    end
+    if BurdJournals.applyRuntimeProjectionToJournalData then
+        BurdJournals.applyRuntimeProjectionToJournalData(projected, player)
+    end
+
+    local skillReadCounts, hasSkillReadCounts = copyPositiveDRNumberMap(projected.skillReadCounts)
+    local carry = {
+        readCount = math.max(0, tonumber(projected.readCount) or 0),
+        readSessionCount = math.max(0, tonumber(projected.readSessionCount) or 0),
+        currentSessionReadCount = math.max(0, tonumber(projected.currentSessionReadCount) or 0),
+        currentSessionId = type(projected.currentSessionId) == "string" and projected.currentSessionId or nil,
+        skillReadCounts = hasSkillReadCounts and skillReadCounts or {},
+        drLegacyMode3Migrated = projected.drLegacyMode3Migrated == true,
+        migrationSchemaVersion = math.max(0, tonumber(projected.migrationSchemaVersion) or 0),
+    }
+
+    local hasCarry = carry.readCount > 0
+        or carry.readSessionCount > 0
+        or carry.currentSessionReadCount > 0
+        or hasSkillReadCounts
+    if not hasCarry then
+        return nil
+    end
+    return carry
+end
+
 function BurdJournals.Server.handleLogSkills(player, args)
     if not args or not args.journalId then
         BurdJournals.Server.sendToClient(player, "error", {message = "Invalid request."})
@@ -4268,6 +4396,13 @@ function BurdJournals.Server.handleLogSkills(player, args)
         local usesPerLog = BurdJournals.getSandboxOption("PenUsesPerLog") or 1
         BurdJournals.consumeItemUses(pen, usesPerLog, player)
     end
+
+    local sourceJournalData = nil
+    do
+        local sourceModData = journal:getModData()
+        sourceJournalData = sourceModData and sourceModData.BurdJournals or nil
+    end
+    local drCarryForward = extractJournalDRCarryForward(sourceJournalData, player)
 
     local journalContent = BurdJournals.collectAllPlayerData(player)
     local playerJournalContext = {isPlayerCreated = true}
@@ -4322,6 +4457,12 @@ function BurdJournals.Server.handleLogSkills(player, args)
         -- This affects how XP is applied on claim (add mode vs set mode)
         local baselineEnforced = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
 
+        local inheritedMigrationSchemaVersion = drCarryForward and tonumber(drCarryForward.migrationSchemaVersion) or 0
+        local baseMigrationSchemaVersion = tonumber(BurdJournals.MIGRATION_SCHEMA_VERSION) or 0
+        local seedReadCount = drCarryForward and drCarryForward.readCount or 0
+        local seedReadSessionCount = drCarryForward and drCarryForward.readSessionCount or 0
+        local seedCurrentSessionReadCount = drCarryForward and drCarryForward.currentSessionReadCount or 0
+        local seedSkillReadCounts = drCarryForward and drCarryForward.skillReadCounts or {}
         modData.BurdJournals = {
             author = player:getDescriptor():getForename() .. " " .. player:getDescriptor():getSurname(),
             ownerUsername = player:getUsername(),
@@ -4330,11 +4471,11 @@ function BurdJournals.Server.handleLogSkills(player, args)
             timestamp = getGameTime():getWorldAgeHours(),
             uuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
                 or ("journal-" .. tostring(getTimestampMs and getTimestampMs() or os.time()) .. "-" .. tostring(filledJournal:getID())),
-            readCount = 0,
-            readSessionCount = 0,
-            currentSessionReadCount = 0,
-            skillReadCounts = {},
-            migrationSchemaVersion = tonumber(BurdJournals.MIGRATION_SCHEMA_VERSION) or 0,
+            readCount = seedReadCount,
+            readSessionCount = seedReadSessionCount,
+            currentSessionReadCount = seedCurrentSessionReadCount,
+            skillReadCounts = seedSkillReadCounts,
+            migrationSchemaVersion = math.max(baseMigrationSchemaVersion, inheritedMigrationSchemaVersion),
 
             isWorn = false,
             isBloody = false,
@@ -4353,6 +4494,12 @@ function BurdJournals.Server.handleLogSkills(player, args)
             skills = journalContent.skills,
             traits = journalContent.traits,
         }
+        if drCarryForward and type(drCarryForward.currentSessionId) == "string" and drCarryForward.currentSessionId ~= "" then
+            modData.BurdJournals.currentSessionId = drCarryForward.currentSessionId
+        end
+        if drCarryForward and drCarryForward.drLegacyMode3Migrated == true then
+            modData.BurdJournals.drLegacyMode3Migrated = true
+        end
         BurdJournals.updateJournalName(filledJournal)
         BurdJournals.updateJournalIcon(filledJournal)
 
@@ -4437,6 +4584,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
         useBaseline = false
         BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: baseline restriction suppressed because debug baseline edits are active")
     end
+    local legacyAbsoluteSkillsDetected = false
     if useBaseline and modData.BurdJournals.recordedWithBaseline == true and type(modData.BurdJournals.skills) == "table" then
         local sampledSkills = 0
         local suspiciousAbsoluteSkills = 0
@@ -4449,21 +4597,23 @@ function BurdJournals.Server.handleRecordProgress(player, args)
                     local actualXP = player:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.Server.getSkillBaselineForPlayer(player, skillName)) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
-                    if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
+                    if isLikelyAbsoluteSkillEntryForBaseline(storedXP, earnedXP, actualXP) then
                         suspiciousAbsoluteSkills = suspiciousAbsoluteSkills + 1
                     end
                 end
             end
         end
         if sampledSkills > 0 and suspiciousAbsoluteSkills >= math.max(1, math.floor(sampledSkills * 0.5)) then
-            useBaseline = false
-            modData.BurdJournals.recordedWithBaseline = false
-            BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: auto-repaired journal XP mode (legacy absolute entries detected while recordedWithBaseline=true)")
+            legacyAbsoluteSkillsDetected = true
+            BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: detected legacy absolute entries while recordedWithBaseline=true; keeping baseline mode and allowing earned-only repair writes")
         end
     end
     local hasBaselineCaptured = BurdJournals.hasBaselineCaptured and BurdJournals.hasBaselineCaptured(player) or false
     local isBaselineBypassed = BurdJournals.isBaselineBypassed and BurdJournals.isBaselineBypassed(player) or false
-    BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: useBaseline=" .. tostring(useBaseline) .. ", hasBaselineCaptured=" .. tostring(hasBaselineCaptured) .. ", isBaselineBypassed=" .. tostring(isBaselineBypassed))
+    BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: useBaseline=" .. tostring(useBaseline)
+        .. ", hasBaselineCaptured=" .. tostring(hasBaselineCaptured)
+        .. ", isBaselineBypassed=" .. tostring(isBaselineBypassed)
+        .. ", legacyAbsoluteSkillsDetected=" .. tostring(legacyAbsoluteSkillsDetected))
 
     -- Persist recording mode for correct future claim semantics.
     -- Legacy journals with existing entries but no flag are absolute/set mode.
@@ -4581,6 +4731,30 @@ function BurdJournals.Server.handleRecordProgress(player, args)
             end
 
             local shouldUpdate = incomingXP > existingXP
+            local repairedLegacyAbsolute = false
+            if not shouldUpdate
+                and useBaseline
+                and modData.BurdJournals.recordedWithBaseline == true
+                and existingSkill
+            then
+                local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
+                if perk then
+                    local actualXP = player:getXp():getXP(perk)
+                    local baselineXP = math.max(0, tonumber(BurdJournals.Server.getSkillBaselineForPlayer(player, skillName)) or 0)
+                    local earnedXP = math.max(0, actualXP - baselineXP)
+                    if isLikelyAbsoluteSkillEntryForBaseline(existingXP, earnedXP, actualXP)
+                        and incomingXP <= (earnedXP + 0.001)
+                    then
+                        shouldUpdate = true
+                        repairedLegacyAbsolute = true
+                        BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: repairing legacy absolute skill entry for "
+                            .. tostring(skillName)
+                            .. " (stored=" .. tostring(existingXP)
+                            .. ", earned=" .. tostring(earnedXP)
+                            .. ", incoming=" .. tostring(incomingXP) .. ")")
+                    end
+                end
+            end
             if not shouldUpdate and incomingXP == existingXP then
                 local existingRawXP = math.max(existingXP, existingSkill and tonumber(existingSkill.rawXP) or existingXP)
                 local existingVhsExcludedXP = existingSkill and tonumber(existingSkill.vhsExcludedXP)
@@ -4604,6 +4778,9 @@ function BurdJournals.Server.handleRecordProgress(player, args)
                 }
                 skillsRecorded = skillsRecorded + 1
                 table.insert(skillNames, skillName)
+                if repairedLegacyAbsolute then
+                    BurdJournals.debugPrint("[BurdJournals] handleRecordProgress: baseline repair write committed for " .. tostring(skillName))
+                end
             end
         end
     end
@@ -6011,6 +6188,8 @@ function BurdJournals.Server.handleEraseJournal(player, args)
         sourceJournalData = sourceModData and sourceModData.BurdJournals or nil
     end
 
+    local drCarryForward = extractJournalDRCarryForward(sourceJournalData, player)
+
     local inheritedWasFromBloody = false
     local inheritedWasCleaned = false
     local inheritedRestoredBy = player and player:getUsername() or "Unknown"
@@ -6029,11 +6208,28 @@ function BurdJournals.Server.handleEraseJournal(player, args)
     local blankJournal = inventory:AddItem("BurdJournals.BlankSurvivalJournal")
     if blankJournal then
         local modData = blankJournal:getModData()
+        local inheritedMigrationSchemaVersion = drCarryForward and tonumber(drCarryForward.migrationSchemaVersion) or 0
+        local baseMigrationSchemaVersion = tonumber(BurdJournals.MIGRATION_SCHEMA_VERSION) or 0
+        local seedReadCount = drCarryForward and drCarryForward.readCount or 0
+        local seedReadSessionCount = drCarryForward and drCarryForward.readSessionCount or 0
+        local seedCurrentSessionReadCount = drCarryForward and drCarryForward.currentSessionReadCount or 0
+        local seedSkillReadCounts = drCarryForward and drCarryForward.skillReadCounts or {}
         modData.BurdJournals = {
             isWorn = false,
             isBloody = false,
             isPlayerCreated = true,
+            readCount = seedReadCount,
+            readSessionCount = seedReadSessionCount,
+            currentSessionReadCount = seedCurrentSessionReadCount,
+            skillReadCounts = seedSkillReadCounts,
+            migrationSchemaVersion = math.max(baseMigrationSchemaVersion, inheritedMigrationSchemaVersion),
         }
+        if drCarryForward and type(drCarryForward.currentSessionId) == "string" and drCarryForward.currentSessionId ~= "" then
+            modData.BurdJournals.currentSessionId = drCarryForward.currentSessionId
+        end
+        if drCarryForward and drCarryForward.drLegacyMode3Migrated == true then
+            modData.BurdJournals.drLegacyMode3Migrated = true
+        end
         BurdJournals.updateJournalName(blankJournal)
         BurdJournals.updateJournalIcon(blankJournal)
 
@@ -6093,6 +6289,13 @@ function BurdJournals.Server.handleConvertToClean(player, args)
     BurdJournals.consumeItemUses(thread, 1, player)
     BurdJournals.consumeItemUses(needle, 1, player)
 
+    local sourceJournalData = nil
+    do
+        local sourceModData = journal:getModData()
+        sourceJournalData = sourceModData and sourceModData.BurdJournals or nil
+    end
+    local drCarryForward = extractJournalDRCarryForward(sourceJournalData, player)
+
     local inventory = player:getInventory()
     inventory:Remove(journal)
     sendRemoveItemFromContainer(inventory, journal)
@@ -6100,6 +6303,12 @@ function BurdJournals.Server.handleConvertToClean(player, args)
     local cleanJournal = inventory:AddItem("BurdJournals.BlankSurvivalJournal")
     if cleanJournal then
         local modData = cleanJournal:getModData()
+        local inheritedMigrationSchemaVersion = drCarryForward and tonumber(drCarryForward.migrationSchemaVersion) or 0
+        local baseMigrationSchemaVersion = tonumber(BurdJournals.MIGRATION_SCHEMA_VERSION) or 0
+        local seedReadCount = drCarryForward and drCarryForward.readCount or 0
+        local seedReadSessionCount = drCarryForward and drCarryForward.readSessionCount or 0
+        local seedCurrentSessionReadCount = drCarryForward and drCarryForward.currentSessionReadCount or 0
+        local seedSkillReadCounts = drCarryForward and drCarryForward.skillReadCounts or {}
         modData.BurdJournals = {
             uuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
                 or ("journal-" .. tostring(getTimestampMs and getTimestampMs() or os.time()) .. "-" .. tostring(cleanJournal:getID())),
@@ -6111,7 +6320,18 @@ function BurdJournals.Server.handleConvertToClean(player, args)
             wasCleaned = inheritedWasCleaned,
             restoredBy = inheritedRestoredBy,
             isPlayerCreated = true,
+            readCount = seedReadCount,
+            readSessionCount = seedReadSessionCount,
+            currentSessionReadCount = seedCurrentSessionReadCount,
+            skillReadCounts = seedSkillReadCounts,
+            migrationSchemaVersion = math.max(baseMigrationSchemaVersion, inheritedMigrationSchemaVersion),
         }
+        if drCarryForward and type(drCarryForward.currentSessionId) == "string" and drCarryForward.currentSessionId ~= "" then
+            modData.BurdJournals.currentSessionId = drCarryForward.currentSessionId
+        end
+        if drCarryForward and drCarryForward.drLegacyMode3Migrated == true then
+            modData.BurdJournals.drLegacyMode3Migrated = true
+        end
         BurdJournals.updateJournalName(cleanJournal)
         BurdJournals.updateJournalIcon(cleanJournal)
 
@@ -11538,7 +11758,21 @@ function BurdJournals.Server.removePassiveSkillTraits(targetPlayer, skillName)
                         if string.lower(traitName) == string.lower(traitId) then
                             if charTraits.remove then
                                 charTraits:remove(traitObj)
+                            end
+                            if charTraits.set then
+                                charTraits:set(traitObj, false)
+                            end
+                            local stillHas = targetPlayer.hasTrait and targetPlayer:hasTrait(traitObj) or false
+                            if not stillHas then
                                 removed = true
+                                if BurdJournals.applyTraitLifecycleSideEffects then
+                                    pcall(function()
+                                        BurdJournals.applyTraitLifecycleSideEffects(targetPlayer, traitId, "trait_removed", {
+                                            traitObj = traitObj,
+                                            source = "removePassiveSkillTraits_direct_fallback",
+                                        })
+                                    end)
+                                end
                                 BurdJournals.debugPrint("[BurdJournals] DEBUG: Removed trait '" .. traitId .. "' via direct removal")
                                 break
                             end
@@ -12530,31 +12764,13 @@ function BurdJournals.Server.handleDebugRemoveAllTraits(player, args)
     
     BurdJournals.debugPrint("[BurdJournals] DEBUG: Found " .. #traitsToRemove .. " traits to remove")
     
-    -- Remove each trait individually (Build 42 approach)
+    -- Remove each trait individually using centralized removal path.
     for _, traitData in ipairs(traitsToRemove) do
-        local traitObj = traitData.trait
         local traitId = traitData.id
-        local removed = false
-        
-        -- Try remove method
-        if charTraits and charTraits.remove then
-            charTraits:remove(traitObj)
-            BurdJournals.debugPrint("[BurdJournals] DEBUG: charTraits:remove(" .. traitId .. ") called")
-        end
-        
-        -- Try set(trait, false) method
-        if charTraits and charTraits.set then
-            charTraits:set(traitObj, false)
-            -- Verify removal
-            local stillHas = targetPlayer.hasTrait and targetPlayer:hasTrait(traitObj) or false
-            if not stillHas then
-                removed = true
-                BurdJournals.debugPrint("[BurdJournals] DEBUG: Successfully removed " .. traitId)
-            end
-        end
-        
+        local removed = removeTraitAuthoritatively(targetPlayer, traitId)
         if removed then
             removeCount = removeCount + 1
+            BurdJournals.debugPrint("[BurdJournals] DEBUG: Successfully removed " .. traitId)
         else
             BurdJournals.debugPrint("[BurdJournals] DEBUG: Failed to remove " .. traitId)
         end
@@ -12569,10 +12785,33 @@ function BurdJournals.Server.handleDebugRemoveAllTraits(player, args)
         if oldTraits and oldTraits.size then
             local size = oldTraits:size()
             if size > 0 then
+                local removedTraitIds = {}
+                for i = 0, size - 1 do
+                    local traitObj = oldTraits.get and oldTraits:get(i) or nil
+                    local traitId = nil
+                    if traitObj and traitObj.getName then
+                        traitId = traitObj:getName()
+                    elseif traitObj ~= nil then
+                        traitId = tostring(traitObj)
+                    end
+                    if traitId and traitId ~= "" then
+                        removedTraitIds[#removedTraitIds + 1] = traitId
+                    end
+                end
                 BurdJournals.debugPrint("[BurdJournals] DEBUG: Falling back to old API, clearing " .. size .. " traits")
                 if oldTraits.clear then
                     oldTraits:clear()
                     removeCount = size
+                    if BurdJournals.applyTraitLifecycleSideEffects then
+                        for _, removedTraitId in ipairs(removedTraitIds) do
+                            pcall(function()
+                                BurdJournals.applyTraitLifecycleSideEffects(targetPlayer, removedTraitId, "trait_removed", {
+                                    source = "handleDebugRemoveAllTraits_oldApiClear",
+                                    usedOldTraitsClear = true,
+                                })
+                            end)
+                        end
+                    end
                 end
             end
         end

@@ -140,6 +140,19 @@ local function normalizeTooltipTextForDisplay(text)
     return normalized
 end
 
+local function finalizePromptModalForPlayer(player, modal)
+    if not modal then
+        return nil
+    end
+    if modal.addToUIManager then
+        modal:addToUIManager()
+    end
+    if BurdJournals.applyJoypadSupportToModal then
+        BurdJournals.applyJoypadSupportToModal(modal, player)
+    end
+    return modal
+end
+
 function BurdJournals.ContextMenu.applyLightRequirement(option, player)
     if not option then return end
     if not BurdJournals.requiresLightForJournalUse or not BurdJournals.requiresLightForJournalUse() then
@@ -863,7 +876,7 @@ function BurdJournals.ContextMenu.onAbsorbAllConfirm(player, journal)
             journal
         )
         modal:initialise()
-        modal:addToUIManager()
+        finalizePromptModalForPlayer(player, modal)
     end
 end
 
@@ -1247,7 +1260,7 @@ function BurdJournals.ContextMenu.onConvertToClean(player, journal)
                     j
                 )
                 modal:initialise()
-                modal:addToUIManager()
+                finalizePromptModalForPlayer(p, modal)
             end
         else
 
@@ -1347,7 +1360,7 @@ function BurdJournals.ContextMenu.onRenameJournal(player, journal)
             j
         )
         modal:initialise()
-        modal:addToUIManager()
+        finalizePromptModalForPlayer(p, modal)
     end)
 end
 
@@ -1416,7 +1429,7 @@ function BurdJournals.ContextMenu.onEraseJournal(player, journal)
                 j
             )
             modal:initialise()
-            modal:addToUIManager()
+            finalizePromptModalForPlayer(p, modal)
         end
     end)
 end
@@ -1486,7 +1499,7 @@ function BurdJournals.ContextMenu.onRecordProgressOverwrite(player, journal)
                 j
             )
             modal:initialise()
-            modal:addToUIManager()
+            finalizePromptModalForPlayer(p, modal)
         end
     end)
 end
@@ -1538,7 +1551,7 @@ function BurdJournals.ContextMenu.onDisassembleJournal(player, journal)
                 j
             )
             modal:initialise()
-            modal:addToUIManager()
+            finalizePromptModalForPlayer(p, modal)
         end
     end)
 end

@@ -117,7 +117,19 @@ function BurdJournals.UI.DebugPanel.removePassiveSkillTraits(targetPlayer, skill
                         if string.lower(traitName) == string.lower(traitId) then
                             if charTraits.remove then
                                 charTraits:remove(traitObj)
+                            end
+                            if charTraits.set then
+                                charTraits:set(traitObj, false)
+                            end
+                            local stillHas = targetPlayer.hasTrait and targetPlayer:hasTrait(traitObj) or false
+                            if not stillHas then
                                 removed = true
+                                if BurdJournals.applyTraitLifecycleSideEffects then
+                                    BurdJournals.applyTraitLifecycleSideEffects(targetPlayer, traitId, "trait_removed", {
+                                        traitObj = traitObj,
+                                        source = "DebugPanel.removePassiveSkillTraits_direct_fallback",
+                                    })
+                                end
                                 BurdJournals.debugPrint("[BurdJournals] DEBUG (SP): Removed trait '" .. traitId .. "' via direct removal")
                                 break
                             end
@@ -3838,16 +3850,15 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                 
                 BurdJournals.debugPrint("[BurdJournals] Remove All Traits: Found " .. #traitsToRemove .. " traits to remove")
                 
-                -- Remove each trait using getCharacterTraits():remove()
+                -- Remove each trait via safeRemoveTrait to keep side-effects symmetric.
                 for _, traitObj in ipairs(traitsToRemove) do
                     local removed = false
-                    if charTraits and charTraits.remove then
-                        charTraits:remove(traitObj)
-                        removed = true
+                    local traitName = traitObj.getName and traitObj:getName() or tostring(traitObj)
+                    if BurdJournals.safeRemoveTrait then
+                        removed = BurdJournals.safeRemoveTrait(targetPlayer, traitName) == true
                     end
                     if removed then
                         removeCount = removeCount + 1
-                        local traitName = traitObj.getName and traitObj:getName() or tostring(traitObj)
                         BurdJournals.debugPrint("[BurdJournals] Removed trait: " .. traitName)
                     end
                 end

@@ -486,6 +486,8 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
             totalTime = totalTime + (mainPanel and mainPanel:getSkillLearningTime() or 3.0)
         elseif reward.type == "trait" then
             totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
+        elseif reward.type == "forget" then
+            totalTime = totalTime + (mainPanel and mainPanel:getTraitLearningTime() or 5.0)
         elseif reward.type == "recipe" then
             totalTime = totalTime + (mainPanel and mainPanel:getRecipeLearningTime() or 0.7)
         elseif reward.type == "stat" then
@@ -566,6 +568,7 @@ function BurdJournals.LearnFromJournalAction:start()
             active = true,
             skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
             traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
+            forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
             recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
             statId = firstReward and firstReward.type == "stat" and firstReward.name or nil,
             isAbsorbAll = self.isAbsorbAll,
@@ -591,6 +594,7 @@ function BurdJournals.LearnFromJournalAction:stop()
             active = false,
             skillName = nil,
             traitId = nil,
+            forgetTraitId = nil,
             recipeName = nil,
             statId = nil,
             isAbsorbAll = false,
@@ -647,9 +651,32 @@ function BurdJournals.LearnFromJournalAction:perform()
         panel.learningState.claimSessionId = claimSessionId
     end
 
+    -- Collect all skill rewards for batch processing
+    local skillRewards = {}
+    local otherRewards = {}
+    local hasForgetReward = false
+    
+    for _, reward in ipairs(self.rewards) do
+        if reward.type == "skill" then
+            table.insert(skillRewards, reward)
+        else
+            table.insert(otherRewards, reward)
+            if reward.type == "forget" then
+                hasForgetReward = true
+            end
+        end
+    end
+    
+    BurdJournals.debugPrint("[BurdJournals] TimedAction: " .. #skillRewards .. " skill rewards, " .. #otherRewards .. " other rewards")
+    BurdJournals.debugPrint("[BurdJournals] TimedAction: isPlayerJournal=" .. tostring(isPlayerJournal))
+
     local isMultiplayerClient = isClient and isClient() and not isServer()
     local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
     local canUseBatchServerCommand = isMultiplayerClient and not (journalData and journalData.isDebugSpawned)
+    if canUseBatchServerCommand and hasForgetReward then
+        -- Forget-slot claims are single-use and not part of batch claim payloads.
+        canUseBatchServerCommand = false
+    end
 
     if canUseBatchServerCommand then
         local batchPayload = {
@@ -661,10 +688,13 @@ function BurdJournals.LearnFromJournalAction:perform()
             stats = {},
         }
 
-        for _, reward in ipairs(self.rewards) do
-            if reward and reward.type == "skill" and reward.name then
+        for _, reward in ipairs(skillRewards) do
+            if reward and reward.name then
                 table.insert(batchPayload.skills, {skillName = reward.name})
-            elseif reward and reward.type == "trait" and reward.name then
+            end
+        end
+        for _, reward in ipairs(otherRewards) do
+            if reward and reward.type == "trait" and reward.name then
                 table.insert(batchPayload.traits, reward.name)
             elseif reward and reward.type == "recipe" and reward.name then
                 table.insert(batchPayload.recipes, reward.name)
@@ -681,23 +711,28 @@ function BurdJournals.LearnFromJournalAction:perform()
             .. ", stats=" .. tostring(#batchPayload.stats) .. ")")
         sendClientCommand(player, "BurdJournals", commandName, batchPayload)
     else
-        for _, reward in ipairs(self.rewards) do
-            BurdJournals.debugPrint("[BurdJournals] TimedAction processing reward: type=" .. tostring(reward.type) .. ", name=" .. tostring(reward.name) .. ", xp=" .. tostring(reward.xp))
-            if reward.type == "skill" then
-                BurdJournals.debugPrint("[BurdJournals] TimedAction: isPlayerJournal=" .. tostring(isPlayerJournal))
-                if isPlayerJournal then
-                    BurdJournals.debugPrint("[BurdJournals] TimedAction: Calling sendClaimSkill")
-                    panel:sendClaimSkill(reward.name, reward.xp, true)
-                else
-                    BurdJournals.debugPrint("[BurdJournals] TimedAction: Calling sendAbsorbSkill for " .. tostring(reward.name))
-                    panel:sendAbsorbSkill(reward.name, reward.xp, true)
-                end
-            elseif reward.type == "trait" then
+        -- Process skills individually so claim authority always comes from journal data on server.
+        for _, reward in ipairs(skillRewards) do
+            BurdJournals.debugPrint("[BurdJournals] TimedAction processing skill: " .. tostring(reward.name))
+            if isPlayerJournal then
+                panel:sendClaimSkill(reward.name, reward.xp, true)
+            else
+                panel:sendAbsorbSkill(reward.name, reward.xp, true)
+            end
+        end
+
+        -- Process non-skill rewards (traits, recipes, stats) individually.
+        -- Keep this path for debug-spawned journals where server cannot resolve item IDs.
+        for _, reward in ipairs(otherRewards) do
+            BurdJournals.debugPrint("[BurdJournals] TimedAction processing " .. tostring(reward.type) .. ": " .. tostring(reward.name))
+            if reward.type == "trait" then
                 if isPlayerJournal then
                     panel:sendClaimTrait(reward.name, true)
                 else
                     panel:sendAbsorbTrait(reward.name, true)
                 end
+            elseif reward.type == "forget" then
+                panel:sendClaimForgetSlot(reward.name)
             elseif reward.type == "recipe" then
                 if isPlayerJournal then
                     panel:sendClaimRecipe(reward.name, true)
@@ -705,7 +740,6 @@ function BurdJournals.LearnFromJournalAction:perform()
                     panel:sendAbsorbRecipe(reward.name, true)
                 end
             elseif reward.type == "stat" then
-                -- Stats use sendClaimStat for both player and non-player journals
                 panel:sendClaimStat(reward.name, reward.value)
             end
         end
@@ -762,6 +796,7 @@ function BurdJournals.LearnFromJournalAction:perform()
                 active = true,
                 skillName = nextReward.type == "skill" and nextReward.name or nil,
                 traitId = nextReward.type == "trait" and nextReward.name or nil,
+                forgetTraitId = nextReward.type == "forget" and nextReward.name or nil,
                 recipeName = nextReward.type == "recipe" and nextReward.name or nil,
                 isAbsorbAll = false,
                 progress = 0,
@@ -817,6 +852,7 @@ function BurdJournals.LearnFromJournalAction:perform()
                 active = true,
                 skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
                 traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
+                forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
                 recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
                 isAbsorbAll = true,
                 progress = 0,
@@ -854,6 +890,7 @@ function BurdJournals.LearnFromJournalAction:perform()
         active = false,
         skillName = nil,
         traitId = nil,
+        forgetTraitId = nil,
         recipeName = nil,
         statId = nil,
         isAbsorbAll = false,
@@ -1495,14 +1532,29 @@ function BurdJournals.EraseEntryAction:perform()
         }
     end
 
-    if isClient() and not isServer() then
-        sendClientCommand(player, "BurdJournals", "eraseEntry", {
-            journalId = self.journal:getID(),
-            entryType = self.entryType,
-            entryName = self.entryName
-        })
-    else
+    -- Check if this is a debug-spawned journal
+    -- Debug-spawned journals created on the client can't be found by the server,
+    -- so we handle the erase locally (same pattern as claim/absorb operations)
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal)
+    local isDebugSpawned = journalData and journalData.isDebugSpawned
 
+    if isClient() and not isServer() then
+        if isDebugSpawned then
+            -- Debug-spawned journals: erase locally since server can't find them
+            BurdJournals.debugPrint("[BurdJournals] Debug-spawned journal - erasing locally")
+            if panel and panel.eraseEntryDirectly then
+                panel:eraseEntryDirectly(self.entryType, self.entryName)
+            end
+        else
+            -- Normal journals: send to server for authoritative erase
+            sendClientCommand(player, "BurdJournals", "eraseEntry", {
+                journalId = self.journal:getID(),
+                entryType = self.entryType,
+                entryName = self.entryName
+            })
+        end
+    else
+        -- Single-player/host: erase directly
         if panel and panel.eraseEntryDirectly then
             panel:eraseEntryDirectly(self.entryType, self.entryName)
         end
