@@ -408,7 +408,9 @@ local function getXPWithBaselineForDisplay(skillName, recordedXP, journalData, p
                 if okActual and actualXP > 0 then
                     local baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
-                    if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
+                    if BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+                        and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, storedXP, nil, actualXP, baselineXP)
+                    then
                         return storedXP
                     end
                 end
@@ -526,7 +528,10 @@ local function resolveJournalRecordingModeForPlayer(journalData, player)
                     local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline and BurdJournals.getSkillBaseline(player, skillName) or 0) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
-                    if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
+                    local storedLevel = tonumber(type(storedData) == "table" and storedData.level) or 0
+                    if BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+                        and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, storedXP, storedLevel, actualXP, baselineXP)
+                    then
                         suspiciousAbsoluteSkills = suspiciousAbsoluteSkills + 1
                     end
                 end
@@ -569,27 +574,9 @@ local function isLikelyAbsoluteSkillEntryForBaseline(journalData, player, skillN
     if journalData.recordedWithBaseline ~= true then
         return false
     end
-    if BurdJournals.shouldEnforceBaseline and not BurdJournals.shouldEnforceBaseline(player) then
-        return false
-    end
-    if not player or not player.getXp then
-        return false
-    end
-
-    local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
-    if not perk then
-        return false
-    end
-
-    local actualXP = math.max(0, tonumber(currentXP) or (BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName)) or player:getXp():getXP(perk) or 0)
-    local baseline = math.max(
-        0,
-        tonumber(baselineXP)
-            or tonumber(BurdJournals.getSkillBaseline and BurdJournals.getSkillBaseline(player, skillName) or 0)
-            or 0
-    )
-    local earnedXP = math.max(0, actualXP - baseline)
-    return stored > (earnedXP + 0.001) and stored <= (actualXP + 0.001)
+    return BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+        and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, stored, nil, currentXP, baselineXP)
+        or false
 end
 
 local function isLikelyNewCharacterForBaseline(player)
@@ -683,7 +670,16 @@ local function getClaimTargetXPForPlayer(journalData, player, skillName, effecti
         and not baselineSuppressed
     then
         baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
-        targetXP = targetXP + baselineXP
+        local recordedLevel = 0
+        if type(journalData.skills) == "table" and type(journalData.skills[skillName]) == "table" then
+            recordedLevel = tonumber(journalData.skills[skillName].level) or 0
+        end
+        local legacyAbsolute = BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+            and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, effectiveXP, recordedLevel, nil, baselineXP)
+            or false
+        if not legacyAbsolute then
+            targetXP = targetXP + baselineXP
+        end
     end
 
     return targetXP, baselineXP, baselineSuppressed
@@ -6576,7 +6572,7 @@ function BurdJournals.UI.MainPanel:applySkillXPSetMode(skillName, recordedXP, sk
         
         if sendAddXp then
             BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Using sendAddXp")
-            sendAddXp(self.player, perk, xpDiff, true)
+            sendAddXp(self.player, perk, xpDiff, false)
         else
             BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Using direct AddXP")
             -- Use proper AddXP signature with checkLevelUp=true

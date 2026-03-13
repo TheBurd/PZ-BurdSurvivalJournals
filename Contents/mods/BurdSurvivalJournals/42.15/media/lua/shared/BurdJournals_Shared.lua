@@ -4577,6 +4577,49 @@ function BurdJournals.getPlayerSkillTotalXP(player, perk, skillName)
     return rawXP
 end
 
+function BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, storedXP, storedLevel, actualXP, baselineXP)
+    local stored = math.max(0, tonumber(storedXP) or 0)
+    if stored <= 0 then
+        return false
+    end
+    if type(journalData) ~= "table" or journalData.isPlayerCreated ~= true then
+        return false
+    end
+    if journalData.recordedWithBaseline ~= true then
+        return false
+    end
+
+    local baseline = math.max(0, tonumber(baselineXP) or 0)
+    if baseline <= 0 and player and BurdJournals.getSkillBaseline then
+        baseline = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
+    end
+    if baseline <= 0 then
+        return false
+    end
+
+    local level = math.max(0, tonumber(storedLevel) or 0)
+    if level > 0 and BurdJournals.getXPThresholdForLevel then
+        local thresholdXP = math.max(0, tonumber(BurdJournals.getXPThresholdForLevel(skillName, level)) or 0)
+        if thresholdXP > 0 and stored >= (thresholdXP - 0.001) then
+            return true
+        end
+    end
+
+    local actual = math.max(0, tonumber(actualXP) or 0)
+    if actual <= 0 and player and player.getXp and BurdJournals.getPerkByName then
+        local perk = BurdJournals.getPerkByName(skillName)
+        if perk then
+            actual = math.max(0, tonumber(BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)) or 0)
+        end
+    end
+    if actual <= 0 then
+        return false
+    end
+
+    local earned = math.max(0, actual - baseline)
+    return stored > (earned + 0.001) and stored <= (actual + 0.001)
+end
+
 -- Normalize legacy skill entries where level/xp are inconsistent (older patches).
 -- For non-baseline journals (SET mode), if XP is missing/too low for the declared
 -- level, upgrade XP to the exact threshold for that level.
@@ -11551,6 +11594,116 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting, incl
     return recipes
 end
 
+local function getRecipeScriptManager()
+    return getScriptManager and getScriptManager() or nil
+end
+
+local function isRecipeActuallyKnownCompat(player, recipeName)
+    if not player or type(recipeName) ~= "string" or recipeName == "" then
+        return false
+    end
+
+    local scriptManager = getRecipeScriptManager()
+    if player.isRecipeActuallyKnown then
+        local okDirect, directKnown = safePcall(function()
+            return player:isRecipeActuallyKnown(recipeName)
+        end)
+        if okDirect and directKnown then
+            return true
+        end
+
+        if scriptManager and scriptManager.getCraftRecipe then
+            local craftRecipe = scriptManager:getCraftRecipe(recipeName)
+            if craftRecipe then
+                local okCraft, craftKnown = safePcall(function()
+                    return player:isRecipeActuallyKnown(craftRecipe)
+                end)
+                if okCraft and craftKnown then
+                    return true
+                end
+            end
+        end
+
+        if scriptManager and scriptManager.getBuildableRecipe then
+            local buildableRecipe = scriptManager:getBuildableRecipe(recipeName)
+            if buildableRecipe then
+                local okBuild, buildKnown = safePcall(function()
+                    return player:isRecipeActuallyKnown(buildableRecipe)
+                end)
+                if okBuild and buildKnown then
+                    return true
+                end
+            end
+        end
+    end
+
+    local seeNotLearnt = (SandboxVars and SandboxVars.SeeNotLearntRecipe) and true or false
+    if not seeNotLearnt and player.isRecipeKnown then
+        local okClassic, classicKnown = safePcall(function()
+            return player:isRecipeKnown(recipeName)
+        end)
+        if okClassic and classicKnown then
+            return true
+        end
+    end
+
+    return false
+end
+
+function BurdJournals.getRecipeScript(recipeName)
+    if type(recipeName) ~= "string" or recipeName == "" then
+        return nil
+    end
+
+    local scriptManager = getRecipeScriptManager()
+    if scriptManager and scriptManager.getRecipe then
+        local directRecipe = scriptManager:getRecipe(recipeName)
+        if directRecipe then
+            return directRecipe
+        end
+    end
+
+    if scriptManager and scriptManager.getCraftRecipe then
+        local craftRecipe = scriptManager:getCraftRecipe(recipeName)
+        if craftRecipe then
+            return craftRecipe
+        end
+    end
+
+    if scriptManager and scriptManager.getBuildableRecipe then
+        local buildableRecipe = scriptManager:getBuildableRecipe(recipeName)
+        if buildableRecipe then
+            return buildableRecipe
+        end
+    end
+
+    local recipes = getAllRecipes and getAllRecipes() or nil
+    local recipeCount = (recipes and recipes.size and recipes.get) and (recipes:size() or 0) or 0
+    if not recipes or recipeCount <= 0 then
+        return nil
+    end
+
+    for i = 0, recipeCount - 1 do
+        local recipe = recipes:get(i)
+        if recipe and recipe.getName and recipe:getName() == recipeName then
+            return recipe
+        end
+    end
+
+    local recipeNameLower = string.lower(recipeName)
+    for i = 0, recipeCount - 1 do
+        local recipe = recipes:get(i)
+        if recipe and recipe.getName then
+            local candidateName = recipe:getName()
+            if candidateName and string.lower(candidateName) == recipeNameLower then
+                return recipe
+            end
+        end
+    end
+
+    return nil
+end
+
 function BurdJournals.playerKnowsRecipe(player, recipeName)
     if not player or not recipeName then return false end
 
@@ -11592,6 +11745,13 @@ function BurdJournals.playerKnowsRecipe(player, recipeName)
         end
     end
 
+    if isRecipeActuallyKnownCompat(player, recipeName) then
+        if DEBUG_RECIPE_CHECK then
+            print("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via isRecipeActuallyKnownCompat()")
+        end
+        return true
+    end
+
     local magazineType = BurdJournals.getMagazineForRecipe(recipeName)
     if magazineType then
         if player.getAlreadyReadPages then
@@ -11630,6 +11790,11 @@ end
 function BurdJournals.validateRecipeName(recipeName)
     if type(recipeName) ~= "string" or recipeName == "" then return nil end
 
+    local scriptRecipe = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
+    if scriptRecipe then
+        return recipeName
+    end
+
     local recipes, recipeCount = getAllRecipesList()
     if not recipes or recipeCount <= 0 then return nil end
 
@@ -11658,25 +11823,14 @@ function BurdJournals.validateRecipeName(recipeName)
 end
 
 function BurdJournals.getRecipeByName(recipeName)
-    if type(recipeName) ~= "string" or recipeName == "" then return nil end
-
-    local recipes, recipeCount = getAllRecipesList()
-    if not recipes or recipeCount <= 0 then return nil end
-
-    for i = 0, recipeCount - 1 do
-        local recipe = recipes:get(i)
-        if recipe and recipe.getName and recipe:getName() == recipeName then
-            return recipe
-        end
-    end
-    return nil
+    return BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
 end
 
 function BurdJournals.learnRecipeWithVerification(player, recipeName, logPrefix)
     if not player or not recipeName then return false end
     logPrefix = logPrefix or "[BurdJournals]"
 
-    if BurdJournals.playerKnowsRecipe(player, recipeName) then
+    if isRecipeActuallyKnownCompat(player, recipeName) then
         print(logPrefix .. " Recipe already known: " .. recipeName)
         return true
     end
@@ -11689,20 +11843,21 @@ function BurdJournals.learnRecipeWithVerification(player, recipeName, logPrefix)
         recipeName = validatedName
     end
 
+    local learnTarget = validatedName or recipeName
     local learned = false
 
-    if validatedName and player.learnRecipe then
-        player:learnRecipe(recipeName)
-        if BurdJournals.playerKnowsRecipe(player, recipeName) then
-            print(logPrefix .. " Learned recipe via learnRecipe(): " .. recipeName)
+    if player.learnRecipe then
+        player:learnRecipe(learnTarget)
+        if isRecipeActuallyKnownCompat(player, learnTarget) then
+            print(logPrefix .. " Learned recipe via learnRecipe(): " .. learnTarget)
             learned = true
         end
     end
 
     if not learned then
-        local magazineType = BurdJournals.getMagazineForRecipe(recipeName)
+        local magazineType = BurdJournals.getMagazineForRecipe(learnTarget)
         if magazineType then
-            print(logPrefix .. " Trying magazine method for: " .. recipeName .. " (magazine: " .. magazineType .. ")")
+            print(logPrefix .. " Trying magazine method for: " .. learnTarget .. " (magazine: " .. magazineType .. ")")
 
             local pageCount = 1
             local scriptManager = getScriptManager and getScriptManager() or nil
@@ -11724,15 +11879,19 @@ function BurdJournals.learnRecipeWithVerification(player, recipeName, logPrefix)
                 print(logPrefix .. " Added magazine to read books: " .. magazineType)
             end
 
-            if BurdJournals.playerKnowsRecipe(player, recipeName) then
-                print(logPrefix .. " Learned recipe via magazine system: " .. recipeName)
+            if player.learnRecipe then
+                player:learnRecipe(learnTarget)
+            end
+
+            if isRecipeActuallyKnownCompat(player, learnTarget) then
+                print(logPrefix .. " Learned recipe via magazine system: " .. learnTarget)
                 learned = true
             end
         end
     end
 
     if not learned then
-        print(logPrefix .. " FAILED to learn recipe: " .. recipeName)
+        print(logPrefix .. " FAILED to learn recipe: " .. learnTarget)
     end
 
     return learned
@@ -11838,6 +11997,20 @@ end
 
 function BurdJournals.getRecipeDisplayName(recipeName)
     if not recipeName then return "Unknown Recipe" end
+
+    local scriptRecipe = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
+    if scriptRecipe and scriptRecipe.getName then
+        local scriptDisplayName = scriptRecipe:getName()
+        if scriptRecipe.getOriginalname then
+            local scriptOriginalName = scriptRecipe:getOriginalname()
+            if scriptOriginalName and scriptOriginalName ~= "" and scriptOriginalName ~= recipeName then
+                return scriptOriginalName
+            end
+        end
+        if scriptDisplayName and scriptDisplayName ~= "" then
+            return scriptDisplayName
+        end
+    end
 
     local recipes, recipeCount = getAllRecipesList()
     if recipes and recipeCount > 0 then

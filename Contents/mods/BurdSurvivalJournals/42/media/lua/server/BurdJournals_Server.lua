@@ -6426,7 +6426,8 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
 
         if sendSyncPlayerFields then
             -- Only sync recipes (0x4), not skills/traits (0x7 would sync all three)
-            sendSyncPlayerFields(player, 0x00000004)
+            -- Match vanilla research-recipe sync (PF_Recipes).
+            sendSyncPlayerFields(player, 0x00000001)
         end
 
         BurdJournals.Server.sendToClient(player, "claimSuccess", attachRuntimeDeltaOrLegacyJournalData({
@@ -6535,7 +6536,8 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
 
         if sendSyncPlayerFields then
             -- Only sync recipes (0x4), not skills/traits (0x7 would sync all three)
-            sendSyncPlayerFields(player, 0x00000004)
+            -- Match vanilla research-recipe sync (PF_Recipes).
+            sendSyncPlayerFields(player, 0x00000001)
         end
 
         -- Re-fetch journal by ID before calling shouldDissolve to avoid zombie object errors

@@ -2703,6 +2703,10 @@ function BurdJournals.Server.getSkillClaimTargetXP(player, journalData, skillNam
     local targetXP = math.max(0, tonumber(recordedXP) or 0)
     local baselineXP = 0
     local baselineSuppressed = false
+    local recordedLevel = 0
+    if type(journalData) == "table" and type(journalData.skills) == "table" and type(journalData.skills[skillName]) == "table" then
+        recordedLevel = tonumber(journalData.skills[skillName].level) or 0
+    end
     local useBaselineMode = BurdJournals.getJournalSkillRecordingMode
         and BurdJournals.getJournalSkillRecordingMode(journalData, player)
         or (type(journalData) == "table" and journalData.recordedWithBaseline == true)
@@ -2717,7 +2721,12 @@ function BurdJournals.Server.getSkillClaimTargetXP(player, journalData, skillNam
             or false
         if not baselineSuppressed then
             baselineXP = math.max(0, tonumber(BurdJournals.Server.getSkillBaselineForPlayer(player, skillName)) or 0)
-            targetXP = targetXP + baselineXP
+            local legacyAbsolute = BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+                and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, targetXP, recordedLevel, nil, baselineXP)
+                or false
+            if not legacyAbsolute then
+                targetXP = targetXP + baselineXP
+            end
         end
     end
 
@@ -5047,11 +5056,19 @@ function BurdJournals.Server.handleLearnSkills(player, args)
     local journalSkills = modData.BurdJournals.skills
 
     local skillsToSet = {}
+    local fallbackSkillsToSet = {}
     local skillsApplied = 0
     local applyFailedAny = false
     local normalizedAny = false
     local consumedAny = false
     local claimSessionId = args and args.claimSessionId
+    local learnModeBefore, learnModeAfter, learnModeChanged = nil, nil, false
+    if normalizeDebugJournalXPMode then
+        learnModeBefore, learnModeAfter, learnModeChanged = normalizeDebugJournalXPMode(modData.BurdJournals, player)
+        if learnModeChanged then
+            BurdJournals.debugPrint("[BurdJournals] handleLearnSkills: normalized journal XP mode " .. tostring(learnModeBefore) .. " -> " .. tostring(learnModeAfter))
+        end
+    end
     local hasSelectedSkills = BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(selectedSkills)
     for skillName, storedData in pairs(journalSkills) do
 
@@ -5076,7 +5093,7 @@ function BurdJournals.Server.handleLearnSkills(player, args)
             local effectiveRecordedXP = math.floor(normalizedXP * multiplier)
             local targetXP = effectiveRecordedXP
             if BurdJournals.Server.getSkillClaimTargetXP then
-                targetXP = BurdJournals.Server.getSkillClaimTargetXP(player, modData.BurdJournals, skillName, effectiveRecordedXP)
+                targetXP = BurdJournals.Server.getSkillClaimTargetXP(player, modData.BurdJournals, skillName, effectiveRecordedXP, normalizedLevel)
             end
             -- Compute level from XP instead of reading stored level (for backward compatibility)
             -- Pass skillName for proper Fitness/Strength XP thresholds
@@ -5106,6 +5123,7 @@ function BurdJournals.Server.handleLearnSkills(player, args)
                         skillsApplied = skillsApplied + 1
                     else
                         applyFailedAny = true
+                        fallbackSkillsToSet[skillName] = skillsToSet[skillName]
                     end
                 end
             end
@@ -5122,7 +5140,7 @@ function BurdJournals.Server.handleLearnSkills(player, args)
 
     if applyFailedAny then
         BurdJournals.debugPrint("[BurdJournals] Server: LearnSkills fallback - sending applyXP to client")
-        BurdJournals.Server.sendToClient(player, "applyXP", {skills = skillsToSet, mode = "set"})
+        BurdJournals.Server.sendToClient(player, "applyXP", {skills = fallbackSkillsToSet, mode = "set"})
     end
     -- Notify client of success (for UI update)
     BurdJournals.Server.sendToClient(player, "learnSuccess", {skillCount = skillsApplied})
@@ -5252,7 +5270,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
     local effectiveRecordedXP = math.max(0, math.floor(recordedXP * claimMultiplier))
     local claimTargetXP, baselineXPForClaim, baselineSuppressedForClaim = effectiveRecordedXP, 0, false
     if BurdJournals.Server.getSkillClaimTargetXP then
-        claimTargetXP, baselineXPForClaim, baselineSuppressedForClaim = BurdJournals.Server.getSkillClaimTargetXP(player, journalData, skillName, effectiveRecordedXP)
+        claimTargetXP, baselineXPForClaim, baselineSuppressedForClaim = BurdJournals.Server.getSkillClaimTargetXP(player, journalData, skillName, effectiveRecordedXP, recordedLevel)
     end
     local claimTargetLevel = recordedLevel
     if claimTargetXP > 0 then
@@ -6426,7 +6444,8 @@ function BurdJournals.Server.handleClaimRecipe(player, args)
 
         if sendSyncPlayerFields then
             -- Only sync recipes (0x4), not skills/traits (0x7 would sync all three)
-            sendSyncPlayerFields(player, 0x00000004)
+            -- Match vanilla research-recipe sync (PF_Recipes).
+            sendSyncPlayerFields(player, 0x00000001)
         end
 
         BurdJournals.Server.sendToClient(player, "claimSuccess", attachRuntimeDeltaOrLegacyJournalData({
@@ -6535,7 +6554,8 @@ function BurdJournals.Server.handleAbsorbRecipe(player, args)
 
         if sendSyncPlayerFields then
             -- Only sync recipes (0x4), not skills/traits (0x7 would sync all three)
-            sendSyncPlayerFields(player, 0x00000004)
+            -- Match vanilla research-recipe sync (PF_Recipes).
+            sendSyncPlayerFields(player, 0x00000001)
         end
 
         -- Re-fetch journal by ID before calling shouldDissolve to avoid zombie object errors
