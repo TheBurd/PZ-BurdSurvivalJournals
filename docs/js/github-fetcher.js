@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GitHub Raw Content Fetcher
  * Fetches translation files from GitHub repository
  */
@@ -48,7 +48,7 @@ function decodeWithCorrectEncoding(buffer) {
  * Fetch a single translation file from GitHub
  * @param {string} langCode - Language code (e.g., 'EN', 'FR')
  * @param {string} category - Category name (e.g., 'UI', 'Sandbox')
- * @param {string} build - Build target ('build42' or 'build41')
+ * @param {string} build - Build target ('build42' legacy source)
  * @returns {Promise<Object>} Parsed translations or error object
  */
 export async function fetchTranslationFile(langCode, category, build = 'build42') {
@@ -335,3 +335,4 @@ export function getCompletionByCategory(languageTranslations, englishTranslation
 
     return stats;
 }
+

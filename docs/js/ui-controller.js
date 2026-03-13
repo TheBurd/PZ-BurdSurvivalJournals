@@ -914,7 +914,7 @@ function showPRConfirmationModal(preflight) {
                     <strong>What happens next:</strong>
                     <ul>
                         <li>A fork is created in your GitHub account if needed</li>
-                        <li>Files are generated for both Build 42 and Build 41 paths</li>
+                        <li>Files are generated for both Build 42 legacy txt and Build 42.15 json paths</li>
                         <li>A pull request is opened for review</li>
                     </ul>
                 </div>

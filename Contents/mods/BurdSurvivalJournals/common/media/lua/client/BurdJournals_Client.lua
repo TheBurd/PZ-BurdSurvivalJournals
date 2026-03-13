@@ -1198,7 +1198,7 @@ local function buildCursedPromptRichText(loreLine, consequenceLine, confirmLine)
     local consequence = escapeCursedRichText(consequenceLine)
     local confirm = escapeCursedRichText(confirmLine)
 
-    return string.format(
+    return BurdJournals.formatText(
         "<CENTRE> <RGB:%.3f,%.3f,%.3f> %s <BR> <RGB:%.3f,%.3f,%.3f> %s <BR> <RGB:%.3f,%.3f,%.3f> %s <BR> <RGB:%.3f,%.3f,%.3f> %s",
         CURSED_PROMPT_THEME.title.r, CURSED_PROMPT_THEME.title.g, CURSED_PROMPT_THEME.title.b, title,
         CURSED_PROMPT_THEME.text.r, CURSED_PROMPT_THEME.text.g, CURSED_PROMPT_THEME.text.b, lore,
@@ -1215,7 +1215,7 @@ local function buildCursedRevealRichText(revealLead, curseMessage, focusText)
     local escapedFocus = focus and escapeCursedRichText(focus) or nil
     local focusLine = ""
     if escapedFocus and escapedFocus ~= "" then
-        focusLine = string.format(
+        focusLine = BurdJournals.formatText(
             " <BR> <RGB:%.3f,%.3f,%.3f> [ %s ]",
             CURSED_PROMPT_THEME.highlight.r,
             CURSED_PROMPT_THEME.highlight.g,
@@ -1224,7 +1224,7 @@ local function buildCursedRevealRichText(revealLead, curseMessage, focusText)
         )
     end
 
-    return string.format(
+    return BurdJournals.formatText(
         "<CENTRE> <RGB:%.3f,%.3f,%.3f> %s <BR> <RGB:%.3f,%.3f,%.3f> %s <BR> <RGB:%.3f,%.3f,%.3f> %s%s",
         CURSED_PROMPT_THEME.title.r, CURSED_PROMPT_THEME.title.g, CURSED_PROMPT_THEME.title.b, title,
         CURSED_PROMPT_THEME.accent.r, CURSED_PROMPT_THEME.accent.g, CURSED_PROMPT_THEME.accent.b, lead,
@@ -2293,7 +2293,7 @@ function BurdJournals.Client.onServerCommand(module, command, args)
                 .. " total (page " .. tostring(args.page or 1) .. ")")
             for i, entry in ipairs(args.items) do
                 local counts = entry.counts or {}
-                BurdJournals.debugPrint(string.format(
+                BurdJournals.debugPrint(BurdJournals.formatText(
                     "  %d) %s | %s | S:%d M:%d T:%d R:%d",
                     i,
                     tostring(entry.snapshotId or "?"),
@@ -2450,12 +2450,12 @@ function BurdJournals.Client.handleRecordSuccess(player, args)
     elseif #recordedItems == 0 then
         message = getText("UI_BurdJournals_ProgressSaved") or "Progress saved!"
     elseif #recordedItems == 1 then
-        message = string.format(getText("UI_BurdJournals_RecordedItem") or "Recorded %s", recordedItems[1])
+        message = BurdJournals.formatText(getText("UI_BurdJournals_RecordedItem") or "Recorded %s", recordedItems[1])
     elseif #recordedItems <= 3 then
-        message = string.format(getText("UI_BurdJournals_RecordedItems") or "Recorded %s", table.concat(recordedItems, ", "))
+        message = BurdJournals.formatText(getText("UI_BurdJournals_RecordedItems") or "Recorded %s", table.concat(recordedItems, ", "))
     else
 
-        message = string.format(getText("UI_BurdJournals_RecordedItemsMore") or "Recorded %s, %s +%d more", recordedItems[1], recordedItems[2], #recordedItems - 2)
+        message = BurdJournals.formatText(getText("UI_BurdJournals_RecordedItemsMore") or "Recorded %s, %s +%d more", recordedItems[1], recordedItems[2], #recordedItems - 2)
     end
 
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
@@ -2671,7 +2671,7 @@ function BurdJournals.Client.handleAbsorbSuccess(player, args)
 
     elseif args.traitId then
         local traitName = BurdJournals.getTraitDisplayName(args.traitId)
-        local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
+        local message = BurdJournals.formatText(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
         if BurdJournals.safeAddTrait and shouldApplyTraitsLocally() then
@@ -2785,7 +2785,7 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
     local xpAmount = args.xpAdded or args.xpGained  -- Support both field names
     if args.skillName and xpAmount then
         local displayName = BurdJournals.getPerkDisplayName(args.skillName)
-        local message = string.format(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(xpAmount))
+        local message = BurdJournals.formatText(getText("UI_BurdJournals_ClaimedSkill") or "Claimed: %s (+%s XP)", displayName, BurdJournals.formatXP(xpAmount))
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
         
         -- Debug logging: show server response details
@@ -2827,7 +2827,7 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
 
     elseif args.traitId then
         local traitName = BurdJournals.getTraitDisplayName(args.traitId)
-        local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
+        local message = BurdJournals.formatText(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
         if BurdJournals.safeAddTrait and shouldApplyTraitsLocally() then
@@ -2861,7 +2861,7 @@ function BurdJournals.Client.handleClaimSuccess(player, args)
         -- Handle stat absorption (zombie kills, hours survived, etc.)
         local statName = BurdJournals.getStatDisplayName and BurdJournals.getStatDisplayName(args.statId) or args.statId
         local value = args.value or 0
-        local message = string.format(getText("UI_BurdJournals_StatClaimed") or "%s claimed!", statName)
+        local message = BurdJournals.formatText(getText("UI_BurdJournals_StatClaimed") or "%s claimed!", statName)
         BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.XP_GAIN)
 
         -- Apply the stat to the player on the client side
@@ -2933,7 +2933,7 @@ function BurdJournals.Client.handleForgetSlotClaimed(player, args)
     if not args or not args.traitId then return end
 
     local traitName = BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(args.traitId) or tostring(args.traitId)
-    local message = string.format(getText("UI_BurdJournals_ForgetSlotClaimed") or "Forgot trait: %s", traitName)
+    local message = BurdJournals.formatText(getText("UI_BurdJournals_ForgetSlotClaimed") or "Forgot trait: %s", traitName)
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.INFO)
 
     if BurdJournals.safeRemoveTrait and shouldApplyTraitsLocally() then
@@ -3086,7 +3086,7 @@ function BurdJournals.Client.handleCancelledTraits(player, cancelledTraits)
                 BurdJournals.safeRemoveTrait(player, cancelledId)
             end
             local cancelledName = BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(cancelledId) or tostring(cancelledId)
-            local message = string.format(getText("UI_BurdJournals_TraitCancelled") or "Cancelled conflicting trait: %s", cancelledName)
+            local message = BurdJournals.formatText(getText("UI_BurdJournals_TraitCancelled") or "Cancelled conflicting trait: %s", cancelledName)
             BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.ERROR)
         end
     end
@@ -3106,7 +3106,7 @@ function BurdJournals.Client.handleGrantTrait(player, args)
     end
     BurdJournals.Client.handleCancelledTraits(player, args and args.cancelledTraits)
 
-    local message = string.format(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
+    local message = BurdJournals.formatText(getText("UI_BurdJournals_LearnedTrait") or "Learned: %s", traitName)
     BurdJournals.Client.showHaloMessage(player, message, BurdJournals.Client.HaloColors.TRAIT_GAIN)
 
     if args.journalId and args.journalData then
@@ -3165,7 +3165,7 @@ function BurdJournals.Client.handleTraitAlreadyKnown(player, args)
 
     local traitName = BurdJournals.getTraitDisplayName(traitId)
 
-    player:Say(string.format(getText("UI_BurdJournals_AlreadyKnowTrait") or "Already know: %s", traitName))
+    player:Say(BurdJournals.formatText(getText("UI_BurdJournals_AlreadyKnowTrait") or "Already know: %s", traitName))
 
     if BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance then
         BurdJournals.UI.MainPanel.instance:refreshAbsorptionList()
@@ -3180,8 +3180,8 @@ function BurdJournals.Client.handleSkillMaxed(player, args)
 
     -- Show "already at level" message
     local message = args.alreadyAtLevel 
-        and string.format(getText("UI_BurdJournals_AlreadyAtLevel") or "Already at level: %s", displayName)
-        or string.format(getText("UI_BurdJournals_SkillAlreadyMaxedMsg") or "%s is already maxed!", displayName)
+        and BurdJournals.formatText(getText("UI_BurdJournals_AlreadyAtLevel") or "Already at level: %s", displayName)
+        or BurdJournals.formatText(getText("UI_BurdJournals_SkillAlreadyMaxedMsg") or "%s is already maxed!", displayName)
     player:Say(message)
 
     if args.journalId then
@@ -3213,7 +3213,7 @@ function BurdJournals.Client.handleRecipeAlreadyKnown(player, args)
     local recipeName = args.recipeName
     local displayName = BurdJournals.getRecipeDisplayName(recipeName)
 
-    player:Say(string.format(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName))
+    player:Say(BurdJournals.formatText(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName))
 
     if args.journalId and args.journalData then
         local journal = BurdJournals.findItemById(player, args.journalId)
@@ -4531,7 +4531,7 @@ function BurdJournals.Client.Diagnostics.printReport()
         BurdJournals.debugPrint("Username: " .. tostring(snapshot.username))
         BurdJournals.debugPrint("Steam ID: " .. tostring(snapshot.steamId))
         BurdJournals.debugPrint("Character ID: " .. tostring(snapshot.characterId))
-        BurdJournals.debugPrint("Hours Survived: " .. string.format("%.2f", snapshot.hoursAlive))
+        BurdJournals.debugPrint("Hours Survived: " .. BurdJournals.formatText("%.2f", snapshot.hoursAlive))
 
         local skillCount = 0
         for _ in pairs(snapshot.skills) do skillCount = skillCount + 1 end
@@ -4600,7 +4600,7 @@ function BurdJournals.Client.Diagnostics.printReport()
     local startIdx = math.max(1, #log - 19)
     for i = startIdx, #log do
         local entry = log[i]
-        BurdJournals.debugPrint(string.format("  [%s] %s: %s", tostring(entry.time), entry.category, entry.message))
+        BurdJournals.debugPrint(BurdJournals.formatText("  [%s] %s: %s", tostring(entry.time), entry.category, entry.message))
     end
     BurdJournals.debugPrint("")
 
@@ -4629,7 +4629,7 @@ function BurdJournals.Client.Diagnostics.onChatCommand(command)
         local player = getPlayer()
         local results = BurdJournals.Client.Diagnostics.scanJournals(player)
         if results and player then
-            local msg = string.format("[Journals] Found %d journals: %d skills, %d traits, %d recipes",
+            local msg = BurdJournals.formatText("[Journals] Found %d journals: %d skills, %d traits, %d recipes",
                 results.summary.total,
                 results.summary.totalSkillEntries,
                 results.summary.totalTraitEntries,
@@ -4864,7 +4864,7 @@ function BurdJournals.Client.Debug.cmdVerbose(player, args)
     else
         local status = BurdJournals.Client.Debug.verboseEnabled and "ON" or "OFF"
         local debugFlag = (isDebugEnabled and isDebugEnabled()) and "YES" or "NO"
-        BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] Verbose: %s | -debug flag: %s", status, debugFlag), {r=0.5, g=0.8, b=1}, true)
+        BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] Verbose: %s | -debug flag: %s", status, debugFlag), {r=0.5, g=0.8, b=1}, true)
     end
     
     return true
@@ -4897,7 +4897,7 @@ function BurdJournals.Client.Debug.cmdDump(player, args)
                     local level = player:getPerkLevel(perk)
                     local xp = player:getXp():getXP(perk)
                     local isPassive = (skillName == "Fitness" or skillName == "Strength") and " (passive)" or ""
-                    BurdJournals.debugPrint(string.format("  %s: Level %d, XP %.0f%s", skillName, level, xp, isPassive))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  %s: Level %d, XP %.0f%s", skillName, level, xp, isPassive))
                 end
             end
         else
@@ -4918,7 +4918,7 @@ function BurdJournals.Client.Debug.cmdDump(player, args)
                     local trait = playerTraits:get(i)
                     local traitId = tostring(trait)
                     local isStarting = startingTraits[traitId] and " (starting)" or " (earned)"
-                    BurdJournals.debugPrint(string.format("  %s%s", traitId, isStarting))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  %s%s", traitId, isStarting))
                 end
             else
                 BurdJournals.debugPrint("  No traits found")
@@ -4935,27 +4935,27 @@ function BurdJournals.Client.Debug.cmdDump(player, args)
             local modData = player:getModData()
             if modData.BurdJournals then
                 local bj = modData.BurdJournals
-                BurdJournals.debugPrint(string.format("  Captured: %s", bj.baselineCaptured and "Yes" or "No"))
-                BurdJournals.debugPrint(string.format("  Version: %s", tostring(bj.baselineVersion or "N/A")))
-                BurdJournals.debugPrint(string.format("  Bypassed: %s", bj.baselineBypassed and "Yes" or "No"))
+                BurdJournals.debugPrint(BurdJournals.formatText("  Captured: %s", bj.baselineCaptured and "Yes" or "No"))
+                BurdJournals.debugPrint(BurdJournals.formatText("  Version: %s", tostring(bj.baselineVersion or "N/A")))
+                BurdJournals.debugPrint(BurdJournals.formatText("  Bypassed: %s", bj.baselineBypassed and "Yes" or "No"))
                 
                 if bj.skillBaseline then
                     BurdJournals.debugPrint("  Skill Baselines:")
                     for skill, xp in pairs(bj.skillBaseline) do
-                        BurdJournals.debugPrint(string.format("    %s: %.0f XP", skill, xp))
+                        BurdJournals.debugPrint(BurdJournals.formatText("    %s: %.0f XP", skill, xp))
                     end
                 end
                 
                 if bj.traitBaseline then
                     local traitCount = 0
                     for _ in pairs(bj.traitBaseline) do traitCount = traitCount + 1 end
-                    BurdJournals.debugPrint(string.format("  Trait Baselines: %d entries", traitCount))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  Trait Baselines: %d entries", traitCount))
                 end
                 
                 if bj.recipeBaseline then
                     local recipeCount = 0
                     for _ in pairs(bj.recipeBaseline) do recipeCount = recipeCount + 1 end
-                    BurdJournals.debugPrint(string.format("  Recipe Baselines: %d entries", recipeCount))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  Recipe Baselines: %d entries", recipeCount))
                 end
 
                 if bj.journalDRCache then
@@ -4969,7 +4969,7 @@ function BurdJournals.Client.Debug.cmdDump(player, args)
                     if type(drAliases) == "table" then
                         for _ in pairs(drAliases) do drAliasCount = drAliasCount + 1 end
                     end
-                    BurdJournals.debugPrint(string.format("  DR Cache: %d journals, %d aliases", drJournalCount, drAliasCount))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  DR Cache: %d journals, %d aliases", drJournalCount, drAliasCount))
                 end
             else
                 BurdJournals.debugPrint("  No BurdJournals modData found")
@@ -4988,29 +4988,29 @@ function BurdJournals.Client.Debug.cmdDump(player, args)
                 local modData = heldItem:getModData()
                 if modData.BurdJournals then
                     local data = modData.BurdJournals
-                    BurdJournals.debugPrint(string.format("  Type: %s", heldItem:getFullType()))
-                    BurdJournals.debugPrint(string.format("  ID: %s", tostring(heldItem:getID())))
-                    BurdJournals.debugPrint(string.format("  UUID: %s", tostring(data.uuid or "N/A")))
-                    BurdJournals.debugPrint(string.format("  Owner: %s", tostring(data.ownerCharacterName or "N/A")))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  Type: %s", heldItem:getFullType()))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  ID: %s", tostring(heldItem:getID())))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  UUID: %s", tostring(data.uuid or "N/A")))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  Owner: %s", tostring(data.ownerCharacterName or "N/A")))
                     
                     local skillCount = data.skills and BurdJournals.countTable(data.skills) or 0
                     local traitCount = data.traits and BurdJournals.countTable(data.traits) or 0
                     local recipeCount = data.recipes and BurdJournals.countTable(data.recipes) or 0
-                    BurdJournals.debugPrint(string.format("  Contents: %d skills, %d traits, %d recipes", skillCount, traitCount, recipeCount))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  Contents: %d skills, %d traits, %d recipes", skillCount, traitCount, recipeCount))
                     
                     if data.skills and skillCount > 0 then
                         BurdJournals.debugPrint("  Skills:")
                         for skillName, skillData in pairs(data.skills) do
                             local level = skillData.level or "?"
                             local xp = skillData.xp or 0
-                            BurdJournals.debugPrint(string.format("    %s: Level %s, XP %.0f", skillName, tostring(level), xp))
+                            BurdJournals.debugPrint(BurdJournals.formatText("    %s: Level %s, XP %.0f", skillName, tostring(level), xp))
                         end
                     end
                     
                     if data.traits and traitCount > 0 then
                         BurdJournals.debugPrint("  Traits:")
                         for traitId, _ in pairs(data.traits) do
-                            BurdJournals.debugPrint(string.format("    %s", traitId))
+                            BurdJournals.debugPrint(BurdJournals.formatText("    %s", traitId))
                         end
                     end
                 else
@@ -5029,7 +5029,7 @@ function BurdJournals.Client.Debug.cmdDump(player, args)
         BurdJournals.debugPrint("--- SANDBOX CONFIG ---")
         if SandboxVars.BurdJournals then
             for key, value in pairs(SandboxVars.BurdJournals) do
-                BurdJournals.debugPrint(string.format("  %s = %s", key, tostring(value)))
+                BurdJournals.debugPrint(BurdJournals.formatText("  %s = %s", key, tostring(value)))
             end
         else
             BurdJournals.debugPrint("  No BurdJournals sandbox vars found")
@@ -5131,7 +5131,7 @@ function BurdJournals.Client.Debug.cmdReset(player, args)
                     end
                 end
                 
-                BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] Removed %d earned traits", #toRemove), {r=0.3, g=1, b=0.5}, true)
+                BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] Removed %d earned traits", #toRemove), {r=0.3, g=1, b=0.5}, true)
             end
         end
         return true
@@ -5237,7 +5237,7 @@ function BurdJournals.Client.Debug.cmdBaselineView(player)
     for skillName, xp in pairs(skillBaseline) do
         if type(xp) == "number" then
             local level = BurdJournals.Client.Debug.xpToLevel and BurdJournals.Client.Debug.xpToLevel(skillName, xp) or "?"
-            BurdJournals.debugPrint(string.format("  %-20s Level %s (%d XP)", skillName, tostring(level), xp))
+            BurdJournals.debugPrint(BurdJournals.formatText("  %-20s Level %s (%d XP)", skillName, tostring(level), xp))
             hasSkills = true
         end
     end
@@ -5717,7 +5717,7 @@ function BurdJournals.Client.Debug.cmdSetSkill(player, args)
                 player:setPerkLevelDebug(perk, levelArg)
             end
         end
-        BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] All skills set to level %d", levelArg), {r=0.3, g=1, b=0.5}, true)
+        BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] All skills set to level %d", levelArg), {r=0.3, g=1, b=0.5}, true)
         return true
     end
     
@@ -5729,7 +5729,7 @@ function BurdJournals.Client.Debug.cmdSetSkill(player, args)
                 player:setPerkLevelDebug(perk, levelArg)
             end
         end
-        BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] Passive skills set to level %d", levelArg), {r=0.3, g=1, b=0.5}, true)
+        BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] Passive skills set to level %d", levelArg), {r=0.3, g=1, b=0.5}, true)
         return true
     end
     
@@ -5745,7 +5745,7 @@ function BurdJournals.Client.Debug.cmdSetSkill(player, args)
             local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
             if perk then
                 player:setPerkLevelDebug(perk, levelArg)
-                BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] %s set to level %d", skillName, levelArg), {r=0.3, g=1, b=0.5}, true)
+                BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] %s set to level %d", skillName, levelArg), {r=0.3, g=1, b=0.5}, true)
                 return true
             end
         end
@@ -6502,7 +6502,7 @@ function BurdJournals.Client.Debug.cmdGive(player, args)
             local success = BurdJournals.Client.Debug.spawnJournal(player, params)
             if success then count = count + 1 end
         end
-        BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] Spawned %d journals", count), {r=0.3, g=1, b=0.5}, true)
+        BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] Spawned %d journals", count), {r=0.3, g=1, b=0.5}, true)
         return true
     end
     
@@ -6512,9 +6512,9 @@ function BurdJournals.Client.Debug.cmdGive(player, args)
         local skillCount = #params.skills
         local traitCount = #params.traits
         local recipeCount = #params.recipes
-        local msg = string.format("[BSJ] Spawned %s journal", params.journalType)
+        local msg = BurdJournals.formatText("[BSJ] Spawned %s journal", params.journalType)
         if skillCount > 0 or traitCount > 0 or recipeCount > 0 then
-            msg = msg .. string.format(" (%d skills, %d traits, %d recipes)", skillCount, traitCount, recipeCount)
+            msg = msg .. BurdJournals.formatText(" (%d skills, %d traits, %d recipes)", skillCount, traitCount, recipeCount)
         end
         BurdJournals.Client.Debug.feedback(player, msg, {r=0.3, g=1, b=0.5}, true)
     else
@@ -6627,7 +6627,7 @@ function BurdJournals.Client.Debug.cmdAdmin(player, args)
                         end
                     end
                 end
-                BurdJournals.Client.Debug.feedback(player, string.format("[BSJ] Force synced %d journals", syncCount), {r=0.3, g=1, b=0.5}, true)
+                BurdJournals.Client.Debug.feedback(player, BurdJournals.formatText("[BSJ] Force synced %d journals", syncCount), {r=0.3, g=1, b=0.5}, true)
             end
         end
         return true
@@ -6858,7 +6858,7 @@ function BurdJournals.Client.Debug.cmdHelp(player, args)
         BurdJournals.debugPrint("--- " .. helpData.title .. " ---")
         BurdJournals.debugPrint("")
         for _, cmd in ipairs(helpData.commands) do
-            BurdJournals.debugPrint(string.format("  %-45s %s", cmd.cmd, cmd.desc))
+            BurdJournals.debugPrint(BurdJournals.formatText("  %-45s %s", cmd.cmd, cmd.desc))
         end
     else
         -- Show overview of all topics

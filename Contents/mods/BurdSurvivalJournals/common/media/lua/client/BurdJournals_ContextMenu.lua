@@ -404,21 +404,21 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
             local parts = {}
             if skillCount > 0 then
                 local skillKey = skillCount > 1 and "ContextMenu_BurdJournals_SkillsCount" or "ContextMenu_BurdJournals_SkillCount"
-                table.insert(parts, string.format(getText(skillKey) or "%d skills", skillCount))
+                table.insert(parts, BurdJournals.formatText(getText(skillKey) or "%d skills", skillCount))
             end
             if traitCount > 0 then
                 local traitKey = traitCount > 1 and "ContextMenu_BurdJournals_TraitsCount" or "ContextMenu_BurdJournals_TraitCount"
-                table.insert(parts, string.format(getText(traitKey) or "%d traits", traitCount))
+                table.insert(parts, BurdJournals.formatText(getText(traitKey) or "%d traits", traitCount))
             end
             if recipeCount > 0 then
                 local recipeKey = recipeCount > 1 and "ContextMenu_BurdJournals_RecipesCount" or "ContextMenu_BurdJournals_RecipeCount"
-                table.insert(parts, string.format(getText(recipeKey) or "%d recipes", recipeCount))
+                table.insert(parts, BurdJournals.formatText(getText(recipeKey) or "%d recipes", recipeCount))
             end
 
             local absorbLabel
             if #parts > 0 then
                 local absorbAllBase = getText("ContextMenu_BurdJournals_AbsorbAllFormat") or "Absorb All (%s)"
-                absorbLabel = string.format(absorbAllBase, table.concat(parts, ", "))
+                absorbLabel = BurdJournals.formatText(absorbAllBase, table.concat(parts, ", "))
             else
                 absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
             end
@@ -536,21 +536,21 @@ function BurdJournals.ContextMenu.addWornJournalOptions(context, player, journal
             local parts = {}
             if skillCount > 0 then
                 local skillKey = skillCount > 1 and "ContextMenu_BurdJournals_SkillsCount" or "ContextMenu_BurdJournals_SkillCount"
-                table.insert(parts, string.format(getText(skillKey) or "%d skills", skillCount))
+                table.insert(parts, BurdJournals.formatText(getText(skillKey) or "%d skills", skillCount))
             end
             if traitCount > 0 then
                 local traitKey = traitCount > 1 and "ContextMenu_BurdJournals_TraitsCount" or "ContextMenu_BurdJournals_TraitCount"
-                table.insert(parts, string.format(getText(traitKey) or "%d traits", traitCount))
+                table.insert(parts, BurdJournals.formatText(getText(traitKey) or "%d traits", traitCount))
             end
             if recipeCount > 0 then
                 local recipeKey = recipeCount > 1 and "ContextMenu_BurdJournals_RecipesCount" or "ContextMenu_BurdJournals_RecipeCount"
-                table.insert(parts, string.format(getText(recipeKey) or "%d recipes", recipeCount))
+                table.insert(parts, BurdJournals.formatText(getText(recipeKey) or "%d recipes", recipeCount))
             end
 
             local absorbLabel
             if #parts > 0 then
                 local absorbAllBase = getText("ContextMenu_BurdJournals_AbsorbAllFormat") or "Absorb All (%s)"
-                absorbLabel = string.format(absorbAllBase, table.concat(parts, ", "))
+                absorbLabel = BurdJournals.formatText(absorbAllBase, table.concat(parts, ", "))
             else
                 absorbLabel = getText("Tooltip_BurdJournals_AbsorbAllRewards") or "Absorb All Rewards"
             end
@@ -664,17 +664,17 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         local author = journalData.author or (getText("UI_BurdJournals_Unknown") or "Unknown")
         local desc = (getText("Tooltip_BurdJournals_WrittenBy") or "Written by: %s"):gsub("%%s", author) .. "\n"
         local itemText = totalRecorded > 1 and (getText("Tooltip_BurdJournals_RecordedItems") or "Contains %d recorded items") or (getText("Tooltip_BurdJournals_RecordedItem") or "Contains %d recorded item")
-        desc = desc .. string.format(itemText, totalRecorded) .. "\n\n"
+        desc = desc .. BurdJournals.formatText(itemText, totalRecorded) .. "\n\n"
         if claimableSkills > 0 or claimableTraits > 0 then
             if canClaim then
                 desc = desc .. (getText("Tooltip_BurdJournals_ClaimableRewards") or "Claimable rewards:") .. "\n"
                 if claimableSkills > 0 then
                     local skillText = claimableSkills > 1 and (getText("Tooltip_BurdJournals_SkillsCount") or "  - %d skills") or (getText("Tooltip_BurdJournals_SkillCount") or "  - %d skill")
-                    desc = desc .. string.format(skillText, claimableSkills) .. "\n"
+                    desc = desc .. BurdJournals.formatText(skillText, claimableSkills) .. "\n"
                 end
                 if claimableTraits > 0 then
                     local traitText = claimableTraits > 1 and (getText("Tooltip_BurdJournals_TraitsCount") or "  - %d traits") or (getText("Tooltip_BurdJournals_TraitCount") or "  - %d trait")
-                    desc = desc .. string.format(traitText, claimableTraits) .. "\n"
+                    desc = desc .. BurdJournals.formatText(traitText, claimableTraits) .. "\n"
                 end
             else
                 desc = desc .. (getText("Tooltip_BurdJournals_ViewOnly") or "View only") .. " - " .. (claimReason or (getText("Tooltip_BurdJournals_CannotClaimDefault") or "Cannot claim from this journal.")) .. "\n"
@@ -726,10 +726,10 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
             tooltip:setName(getText("Tooltip_BurdJournals_ClaimAll") or "Claim All Skills")
             local desc = (getText("Tooltip_BurdJournals_ClaimAllDesc") or "Opens journal and claims all available skills.") .. "\n\n"
             local skillText = claimableSkills > 1 and (getText("Tooltip_BurdJournals_AvailableSkills") or "Available: %d skills") or (getText("Tooltip_BurdJournals_AvailableSkill") or "Available: %d skill")
-            desc = desc .. string.format(skillText, claimableSkills)
+            desc = desc .. BurdJournals.formatText(skillText, claimableSkills)
             if claimableTraits > 0 then
                 local traitText = claimableTraits > 1 and (getText("Tooltip_BurdJournals_AndTraits") or ", %d traits") or (getText("Tooltip_BurdJournals_AndTrait") or ", %d trait")
-                desc = desc .. string.format(traitText, claimableTraits)
+                desc = desc .. BurdJournals.formatText(traitText, claimableTraits)
             end
             desc = desc .. "\n\n" .. (getText("Tooltip_BurdJournals_ReadingSpeedNote") or "This will take time based on your reading speed.")
             tooltip.description = normalizeTooltipTextForDisplay(desc)
@@ -839,15 +839,15 @@ function BurdJournals.ContextMenu.onAbsorbAllConfirm(player, journal)
     local confirmText = (getText("UI_BurdJournals_ConfirmAbsorbAll") or "Absorb all remaining rewards?") .. "\n\n"
     if skillCount > 0 then
         local skillText = skillCount > 1 and (getText("UI_BurdJournals_SkillsCount") or "%d skills") or (getText("UI_BurdJournals_SkillCount") or "%d skill")
-        confirmText = confirmText .. string.format(skillText, skillCount) .. "\n"
+        confirmText = confirmText .. BurdJournals.formatText(skillText, skillCount) .. "\n"
     end
     if traitCount > 0 then
         local traitText = traitCount > 1 and (getText("UI_BurdJournals_RareTraitsCount") or "%d rare traits") or (getText("UI_BurdJournals_RareTraitCount") or "%d rare trait")
-        confirmText = confirmText .. string.format(traitText, traitCount) .. "\n"
+        confirmText = confirmText .. BurdJournals.formatText(traitText, traitCount) .. "\n"
     end
     if recipeCount > 0 then
         local recipeText = recipeCount > 1 and (getText("UI_BurdJournals_RecipesCount") or "%d recipes") or (getText("UI_BurdJournals_RecipeCount") or "%d recipe")
-        confirmText = confirmText .. string.format(recipeText, recipeCount) .. "\n"
+        confirmText = confirmText .. BurdJournals.formatText(recipeText, recipeCount) .. "\n"
     end
     confirmText = confirmText .. "\n" .. (getText("UI_BurdJournals_MaxedSkillsSkipped") or "Maxed skills and known items will be skipped.")
 
@@ -1178,11 +1178,11 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
             local message = "+" .. BurdJournals.formatXP(totalXP) .. " XP"
             if traitsAbsorbed > 0 then
                 local traitText = traitsAbsorbed > 1 and (getText("UI_BurdJournals_PlusTraits") or ", +%d traits") or (getText("UI_BurdJournals_PlusTrait") or ", +%d trait")
-                message = message .. string.format(traitText, traitsAbsorbed)
+                message = message .. BurdJournals.formatText(traitText, traitsAbsorbed)
             end
             if recipesAbsorbed > 0 then
                 local recipeText = recipesAbsorbed > 1 and (getText("UI_BurdJournals_PlusRecipes") or ", +%d recipes") or (getText("UI_BurdJournals_PlusRecipe") or ", +%d recipe")
-                message = message .. string.format(recipeText, recipesAbsorbed)
+                message = message .. BurdJournals.formatText(recipeText, recipesAbsorbed)
             end
             if HaloTextHelper and HaloTextHelper.addTextWithArrow then
                 HaloTextHelper.addTextWithArrow(player, message, true, HaloTextHelper.getColorGreen())
@@ -1195,17 +1195,17 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
             local skipMsg = ""
             if skillsSkipped > 0 then
                 local skillText = skillsSkipped > 1 and (getText("UI_BurdJournals_SkillsAlreadyMaxed") or "%d skills already maxed") or (getText("UI_BurdJournals_SkillAlreadyMaxed") or "%d skill already maxed")
-                skipMsg = string.format(skillText, skillsSkipped)
+                skipMsg = BurdJournals.formatText(skillText, skillsSkipped)
             end
             if traitsSkipped > 0 then
                 if skipMsg ~= "" then skipMsg = skipMsg .. ", " end
                 local traitText = traitsSkipped > 1 and (getText("UI_BurdJournals_TraitsAlreadyKnown") or "%d traits already known") or (getText("UI_BurdJournals_TraitAlreadyKnown") or "%d trait already known")
-                skipMsg = skipMsg .. string.format(traitText, traitsSkipped)
+                skipMsg = skipMsg .. BurdJournals.formatText(traitText, traitsSkipped)
             end
             if recipesSkipped > 0 then
                 if skipMsg ~= "" then skipMsg = skipMsg .. ", " end
                 local recipeText = recipesSkipped > 1 and (getText("UI_BurdJournals_RecipesAlreadyKnownCount") or "%d recipes already known") or (getText("UI_BurdJournals_RecipeAlreadyKnown") or "%d recipe already known")
-                skipMsg = skipMsg .. string.format(recipeText, recipesSkipped)
+                skipMsg = skipMsg .. BurdJournals.formatText(recipeText, recipesSkipped)
             end
             if skipMsg ~= "" then
                 player:Say(skipMsg)

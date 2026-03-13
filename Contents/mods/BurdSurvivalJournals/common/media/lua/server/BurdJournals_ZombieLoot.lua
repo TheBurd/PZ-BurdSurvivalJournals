@@ -406,7 +406,7 @@ local function getContainerKey(container)
     if parent and parent.getSquare then
         local sq = parent:getSquare()
         if sq then
-            return string.format("%d_%d_%d_%s", sq:getX(), sq:getY(), sq:getZ(), tostring(container:getType()))
+            return BurdJournals.formatText("%d_%d_%d_%s", sq:getX(), sq:getY(), sq:getZ(), tostring(container:getType()))
         end
     end
     return nil

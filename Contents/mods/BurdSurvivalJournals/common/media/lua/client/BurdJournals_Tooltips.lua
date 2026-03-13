@@ -30,7 +30,7 @@ local function formatAge(timestamp)
     elseif ageDays == 1 then
         return getText("Tooltip_BurdJournals_Age1Day") or "1 day ago"
     else
-        return string.format(getText("Tooltip_BurdJournals_AgeDays") or "%d days ago", ageDays)
+        return BurdJournals.formatText(getText("Tooltip_BurdJournals_AgeDays") or "%d days ago", ageDays)
     end
 end
 
@@ -79,10 +79,10 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         local ownerText = journalData.ownerUsername
         if isCurrentPlayerOwner(journalData) then
             ownerText = ownerText .. " " .. (getText("Tooltip_BurdJournals_OwnerYou") or "(You)")
-            local ownerLine = string.format(getText("Tooltip_BurdJournals_Owner") or "Owner: %s", ownerText)
+            local ownerLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Owner") or "Owner: %s", ownerText)
             table.insert(lines, {text = ownerLine, color = {r=0.4, g=0.8, b=1.0}})
         else
-            local ownerLine = string.format(getText("Tooltip_BurdJournals_Owner") or "Owner: %s", ownerText)
+            local ownerLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Owner") or "Owner: %s", ownerText)
             table.insert(lines, {text = ownerLine, color = {r=0.7, g=0.7, b=0.9}})
         end
     end
@@ -94,7 +94,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
             showAuthor = false
         end
         if showAuthor then
-            local authorLine = string.format(getText("Tooltip_BurdJournals_Author") or "Author: %s", journalData.author)
+            local authorLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Author") or "Author: %s", journalData.author)
             table.insert(lines, {text = authorLine, color = {r=0.8, g=0.8, b=0.6}})
         end
     end
@@ -114,7 +114,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
             table.sort(contributorNames)
 
             local contributorList = table.concat(contributorNames, ", ")
-            local contribLine = string.format(getText("Tooltip_BurdJournals_Contributors") or "Contributors: %s", contributorList)
+            local contribLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Contributors") or "Contributors: %s", contributorList)
             table.insert(lines, {text = contribLine, color = {r=0.6, g=0.8, b=0.6}})
         end
     end
@@ -122,7 +122,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     -- Resolve profession name (handles translation keys stored by server)
     local resolvedProfessionName = BurdJournals.resolveProfessionName(journalData)
     if resolvedProfessionName then
-        local profLine = string.format(getText("Tooltip_BurdJournals_Profession") or "Profession: %s", resolvedProfessionName)
+        local profLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Profession") or "Profession: %s", resolvedProfessionName)
         table.insert(lines, {text = profLine, color = {r=0.7, g=0.7, b=0.7}})
     end
 
@@ -153,20 +153,20 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     if skillCount > 0 then
         local skillText
         if unclaimedSkills > 0 and BurdJournals.formatXP then
-            skillText = string.format(getText("Tooltip_BurdJournals_SkillsLineXP") or "Skills: %d/%d (%s XP)", unclaimedSkills, skillCount, BurdJournals.formatXP(totalXP))
+            skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLineXP") or "Skills: %d/%d (%s XP)", unclaimedSkills, skillCount, BurdJournals.formatXP(totalXP))
             table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
         elseif unclaimedSkills > 0 then
-            skillText = string.format(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
+            skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
             table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
         else
-            skillText = string.format(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
+            skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
             skillText = skillText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
             table.insert(lines, {text = skillText, color = {r=0.5, g=0.5, b=0.5}})
         end
     end
 
     if traitCount > 0 then
-        local traitText = string.format(getText("Tooltip_BurdJournals_TraitsLine") or "Traits: %d/%d", unclaimedTraits, traitCount)
+        local traitText = BurdJournals.formatText(getText("Tooltip_BurdJournals_TraitsLine") or "Traits: %d/%d", unclaimedTraits, traitCount)
         if unclaimedTraits > 0 then
             table.insert(lines, {text = traitText, color = {r=0.9, g=0.7, b=0.3}})
         else
@@ -187,7 +187,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     end
 
     if recipeCount > 0 then
-        local recipeText = string.format(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
+        local recipeText = BurdJournals.formatText(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
         if unclaimedRecipes > 0 then
             table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})
         else
@@ -267,13 +267,13 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     if journalData.timestamp then
         local ageText = formatAge(journalData.timestamp)
         if ageText then
-            local createdLine = string.format(getText("Tooltip_BurdJournals_Created") or "Created: %s", ageText)
+            local createdLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Created") or "Created: %s", ageText)
             table.insert(lines, {text = createdLine, color = {r=0.6, g=0.6, b=0.6}})
         end
     elseif journalData.lastUpdated then
         local ageText = formatAge(journalData.lastUpdated)
         if ageText then
-            local updatedLine = string.format(getText("Tooltip_BurdJournals_LastUpdated") or "Last Updated: %s", ageText)
+            local updatedLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_LastUpdated") or "Last Updated: %s", ageText)
             table.insert(lines, {text = updatedLine, color = {r=0.6, g=0.6, b=0.6}})
         end
     end

@@ -9,7 +9,7 @@ export const REPO_CONFIG = {
     branch: 'master',
     translationPaths: {
         build42: 'Contents/mods/BurdSurvivalJournals/42/media/lua/shared/Translate',
-        build41: 'Contents/mods/BurdSurvivalJournals/common/media/lua/shared/Translate'
+        build4215: 'Contents/mods/BurdSurvivalJournals/42.15/media/lua/shared/Translate'
     }
 };
 
@@ -60,7 +60,7 @@ export const MOD_FOLDER_NAME = 'BurdSurvivalJournals';
 // Export ZIP structure paths
 export const EXPORT_PATHS = {
     build42: `Contents/mods/${MOD_FOLDER_NAME}/42/media/lua/shared/Translate`,
-    build41: `Contents/mods/${MOD_FOLDER_NAME}/common/media/lua/shared/Translate`
+    build4215: `Contents/mods/${MOD_FOLDER_NAME}/42.15/media/lua/shared/Translate`
 };
 
 // Debounce delay for auto-save (ms)

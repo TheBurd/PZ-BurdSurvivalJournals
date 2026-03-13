@@ -3,9 +3,106 @@
  * Handles exporting translations in various formats
  */
 
-import { CATEGORIES, EXPORT_PATHS, MOD_FOLDER_NAME, TOOL_VERSION } from './config.js';
+import { CATEGORIES, EXPORT_PATHS, TOOL_VERSION } from './config.js';
 import { generateLuaFile, categorizeTranslations, getCategoryFromKey, extractPlaceholders } from './lua-parser.js';
 import { getEnglishBaseline, getCurrentLanguage, getCurrentTranslations } from './translation-manager.js';
+
+function convertToJsonPlaceholderSyntax(value) {
+    if (!value) return '';
+
+    let nextIndex = 0;
+    const existingMatches = [...value.matchAll(/%(\d+)(?:\$[sSdDiIfF])?/g)];
+    for (const match of existingMatches) {
+        const index = Number.parseInt(match[1], 10);
+        if (Number.isFinite(index) && index > nextIndex) {
+            nextIndex = index;
+        }
+    }
+
+    let result = '';
+    for (let i = 0; i < value.length; i++) {
+        const currentChar = value[i];
+        if (currentChar !== '%') {
+            result += currentChar;
+            continue;
+        }
+
+        const nextChar = value[i + 1];
+        if (!nextChar) {
+            result += currentChar;
+            continue;
+        }
+
+        if (nextChar === '%') {
+            result += '%%';
+            i++;
+            continue;
+        }
+
+        if (/\d/.test(nextChar)) {
+            let j = i + 1;
+            let digits = '';
+            while (j < value.length && /\d/.test(value[j])) {
+                digits += value[j];
+                j++;
+            }
+
+            if (value[j] === '$' && /[sSdDiIfF]/.test(value[j + 1] || '')) {
+                result += `%${digits}`;
+                i = j + 1;
+                continue;
+            }
+
+            result += `%${digits}`;
+            i = j - 1;
+            continue;
+        }
+
+        if (/[sSdDiIfF]/.test(nextChar)) {
+            nextIndex++;
+            result += `%${nextIndex}`;
+            i++;
+            continue;
+        }
+
+        result += currentChar;
+    }
+
+    return result;
+}
+
+function generateJsonCategoryFile(category, translations) {
+    const categorized = categorizeTranslations(translations);
+    const categoryTranslations = categorized[category] || {};
+
+    const englishBaseline = getEnglishBaseline();
+    const englishCategorized = categorizeTranslations(englishBaseline);
+    const englishReference = englishCategorized[category] || {};
+
+    const orderedKeys = [];
+    const seen = new Set();
+
+    for (const key of Object.keys(englishReference)) {
+        if (key in categoryTranslations && !seen.has(key)) {
+            orderedKeys.push(key);
+            seen.add(key);
+        }
+    }
+
+    for (const key of Object.keys(categoryTranslations)) {
+        if (!seen.has(key)) {
+            orderedKeys.push(key);
+            seen.add(key);
+        }
+    }
+
+    const output = {};
+    for (const key of orderedKeys) {
+        output[key] = convertToJsonPlaceholderSyntax(categoryTranslations[key]);
+    }
+
+    return JSON.stringify(output, null, 4) + '\n';
+}
 
 /**
  * Generate Lua file content for a category
@@ -42,6 +139,16 @@ export function generateAllCategoryFiles(langCode, translations) {
         const filename = `${category}_${langCode}.txt`;
         const content = generateCategoryFile(category, langCode, translations);
         files[filename] = content;
+    }
+
+    return files;
+}
+
+export function generateAllCategoryJsonFiles(translations) {
+    const files = {};
+
+    for (const category of CATEGORIES) {
+        files[`${category}.json`] = generateJsonCategoryFile(category, translations);
     }
 
     return files;
@@ -113,18 +220,19 @@ export async function generateModReadyZip(langCode, translations = null) {
     }
 
     const zip = new JSZip();
-    const files = generateAllCategoryFiles(langCode, translations);
+    const legacyFiles = generateAllCategoryFiles(langCode, translations);
+    const jsonFiles = generateAllCategoryJsonFiles(translations);
 
     // Add files for Build 42
     const build42Path = `${EXPORT_PATHS.build42}/${langCode}`;
-    for (const [filename, content] of Object.entries(files)) {
+    for (const [filename, content] of Object.entries(legacyFiles)) {
         zip.file(`${build42Path}/${filename}`, content);
     }
 
-    // Add files for Build 41 (common)
-    const build41Path = `${EXPORT_PATHS.build41}/${langCode}`;
-    for (const [filename, content] of Object.entries(files)) {
-        zip.file(`${build41Path}/${filename}`, content);
+    // Add files for Build 42.15+
+    const build4215Path = `${EXPORT_PATHS.build4215}/${langCode}`;
+    for (const [filename, content] of Object.entries(jsonFiles)) {
+        zip.file(`${build4215Path}/${filename}`, content);
     }
 
     // Add a README
@@ -176,13 +284,13 @@ Option A - Workshop Mod (Recommended):
   Steam/steamapps/workshop/content/108600/[mod-id]/
 
 Option B - Local Mod:
-  %UserProfile%/Zomboid/mods/BurdSurvivalJournals42/
+  %UserProfile%/Zomboid/mods/BurdSurvivalJournals/
 
 FOLDER STRUCTURE:
 -----------------
 This ZIP contains translations for both:
-- Build 42+ (42/ folder)
-- Build 41 (common/ folder)
+- Build 42.0 through 42.14 (42/ legacy txt files)
+- Build 42.15+ (42.15/ generated json files)
 
 CONTRIBUTING:
 -------------

@@ -2219,7 +2219,7 @@ local function cursePanic(player)
             "UI_BurdJournals_CursedMsgPanicHorde",
             "Ambush! A wave of panic grips you as %d dead answer the broken seal."
         )
-        message = string.format(template, spawned)
+        message = BurdJournals.formatText(template, spawned)
     else
         message = getCursedServerText("UI_BurdJournals_CursedMsgPanic", "Ambush! A wave of panic grips you.")
     end
@@ -2803,7 +2803,7 @@ function BurdJournals.Server.validateSkillPayload(skills, player, useBaselineOve
             -- SERVER-SIDE VALIDATION: Get actual player XP, don't trust client values
             local perk = BurdJournals.getPerkByName(skillName)
             if perk then
-                local actualXP = player:getXp():getXP(perk)
+                local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                 local actualLevel = player:getPerkLevel(perk)
 
                 -- Apply baseline if enabled (Only Record Earned Progress)
@@ -4594,7 +4594,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
                 local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
                 if perk then
                     sampledSkills = sampledSkills + 1
-                    local actualXP = player:getXp():getXP(perk)
+                    local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.Server.getSkillBaselineForPlayer(player, skillName)) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
                     if isLikelyAbsoluteSkillEntryForBaseline(storedXP, earnedXP, actualXP) then
@@ -4739,7 +4739,7 @@ function BurdJournals.Server.handleRecordProgress(player, args)
             then
                 local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
                 if perk then
-                    local actualXP = player:getXp():getXP(perk)
+                    local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.Server.getSkillBaselineForPlayer(player, skillName)) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
                     if isLikelyAbsoluteSkillEntryForBaseline(existingXP, earnedXP, actualXP)
@@ -5093,7 +5093,7 @@ function BurdJournals.Server.handleLearnSkills(player, args)
             -- For "set" mode, we need to calculate the difference
             local perk = BurdJournals.getPerkByName(skillName)
             if perk then
-                local currentXP = player:getXp():getXP(perk)
+                local currentXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                 if targetXP > currentXP then
                     local xpToAdd = targetXP - currentXP
                     local applied, method = BurdJournals.Server.applyXPWithFallback(player, perk, xpToAdd, {
@@ -5306,7 +5306,7 @@ function BurdJournals.Server.handleClaimSkill(player, args)
         -- For "set" mode (absolute XP), cap at recorded value to prevent over-grant
         -- Player should end up with AT MOST the recorded XP, not more
         if not useAddMode then
-            local currentXP = player:getXp():getXP(perk)
+            local currentXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
             local currentLevel = player:getPerkLevel(perk)
             BurdJournals.debugPrint("  - currentXP: " .. tostring(currentXP))
             BurdJournals.debugPrint("  - currentLevel: " .. tostring(currentLevel))
@@ -9965,7 +9965,7 @@ local function normalizeDebugJournalXPMode(data, targetPlayer)
                 local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
                 if perk then
                     sampledSkills = sampledSkills + 1
-                    local actualXP = targetPlayer:getXp():getXP(perk)
+                    local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(targetPlayer, perk, skillName) or targetPlayer:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.Server.getSkillBaselineForPlayer(targetPlayer, skillName)) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
                     if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then

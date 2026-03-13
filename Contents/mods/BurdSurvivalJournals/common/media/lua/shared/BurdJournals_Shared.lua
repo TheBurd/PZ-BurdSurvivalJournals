@@ -8,6 +8,8 @@ local _safePairs = rawget(_G, "pairs") or pairs
 local _safeType = rawget(_G, "type") or type
 local _safeTostring = rawget(_G, "tostring") or tostring
 local _safeIpairs = rawget(_G, "ipairs") or ipairs
+local _safeUnpack = rawget(_G, "unpack") or unpack or (table and table.unpack)
+local _nativeStringFormat = string.format
 
 -- Verify captures worked (fallback to direct reference if rawget failed)
 if not _safePcall then _safePcall = pcall end
@@ -764,7 +766,7 @@ function BurdJournals.generateUUID()
     local template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
     local uuid = string.gsub(template, "[xy]", function(c)
         local v = (c == "x") and ZombRand(0, 16) or ZombRand(8, 12)
-        return string.format("%x", v)
+        return BurdJournals.formatText("%x", v)
     end)
     return uuid
 end
@@ -1100,7 +1102,7 @@ function BurdJournals.discoverSkillMetadata(forceRefresh)
         else modCount = modCount + 1 end
     end
     
-    BurdJournals.debugPrint(string.format("[BurdJournals] Discovered %d skills (%d vanilla, %d modded)", 
+    BurdJournals.debugPrint(BurdJournals.formatText("[BurdJournals] Discovered %d skills (%d vanilla, %d modded)", 
         vanillaCount + modCount, vanillaCount, modCount))
     
     BurdJournals._cachedSkillMetadata = metadata
@@ -1180,7 +1182,7 @@ function BurdJournals.extractSkillMetadata(perk, vanillaSkillSet)
     
     -- Log modded skills for debugging
     if not data.isVanilla then
-        BurdJournals.debugPrint(string.format("[BurdJournals] Found modded skill: %s (%s) in category %s", 
+        BurdJournals.debugPrint(BurdJournals.formatText("[BurdJournals] Found modded skill: %s (%s) in category %s", 
             data.id, data.displayName, data.category or "Unknown"))
     end
     
@@ -1362,7 +1364,7 @@ function BurdJournals.discoverTraitMetadata(forceRefresh)
         if not data.isVanilla then modCount = modCount + 1 end
     end
     
-    BurdJournals.debugPrint(string.format("[BurdJournals] Discovered %d traits (%d positive, %d negative, %d modded)", 
+    BurdJournals.debugPrint(BurdJournals.formatText("[BurdJournals] Discovered %d traits (%d positive, %d negative, %d modded)", 
         posCount + negCount, posCount, negCount, modCount))
     
     BurdJournals._cachedTraitMetadata = metadata
@@ -1435,7 +1437,7 @@ function BurdJournals.extractTraitMetadata(trait, knownPositive, knownNegative)
     
     -- Log modded traits
     if not data.isVanilla then
-        BurdJournals.debugPrint(string.format("[BurdJournals] Found modded trait: %s (%s) cost=%d", 
+        BurdJournals.debugPrint(BurdJournals.formatText("[BurdJournals] Found modded trait: %s (%s) cost=%d", 
             data.id, data.displayName, data.cost))
     end
     
@@ -2347,13 +2349,13 @@ function BurdJournals.debugDumpSkills()
         -- Print vanilla skills
         for _, s in ipairs(catData.vanilla) do
             local passive = s.isPassive and " [PASSIVE]" or ""
-            print(string.format("  [OK] %s -> \"%s\"%s", s.id, s.displayName, passive))
+            print(BurdJournals.formatText("  [OK] %s -> \"%s\"%s", s.id, s.displayName, passive))
         end
         
         -- Print modded skills with [MOD] prefix
         for _, s in ipairs(catData.modded) do
             local passive = s.isPassive and " [PASSIVE]" or ""
-            print(string.format("  [MOD] %s -> \"%s\"%s", s.id, s.displayName, passive))
+            print(BurdJournals.formatText("  [MOD] %s -> \"%s\"%s", s.id, s.displayName, passive))
         end
         print("")
     end
@@ -2407,16 +2409,16 @@ function BurdJournals.debugDumpTraitMetadata()
     print("=== POSITIVE TRAITS ===")
     for _, t in ipairs(positive) do
         local mod = t.isVanilla and "" or " [MOD]"
-        local cost = t.cost ~= 0 and string.format(" (cost: %d)", t.cost) or ""
-        print(string.format("  %s -> \"%s\"%s%s", t.id, t.displayName, cost, mod))
+        local cost = t.cost ~= 0 and BurdJournals.formatText(" (cost: %d)", t.cost) or ""
+        print(BurdJournals.formatText("  %s -> \"%s\"%s%s", t.id, t.displayName, cost, mod))
     end
     print("")
     
     print("=== NEGATIVE TRAITS ===")
     for _, t in ipairs(negative) do
         local mod = t.isVanilla and "" or " [MOD]"
-        local cost = t.cost ~= 0 and string.format(" (cost: %d)", t.cost) or ""
-        print(string.format("  %s -> \"%s\"%s%s", t.id, t.displayName, cost, mod))
+        local cost = t.cost ~= 0 and BurdJournals.formatText(" (cost: %d)", t.cost) or ""
+        print(BurdJournals.formatText("  %s -> \"%s\"%s%s", t.id, t.displayName, cost, mod))
     end
     print("")
 
@@ -2459,13 +2461,13 @@ BurdJournals.RECORDABLE_STATS = {
             if days > 0 then
                 local daysHoursText = getText("UI_BurdJournals_StatDaysHours")
                 if daysHoursText and daysHoursText ~= "UI_BurdJournals_StatDaysHours" then
-                    return string.format(daysHoursText, days, hours)
+                    return BurdJournals.formatText(daysHoursText, days, hours)
                 end
                 return days .. " days, " .. hours .. " hours"
             end
             local hoursText = getText("UI_BurdJournals_StatHours")
             if hoursText and hoursText ~= "UI_BurdJournals_StatHours" then
-                return string.format(hoursText, hours)
+                return BurdJournals.formatText(hoursText, hours)
             end
             return hours .. " hours"
         end,
@@ -4543,6 +4545,38 @@ function BurdJournals.getSkillLevelFromXP(xp, skillName)
     return level
 end
 
+-- Normalize live perk XP into the cumulative totals expected by journal storage.
+-- Some engine paths appear to expose XP progress within the current level instead
+-- of the cumulative total; when that happens, rebuild the total from the current
+-- level threshold plus the in-level progress.
+function BurdJournals.getPlayerSkillTotalXP(player, perk, skillName)
+    if not player or not perk or not player.getXp then
+        return 0
+    end
+
+    local xpObj = player:getXp()
+    if not (xpObj and xpObj.getXP) then
+        return 0
+    end
+
+    local rawXP = math.max(0, tonumber(xpObj:getXP(perk)) or 0)
+    local level = 0
+    if player.getPerkLevel then
+        level = math.max(0, tonumber(player:getPerkLevel(perk)) or 0)
+    end
+
+    if level <= 0 then
+        return rawXP
+    end
+
+    local thresholdXP = BurdJournals.getXPThresholdForLevel and BurdJournals.getXPThresholdForLevel(skillName, level) or 0
+    if thresholdXP > 0 and rawXP < thresholdXP then
+        return thresholdXP + rawXP
+    end
+
+    return rawXP
+end
+
 -- Normalize legacy skill entries where level/xp are inconsistent (older patches).
 -- For non-baseline journals (SET mode), if XP is missing/too low for the declared
 -- level, upgrade XP to the exact threshold for that level.
@@ -5301,7 +5335,7 @@ function BurdJournals.runSelfTests()
     end
 
     results.ok = results.failed == 0
-    results.summary = string.format("BSJ self-tests: %d passed, %d failed, %d skipped", results.passed, results.failed, results.skipped)
+    results.summary = BurdJournals.formatText("BSJ self-tests: %d passed, %d failed, %d skipped", results.passed, results.failed, results.skipped)
 
     print("[BSJ SELFTEST] " .. results.summary)
     if results.failed > 0 then
@@ -5328,7 +5362,7 @@ function BurdJournals.debugPrintXPThresholds(skillName)
     print("--------------------------------------------------------------------------------")
     for i = 0, 10 do
         local xp = perk:getTotalXpForLevel(i)
-        print(string.format("  Level %2d: %s XP", i, tostring(xp)))
+        print(BurdJournals.formatText("  Level %2d: %s XP", i, tostring(xp)))
     end
     print("================================================================================")
 end
@@ -6356,6 +6390,50 @@ function BurdJournals.safeGetText(key, fallback)
     return result or fallback
 end
 
+function BurdJournals.formatText(template, ...)
+    if template == nil then
+        return ""
+    end
+
+    local formatText = tostring(template)
+    local args = {...}
+
+    if string.find(formatText, "%%[1-9]%d*%$[%a]") or string.find(formatText, "%%[1-9]%d*") then
+        local escapedPercentToken = "\1BSJ_ESCAPED_PERCENT\1"
+        local normalized = string.gsub(formatText, "%%%%", escapedPercentToken)
+        normalized = string.gsub(normalized, "%%(%d+)%$[%a]", function(indexText)
+            local index = tonumber(indexText)
+            local value = index and args[index] or nil
+            if value == nil then
+                return "%" .. indexText
+            end
+            return tostring(value)
+        end)
+        normalized = string.gsub(normalized, "%%(%d+)", function(indexText)
+            local index = tonumber(indexText)
+            local value = index and args[index] or nil
+            if value == nil then
+                return "%" .. indexText
+            end
+            return tostring(value)
+        end)
+        normalized = string.gsub(normalized, escapedPercentToken, "%%")
+        return normalized
+    end
+
+    local ok, result = safePcall(function()
+        if _safeUnpack then
+            return _nativeStringFormat(formatText, _safeUnpack(args))
+        end
+        return _nativeStringFormat(formatText)
+    end)
+    if ok and result ~= nil then
+        return result
+    end
+
+    return formatText
+end
+
 -- Helper function to resolve profession name from stored data
 -- Handles cases where server stored translation key instead of translated text
 function BurdJournals.resolveProfessionName(data)
@@ -6470,7 +6548,7 @@ function BurdJournals.computeLocalizedName(item)
                 table.insert(suffixParts, professionName)
             else
                 local prevFormat = BurdJournals.safeGetText("UI_BurdJournals_PreviousProfession", "Previous %s")
-                table.insert(suffixParts, string.format(prevFormat, professionName))
+                table.insert(suffixParts, BurdJournals.formatText(prevFormat, professionName))
             end
         elseif author then
 
@@ -6584,7 +6662,7 @@ end
 
 function BurdJournals.formatXP(xp)
     if xp >= 1000 then
-        return string.format("%.1fk", xp / 1000)
+        return BurdJournals.formatText("%.1fk", xp / 1000)
     end
     return tostring(math.floor(xp))
 end
@@ -7418,7 +7496,7 @@ end
 
 function BurdJournals.getJournalRuntimeShardKeyForUUID(uuid)
     local idx = computeRuntimeShardIndex(uuid)
-    return string.format("%s%02X", BurdJournals.RUNTIME_MODDATA_PREFIX, idx)
+    return BurdJournals.formatText("%s%02X", BurdJournals.RUNTIME_MODDATA_PREFIX, idx)
 end
 
 local function getOrCreateRuntimeShard(shardKey)
@@ -8619,7 +8697,7 @@ end
 function BurdJournals.formatTimestamp(hours)
     local days = math.floor(hours / 24)
     local remainingHours = math.floor(hours % 24)
-    return string.format("Day %d, Hour %d", days, remainingHours)
+    return BurdJournals.formatText("Day %d, Hour %d", days, remainingHours)
 end
 
 BurdJournals.RANDOM_FIRST_NAMES = {
@@ -10133,7 +10211,7 @@ function BurdJournals.dumpAllTraits()
             defName = traitTypeToName(defType) or "?"
         end
 
-        print(string.format("[BurdJournals] [%d] Label='%s' Name='%s' Type=%s", i, defLabel, defName, tostring(defType)))
+        print(BurdJournals.formatText("[BurdJournals] [%d] Label='%s' Name='%s' Type=%s", i, defLabel, defName, tostring(defType)))
     end
 
 end
@@ -10417,7 +10495,7 @@ local function applyTraitBoostLevelDelta(player, perkObj, skillName, levelDelta,
 
     if applied and BurdJournals.debugPrint then
         local finalLevel = (player.getPerkLevel and tonumber(player:getPerkLevel(perkObj))) or targetLevel or currentLevel
-        BurdJournals.debugPrint(string.format(
+        BurdJournals.debugPrint(BurdJournals.formatText(
             "[BurdJournals] Trait '%s' adjusted %s by %+d levels (%0.2f XP, L%d -> L%d)",
             tostring(traitId or "?"),
             tostring(skillName or "?"),

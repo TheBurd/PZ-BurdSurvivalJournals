@@ -749,7 +749,7 @@ export async function buildSubmissionPreflight(options = {}) {
                 filename,
                 paths: {
                     build42: `${REPO_CONFIG.translationPaths.build42}/${langCode}/${filename}`,
-                    build41: `${REPO_CONFIG.translationPaths.build41}/${langCode}/${filename}`
+                    build4215: `${REPO_CONFIG.translationPaths.build4215}/${langCode}/${category}.json`
                 }
             });
         }

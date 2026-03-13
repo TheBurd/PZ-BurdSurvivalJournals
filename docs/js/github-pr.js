@@ -5,7 +5,7 @@
 
 import { REPO_CONFIG, CATEGORIES } from './config.js';
 import { getGitHubToken, isGitHubAuthenticated, getGitHubUser } from './github-auth.js';
-import { generateCategoryFile } from './export-utils.js';
+import { generateAllCategoryJsonFiles, generateCategoryFile } from './export-utils.js';
 import { getEnglishBaseline, getOriginalRepoTranslations } from './translation-manager.js';
 import { categorizeTranslations } from './lua-parser.js';
 
@@ -270,6 +270,7 @@ export async function submitTranslationsPR(translationsByLang, options = {}) {
         const changedTranslations = translationsByLang[langCode];
         const mergedTranslations = buildMergedTranslations(changedTranslations, fullTranslationsByLang, langCode);
         const categorizedMerged = categorizeTranslations(mergedTranslations);
+        const jsonFiles = generateAllCategoryJsonFiles(mergedTranslations);
 
         for (const category of CATEGORIES) {
             const categoryTranslations = categorizedMerged[category] || {};
@@ -310,32 +311,34 @@ export async function submitTranslationsPR(translationsByLang, options = {}) {
             }
             processedTargets++;
 
-            // Build 41
-            const build41Path = `${REPO_CONFIG.translationPaths.build41}/${langCode}/${filename}`;
+            // Build 42.15+
+            const jsonFilename = `${category}.json`;
+            const jsonContent = jsonFiles[jsonFilename];
+            const build4215Path = `${REPO_CONFIG.translationPaths.build4215}/${langCode}/${jsonFilename}`;
             if (onProgress) {
                 onProgress(
-                    `Processing ${filename} (Build 41)...`,
+                    `Processing ${jsonFilename} (Build 42.15)...`,
                     30 + (processedTargets / totalTargets) * 60
                 );
             }
 
-            const existing41 = await getFileInfo(user.login, REPO_CONFIG.repo, build41Path, branchName);
-            const existingContent41 = decodeGitHubFileContent(existing41);
-            const shouldCommit41 = !existing41 || existingContent41 !== outputContent;
-            filesPlanned.push(build41Path);
+            const existing4215 = await getFileInfo(user.login, REPO_CONFIG.repo, build4215Path, branchName);
+            const existingContent4215 = decodeGitHubFileContent(existing4215);
+            const shouldCommit4215 = !existing4215 || existingContent4215 !== jsonContent;
+            filesPlanned.push(build4215Path);
 
-            if (shouldCommit41) {
+            if (shouldCommit4215) {
                 await createOrUpdateFile(
                     user.login,
                     REPO_CONFIG.repo,
-                    build41Path,
-                    outputContent,
+                    build4215Path,
+                    jsonContent,
                     `Add/Update ${langCode} ${category} translation`,
                     branchName,
-                    existing41?.sha || null
+                    existing4215?.sha || null
                 );
                 filesCommitted++;
-                filesCommittedList.push(build41Path);
+                filesCommittedList.push(build4215Path);
             }
             processedTargets++;
         }
@@ -427,7 +430,7 @@ export function generatePRBody(languages, translationsByLang, langNames = {}) {
         body += '\n';
     }
 
-    body += '> **Note:** Complete category files are regenerated and submitted for both Build 42 and Build 41.\n\n';
+    body += '> **Note:** Complete category files are regenerated and submitted for both Build 42 (legacy txt) and Build 42.15 (generated json).\n\n';
     body += '---\n';
     body += '*Submitted via [Burd\'s Survival Journals Translation Tool](https://theburd.github.io/PZ-BurdSurvivalJournals/)*\n';
 

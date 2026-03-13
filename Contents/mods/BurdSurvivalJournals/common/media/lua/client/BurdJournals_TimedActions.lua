@@ -453,7 +453,7 @@ function BurdJournals.DisassembleJournalAction:perform()
     end
 
     if #itemsGiven > 0 then
-        local msg = string.format(getText("UI_BurdJournals_Salvaged") or "Salvaged: %s", table.concat(itemsGiven, ", "))
+        local msg = BurdJournals.formatText(getText("UI_BurdJournals_Salvaged") or "Salvaged: %s", table.concat(itemsGiven, ", "))
         if HaloTextHelper and HaloTextHelper.addTextWithArrow then
             HaloTextHelper.addTextWithArrow(player, msg, true, HaloTextHelper.getColorGreen())
         else

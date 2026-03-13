@@ -370,7 +370,7 @@ function BurdJournals.UI.DebugPanel:confirmDiscardBaselineDraft(actionText, onCo
     local actionLabel = tostring(actionText or "continue")
     local promptTemplate = getText("UI_BurdJournals_BaselineDraftUnsavedPrompt")
         or "You have unsaved changes that could be lost. Are you sure you want to %s?"
-    local promptText = string.format(promptTemplate, actionLabel)
+    local promptText = BurdJournals.formatText(promptTemplate, actionLabel)
 
     if ISModalDialog then
         self.baselineDraftPromptOpen = true
@@ -1892,7 +1892,7 @@ function BurdJournals.UI.DebugPanel.drawSkillItem(self, y, item, alt)
     if data.selected then
         local lvlColor = isFocused and {1, 1, 0.5} or {0.5, 0.8, 1}
         local extraXP = data.extraXP or 0
-        local lvlText = string.format(getText("UI_BurdJournals_LevelFormat"), data.level or 0)
+        local lvlText = BurdJournals.formatText(getText("UI_BurdJournals_LevelFormat"), data.level or 0)
         if extraXP > 0 then
             lvlText = lvlText .. "+" .. extraXP
         end
@@ -3141,7 +3141,7 @@ function BurdJournals.UI.DebugPanel.drawCharacterSkillItem(self, y, item, alt)
     self:drawText(data.displayName, nameX, y + 4, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
     
     -- Level text
-    local levelText = string.format(getText("UI_BurdJournals_LevelFormat"), tonumber(data.level) or 0)
+    local levelText = BurdJournals.formatText(getText("UI_BurdJournals_LevelFormat"), tonumber(data.level) or 0)
     local levelX = 140
     self:drawText(levelText, levelX, y + 4, 0.8, 0.8, 0.5, 1, UIFont.Small)
     
@@ -3878,7 +3878,7 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                 if perk and perk:getParent() ~= Perks.None then
                     local level = targetPlayer:getPerkLevel(perk)
                     local xpVal = xp:getXP(perk)
-                    BurdJournals.debugPrint(string.format("  %s: Level %d (XP: %.0f)", tostring(perk), level, xpVal))
+                    BurdJournals.debugPrint(BurdJournals.formatText("  %s: Level %d (XP: %.0f)", tostring(perk), level, xpVal))
                 end
             end
         end
@@ -5151,7 +5151,7 @@ function BurdJournals.UI.DebugPanel.drawBaselineSkillItemReadOnly(self, y, item,
     self:drawText(data.displayName, textX, y + 4, 0.9, 0.9, 0.9, 1, UIFont.Small)
     
     -- Current level
-    local levelText = string.format(getText("UI_BurdJournals_LevelFormat"), tonumber(data.currentLevel) or 0)
+    local levelText = BurdJournals.formatText(getText("UI_BurdJournals_LevelFormat"), tonumber(data.currentLevel) or 0)
     self:drawText(levelText, 150, y + 4, 0.5, 0.8, 0.6, 1, UIFont.Small)
     
     -- Squares showing current level + partial progress
@@ -5256,7 +5256,7 @@ function BurdJournals.UI.DebugPanel.drawBaselineSkillItem(self, y, item, alt)
     self:drawText(data.displayName, textX, y + 4, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
     
     -- Current level indicator
-    local currentText = string.format(getText("UI_BurdJournals_LevelFormat"), tonumber(data.currentLevel) or 0)
+    local currentText = BurdJournals.formatText(getText("UI_BurdJournals_LevelFormat"), tonumber(data.currentLevel) or 0)
     self:drawText(currentText, 130, y + 4, 0.5, 0.7, 0.9, 1, UIFont.Small)
     
     -- Interactive squares for baseline (10 squares) with progress visualization
@@ -5533,15 +5533,15 @@ local function formatSnapshotSummaryLine(snapshot)
     local source = tostring(snapshot and snapshot.source or "?")
     local who = tostring(snapshot and (snapshot.characterName or snapshot.username or snapshot.characterId) or "Unknown")
     local captured = tonumber(snapshot and snapshot.capturedAtHours) or 0
-    local stamp = string.format("%.1fh", captured)
+    local stamp = BurdJournals.formatText("%.1fh", captured)
     local realStamp = snapshotGetRealStamp(snapshot, "captured")
     if snapshot and snapshot.endedReason and snapshot.endedReason ~= "" then
         source = source .. "/" .. tostring(snapshot.endedReason)
     end
     if realStamp and realStamp ~= "" then
-        return string.format("[%s] %s @ %s | RL %s (%dS %dM %dT %dR)", source, who, stamp, realStamp, skills, media, traits, recipes)
+        return BurdJournals.formatText("[%s] %s @ %s | RL %s (%dS %dM %dT %dR)", source, who, stamp, realStamp, skills, media, traits, recipes)
     end
-    return string.format("[%s] %s @ %s (%dS %dM %dT %dR)", source, who, stamp, skills, media, traits, recipes)
+    return BurdJournals.formatText("[%s] %s @ %s (%dS %dM %dT %dR)", source, who, stamp, skills, media, traits, recipes)
 end
 
 local function trimSnapshotText(text, maxChars)
@@ -5659,8 +5659,8 @@ function BurdJournals.UI.DebugPanel.drawBaselineSnapshotItem(self, y, item, alt)
     local mode = data.isProtected and "protected" or "unlocked"
     local ended = data.endedReason and (" | ended:" .. tostring(data.endedReason)) or ""
     local realStamp = snapshotGetRealStamp(data, "captured")
-    local line1 = string.format("[%s] %s @ %.1fh", source, who, captured)
-    local line2 = string.format(
+    local line1 = BurdJournals.formatText("[%s] %s @ %.1fh", source, who, captured)
+    local line2 = BurdJournals.formatText(
         "%dS %dM %dT %dR | %s%s",
         tonumber(counts.skills) or 0,
         tonumber(counts.mediaSkills) or 0,
@@ -5896,12 +5896,12 @@ local function snapshotBuildMediaDiffRows(liveData, snapshotData, labelFn)
         local hasNew = snapshotData[key] ~= nil and newXP > 0
         local label = (labelFn and labelFn(key) or key)
         if hasNew and (not hasLive) then
-            rows[#rows + 1] = {kind = "added", text = string.format("%s (+%d XP)", label, newXP)}
+            rows[#rows + 1] = {kind = "added", text = BurdJournals.formatText("%s (+%d XP)", label, newXP)}
         elseif hasLive and (not hasNew) then
-            rows[#rows + 1] = {kind = "removed", text = string.format("%s (-%d XP)", label, liveXP)}
+            rows[#rows + 1] = {kind = "removed", text = BurdJournals.formatText("%s (-%d XP)", label, liveXP)}
         elseif hasLive and hasNew and liveXP ~= newXP then
             local delta = newXP - liveXP
-            rows[#rows + 1] = {kind = "changed", text = string.format("%s (%+d XP)", label, delta)}
+            rows[#rows + 1] = {kind = "changed", text = BurdJournals.formatText("%s (%+d XP)", label, delta)}
         end
     end
     return rows
@@ -6040,7 +6040,7 @@ function BurdJournals.UI.DebugPanel:applySnapshotLiveBaselinePayload(payloadArgs
     local counts = payloadArgs and payloadArgs.counts or {}
     local currentLabel = getText("UI_BurdJournals_SnapshotCurrentBaselineLabel") or "Current baseline comparison: server payload loaded."
     if panel.snapshotLiveBaselinePayload then
-        currentLabel = string.format(
+        currentLabel = BurdJournals.formatText(
             "%s %dS %dM %dT %dR",
             getText("UI_BurdJournals_SnapshotCurrentBaselineLoaded") or "Current baseline:",
             tonumber(counts.skills) or 0,
@@ -6086,7 +6086,7 @@ function BurdJournals.UI.DebugPanel.drawSnapshotSkillPreviewItem(self, y, item, 
     end
 
     self:drawText(name, 6, y + 3, 0.9, 0.9, 0.95, 1, UIFont.Small)
-    self:drawText(string.format("Now Lv %d -> After Lv %d | XP %+d", liveLevel, newLevel, deltaXP), 6, y + 16, deltaColor[1], deltaColor[2], deltaColor[3], 1, UIFont.Small)
+    self:drawText(BurdJournals.formatText("Now Lv %d -> After Lv %d | XP %+d", liveLevel, newLevel, deltaXP), 6, y + 16, deltaColor[1], deltaColor[2], deltaColor[3], 1, UIFont.Small)
 
     local squareSize = 10
     local squareGap = 2
@@ -6179,8 +6179,8 @@ function BurdJournals.UI.DebugPanel:refreshBaselineSnapshotDetail()
     if #compactId > 48 then
         compactId = string.sub(compactId, 1, 20) .. "..." .. string.sub(compactId, -16)
     end
-    local header = string.format("%s | %s | %s", compactId, source, who)
-    local detail = string.format(
+    local header = BurdJournals.formatText("%s | %s | %s", compactId, source, who)
+    local detail = BurdJournals.formatText(
         "%dS %dM %dT %dR | %s%s",
         tonumber(counts.skills) or 0,
         tonumber(counts.mediaSkills) or 0,
@@ -6214,9 +6214,9 @@ function BurdJournals.UI.DebugPanel:applyBaselineSnapshotList(payload)
         local shown = #panel.snapshotItems
         local total = tonumber(payload and payload.total) or shown
         if total > shown then
-            panel.snapshotListSummaryLabel:setName(string.format("Snapshots: %d/%d", shown, total))
+            panel.snapshotListSummaryLabel:setName(BurdJournals.formatText("Snapshots: %d/%d", shown, total))
         else
-            panel.snapshotListSummaryLabel:setName(string.format("Snapshots: %d", shown))
+            panel.snapshotListSummaryLabel:setName(BurdJournals.formatText("Snapshots: %d", shown))
         end
     end
     panel.snapshotList:clear()
@@ -6312,7 +6312,7 @@ function BurdJournals.UI.DebugPanel:runSnapshotCommand(cmd)
         local targetName = targetPlayer:getUsername() or "Unknown"
         local promptFormat = getText("UI_BurdJournals_BaselineSnapshotConfirmApply")
             or "Apply snapshot %s to %s? Protected restore keeps debug lock until manually unlocked."
-        local promptText = string.format(promptFormat, snapshotId, targetName)
+        local promptText = BurdJournals.formatText(promptFormat, snapshotId, targetName)
         if ISModalDialog then
             local selfRef = self
             local callback = function(_target, buttonObj)
@@ -6364,7 +6364,7 @@ function BurdJournals.UI.DebugPanel:runSnapshotCommand(cmd)
         local snapshotId = tostring(selectedSnapshot.snapshotId)
         local promptFormat = getText("UI_BurdJournals_BaselineSnapshotConfirmDelete")
             or "Delete snapshot %s permanently?"
-        local promptText = string.format(promptFormat, snapshotId)
+        local promptText = BurdJournals.formatText(promptFormat, snapshotId)
         if ISModalDialog then
             local selfRef = self
             local callback = function(_target, buttonObj)
@@ -6523,7 +6523,7 @@ function BurdJournals.UI.DebugPanel:onBaselineCmd(button)
             if changedAny then
                 if self.markBaselineDraftDirty then
                     self:markBaselineDraftDirty(
-                        string.format(
+                        BurdJournals.formatText(
                             "Draft cleared: %d skills and %d traits reset. Save to apply.",
                             changedSkillCount,
                             changedTraitCount
@@ -6576,7 +6576,7 @@ function BurdJournals.UI.DebugPanel:onBaselineCmd(button)
             if changedAny then
                 if self.markBaselineDraftDirty then
                     self:markBaselineDraftDirty(
-                        string.format(
+                        BurdJournals.formatText(
                             "Draft set to current skills: %d skill baselines updated. Save to apply.",
                             changedCount
                         )
@@ -8780,7 +8780,7 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
     local skillCount = journalData.skills and BurdJournals.countTable(journalData.skills) or 0
     local traitCount = journalData.traits and BurdJournals.countTable(journalData.traits) or 0
     local recipeCount = journalData.recipes and BurdJournals.countTable(journalData.recipes) or 0
-    local infoText = string.format("%s %d | %s %d | %s %d", getText("UI_BurdJournals_TabSkills"), skillCount, getText("UI_BurdJournals_TabTraits"), traitCount, getText("UI_BurdJournals_TabRecipes"), recipeCount)
+    local infoText = BurdJournals.formatText("%s %d | %s %d | %s %d", getText("UI_BurdJournals_TabSkills"), skillCount, getText("UI_BurdJournals_TabTraits"), traitCount, getText("UI_BurdJournals_TabRecipes"), recipeCount)
     if journalData.isPlayerCreated then
         infoText = infoText .. " [Player Journal]"
     end
@@ -9003,7 +9003,7 @@ function BurdJournals.UI.DebugPanel.drawJournalSkillItem(self, y, item, alt)
     self:drawText(displayName, 8, y + 4, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
 
     -- Level text
-    local levelText = string.format(getText("UI_BurdJournals_LevelFormat"), tonumber(currentLevel) or 0)
+    local levelText = BurdJournals.formatText(getText("UI_BurdJournals_LevelFormat"), tonumber(currentLevel) or 0)
     self:drawText(levelText, 140, y + 4, 0.8, 0.8, 0.5, 1, UIFont.Small)
 
     -- Level squares (0-10) - show current level + partial progress

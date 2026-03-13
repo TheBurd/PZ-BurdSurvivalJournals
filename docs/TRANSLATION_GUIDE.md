@@ -8,11 +8,11 @@ This guide explains how to contribute translations using the updated localizatio
 
 - Make translation contributions safe and predictable.
 - Support in-browser translation, offline template work, and LLM-assisted workflows.
-- Keep Build 42 and Build 41 translation outputs in sync.
+- Keep the legacy Build 42 source files and generated Build 42.15 JSON output in sync.
 
 ## Translation Scope
 
-Current English baseline key counts:
+Current legacy `42` English baseline key counts:
 
 - `ContextMenu_EN.txt`: 30
 - `IG_UI_EN.txt`: 60
@@ -23,10 +23,17 @@ Current English baseline key counts:
 - `UI_EN.txt`: 358
 - Total: `713` keys
 
-Important naming note:
+Repo layout for translations:
 
-- Item names are maintained in `ItemName_XX.txt`.
-- Legacy `Items_XX.txt` files may still exist in repo history and are treated as read-only diagnostics, not active translation targets.
+- `Contents/mods/BurdSurvivalJournals/42/.../Translate`
+  - editable source of truth
+  - legacy `Category_XX.txt` files
+- `Contents/mods/BurdSurvivalJournals/42.15/.../Translate`
+  - generated output
+  - JSON `Category.json` files
+- `Contents/mods/BurdSurvivalJournals/common`
+  - shared Lua/code only
+  - no translation assets
 
 ## Format Rules (All Workflows)
 
@@ -37,6 +44,7 @@ Important naming note:
 4. Keep Lua table names aligned to file names:
    - `UI_FR.txt` must contain `UI_FR = { ... }`
 5. Avoid deleting existing translated values unless intentionally clearing them.
+6. For Build 42.15 JSON output, numbered placeholders like `%1` must be preserved exactly.
 
 ## Workflow A: Translate In Browser (Recommended)
 
@@ -54,7 +62,7 @@ Submission preflight now includes:
 
 - Language selection toggles
 - Changed key counts
-- Planned file targets for both Build 42 and Build 41
+- Planned file targets for both `42` and `42.15`
 
 ## Workflow B: Translate With Local Template
 
@@ -112,7 +120,7 @@ Safety behavior:
 
 Exports available:
 
-- Mod-ready ZIP (Build 42 + Build 41 paths)
+- Mod-ready ZIP (`42` legacy txt + `42.15` generated json)
 - JSON backup
 - Template (`bsj-template-v1`)
 - LLM Pack (`bsj-template-v1` + extra metadata)
@@ -151,7 +159,8 @@ If you find malformed source entries:
 
 Primary contribution path:
 
-- Use the tool and submit via in-tool GitHub PR flow.
+- Use the tool to edit the legacy `42` translations.
+- Submit via in-tool GitHub PR flow, which writes both `42/*.txt` and `42.15/*.json`.
 
 Fallback path:
 
