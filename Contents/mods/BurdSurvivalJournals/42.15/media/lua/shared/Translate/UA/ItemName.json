@@ -1,10 +1,10 @@
 {
-    "ItemName_BurdJournals.BlankSurvivalJournal": "Порожній Журнал Виживання",
-    "ItemName_BurdJournals.BlankSurvivalJournal_Worn": "Потріпаний Порожній Журнал",
-    "ItemName_BurdJournals.BlankSurvivalJournal_Bloody": "Закривавлений Порожній Журнал",
-    "ItemName_BurdJournals.FilledSurvivalJournal": "Заповнений Журнал Виживання",
-    "ItemName_BurdJournals.FilledSurvivalJournal_Worn": "Потріпаний Журнал Виживання",
-    "ItemName_BurdJournals.FilledSurvivalJournal_Bloody": "Закривавлений Журнал Виживання",
-    "ItemName_BurdJournals.CursedJournal": "Проклятий Журнал",
-    "ItemName_BurdJournals.YuletideJournal": "Різдвяний Журнал"
+    "ItemName_BurdJournals.BlankSurvivalJournal": "Порожній Щоденник Виживання",
+    "ItemName_BurdJournals.BlankSurvivalJournal_Worn": "Потріпаний Порожній Щоденник",
+    "ItemName_BurdJournals.BlankSurvivalJournal_Bloody": "Закривавлений Порожній Щоденник",
+    "ItemName_BurdJournals.FilledSurvivalJournal": "Заповнений Щоденник Виживання",
+    "ItemName_BurdJournals.FilledSurvivalJournal_Worn": "Потріпаний Щоденник Виживання",
+    "ItemName_BurdJournals.FilledSurvivalJournal_Bloody": "Закривавлений Щоденник Виживання",
+    "ItemName_BurdJournals.CursedJournal": "Проклятий Щоденник",
+    "ItemName_BurdJournals.YuletideJournal": "Різдвяний Щоденник"
 }
