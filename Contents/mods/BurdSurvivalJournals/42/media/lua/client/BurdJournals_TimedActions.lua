@@ -1,8 +1,19 @@
 
 require "TimedActions/ISBaseTimedAction"
+require "TimedActions/ISTimedActionQueue"
 require "BurdJournals_Shared"
 
 BurdJournals = BurdJournals or {}
+
+local bsjFallbackPrint = print
+
+local function bsjWriteLogLine(msg)
+    if BurdJournals and BurdJournals.writeLogLine then
+        BurdJournals.writeLogLine(msg)
+    elseif bsjFallbackPrint then
+        bsjFallbackPrint(msg)
+    end
+end
 
 local function getTooDarkMessage()
     local message = (getText and getText("ContextMenu_TooDark")) or "Too dark to read."
@@ -26,6 +37,285 @@ local function isJournalLightAllowed(player)
         return true, nil
     end
     return BurdJournals.canUseJournalInCurrentLight(player)
+end
+
+local function getLootJournalActionText(key, fallback)
+    local text = getText and getText(key) or nil
+    if text and text ~= "" and text ~= key then
+        return text
+    end
+    return fallback
+end
+
+local function showLootJournalActionMessage(player, key, fallback, isError)
+    if not player then
+        return
+    end
+
+    local message = getLootJournalActionText(key, fallback)
+    if HaloTextHelper then
+        if isError and HaloTextHelper.addBadText then
+            HaloTextHelper.addBadText(player, message)
+            return
+        end
+        if not isError and HaloTextHelper.addGoodText then
+            HaloTextHelper.addGoodText(player, message)
+            return
+        end
+    end
+
+    if player.Say then
+        player:Say(message)
+    end
+end
+
+local function normalizeLootJournalLookupRequest(journalRequest)
+    local request = nil
+    if type(journalRequest) == "table" then
+        request = {
+            journalId = tonumber(journalRequest.journalId),
+            journalUUID = type(journalRequest.journalUUID) == "string" and journalRequest.journalUUID ~= ""
+                and journalRequest.journalUUID
+                or nil,
+            journalFingerprint = type(journalRequest.journalFingerprint) == "string" and journalRequest.journalFingerprint ~= ""
+                and journalRequest.journalFingerprint
+                or nil,
+        }
+    else
+        request = {
+            journalId = tonumber(journalRequest),
+            journalUUID = nil,
+            journalFingerprint = nil,
+        }
+    end
+
+    if not request.journalId and not request.journalUUID and not request.journalFingerprint then
+        return nil
+    end
+    return request
+end
+
+local function resolveLootJournalLookup(player, journalRequest)
+    local request = normalizeLootJournalLookupRequest(journalRequest)
+    if not player or not request then
+        return nil, nil
+    end
+
+    local journal = nil
+    if request.journalId and BurdJournals.findItemById then
+        journal = BurdJournals.findItemById(player, request.journalId)
+    end
+    if not journal and request.journalUUID and BurdJournals.findJournalByUUID then
+        journal = BurdJournals.findJournalByUUID(player, request.journalUUID)
+    end
+    if not journal and request.journalFingerprint and BurdJournals.findJournalByLookupFingerprint then
+        journal = BurdJournals.findJournalByLookupFingerprint(player, request.journalFingerprint)
+    end
+
+    return journal, request
+end
+
+local function stopTrackedLootJournalSounds(character, trackedSounds)
+    if not character or type(trackedSounds) ~= "table" then
+        return
+    end
+
+    local emitter = character.getEmitter and character:getEmitter() or nil
+    if not emitter or not emitter.stopSound then
+        return
+    end
+
+    for i = 1, #trackedSounds do
+        local soundId = trackedSounds[i]
+        if soundId and soundId ~= 0 then
+            pcall(function()
+                emitter:stopSound(soundId)
+            end)
+        end
+    end
+end
+
+local function tryPlayLootJournalActionSound(character, soundCandidates, trackedSounds)
+    if not character or type(soundCandidates) ~= "table" then
+        return false
+    end
+
+    local emitter = character.getEmitter and character:getEmitter() or nil
+    if not emitter or not emitter.playSound then
+        return false
+    end
+
+    for i = 1, #soundCandidates do
+        local soundName = soundCandidates[i]
+        if type(soundName) == "string" and soundName ~= "" then
+            local ok, soundId = pcall(function()
+                return emitter:playSound(soundName)
+            end)
+            if ok and (soundId == nil or soundId ~= 0) then
+                if type(trackedSounds) == "table" and soundId and soundId ~= 0 then
+                    trackedSounds[#trackedSounds + 1] = soundId
+                end
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+local LOOT_JOURNAL_OPEN_PROFILES = {
+    cursed = {
+        duration = 5.5,
+        command = "openCursedJournal",
+        jobTextKey = "UI_BurdJournals_CursedOpeningAction",
+        jobTextFallback = "Breaking seal...",
+        startTextKey = "UI_BurdJournals_CursedOpeningStart",
+        startTextFallback = "You begin breaking the seal...",
+        cancelTextKey = "UI_BurdJournals_CursedOpeningCancelled",
+        cancelTextFallback = "You stop before the seal breaks.",
+        startSounds = {"PaperRip", "RummageInInventory", "PageTurn"},
+        progressSounds = {
+            {progress = 0.38, candidates = {"BreakMetalItem", "RepairWithWrench", "BuildMetalStructureSmallScrap", "BuildMetalStructureSmall", "PaperRip", "RummageInInventory"}},
+            {progress = 0.76, candidates = {"PageTurn", "PaperRip", "RummageInInventory"}},
+        },
+    },
+    yuletide = {
+        duration = 5.5,
+        command = "openYuletideJournal",
+        jobTextKey = "UI_BurdJournals_YuletideUnwrapAction",
+        jobTextFallback = "Unwrapping gift...",
+        startTextKey = "UI_BurdJournals_YuletideUnwrapStart",
+        startTextFallback = "You start unwrapping the gift...",
+        cancelTextKey = "UI_BurdJournals_YuletideUnwrapCancelled",
+        cancelTextFallback = "You stop unwrapping the gift.",
+        startSounds = {"RummageInInventory", "PaperRip", "PageTurn"},
+        progressSounds = {
+            {progress = 0.36, candidates = {"PaperRip", "PageTurn", "RummageInInventory"}},
+            {progress = 0.74, candidates = {"PageTurn", "PaperRip", "RummageInInventory"}},
+        },
+    },
+}
+
+local function getLootJournalOpenProfile(actionKind)
+    return LOOT_JOURNAL_OPEN_PROFILES[actionKind == "yuletide" and "yuletide" or "cursed"]
+end
+
+BurdJournals.OpenLootJournalAction = ISBaseTimedAction:derive("BurdJournals_OpenLootJournalAction")
+
+function BurdJournals.OpenLootJournalAction:new(character, journalRequest, actionKind)
+    local profile = getLootJournalOpenProfile(actionKind)
+    local o = ISBaseTimedAction.new(self, character)
+
+    o.journalRequest = normalizeLootJournalLookupRequest(journalRequest)
+    o.actionKind = actionKind == "yuletide" and "yuletide" or "cursed"
+    o.stopOnWalk = true
+    o.stopOnRun = true
+    o.stopOnAim = true
+    o.maxTime = math.floor((tonumber(profile.duration) or 5.5) * 33)
+    o._progressSoundIndex = 0
+    o._trackedSounds = {}
+    o._completed = false
+
+    return o
+end
+
+function BurdJournals.OpenLootJournalAction:isValid()
+    local player = self.character
+    if not player then
+        return false
+    end
+
+    local journal = resolveLootJournalLookup(player, self.journalRequest)
+    return journal ~= nil
+end
+
+function BurdJournals.OpenLootJournalAction:update()
+    self.character:setMetabolicTarget(Metabolics.LightWork)
+
+    local profile = getLootJournalOpenProfile(self.actionKind)
+    if self.setJobType then
+        self:setJobType(getLootJournalActionText(profile.jobTextKey, profile.jobTextFallback))
+    end
+
+    local progress = self.getJobDelta and self:getJobDelta() or 0
+    local stages = profile.progressSounds or {}
+    while stages[self._progressSoundIndex + 1] and progress >= (stages[self._progressSoundIndex + 1].progress or 1) do
+        self._progressSoundIndex = self._progressSoundIndex + 1
+        tryPlayLootJournalActionSound(self.character, stages[self._progressSoundIndex].candidates, self._trackedSounds)
+    end
+end
+
+function BurdJournals.OpenLootJournalAction:start()
+    local profile = getLootJournalOpenProfile(self.actionKind)
+    local journal = resolveLootJournalLookup(self.character, self.journalRequest)
+
+    self:setActionAnim("Loot")
+    self.character:reportEvent("EventCrafting")
+    if journal and self.setOverrideHandModels then
+        self:setOverrideHandModels(nil, journal)
+    end
+
+    showLootJournalActionMessage(self.character, profile.startTextKey, profile.startTextFallback, false)
+    tryPlayLootJournalActionSound(self.character, profile.startSounds, self._trackedSounds)
+end
+
+function BurdJournals.OpenLootJournalAction:stop()
+    local profile = getLootJournalOpenProfile(self.actionKind)
+
+    stopTrackedLootJournalSounds(self.character, self._trackedSounds)
+    self._trackedSounds = {}
+
+    if not self._completed then
+        showLootJournalActionMessage(self.character, profile.cancelTextKey, profile.cancelTextFallback, true)
+    end
+
+    ISBaseTimedAction.stop(self)
+end
+
+function BurdJournals.OpenLootJournalAction:perform()
+    local player = self.character
+    local profile = getLootJournalOpenProfile(self.actionKind)
+    local request = normalizeLootJournalLookupRequest(self.journalRequest)
+
+    stopTrackedLootJournalSounds(player, self._trackedSounds)
+    self._trackedSounds = {}
+    self._completed = true
+
+    if player and request and sendClientCommand then
+        sendClientCommand(player, "BurdJournals", profile.command, {
+            journalId = request.journalId,
+            journalUUID = request.journalUUID,
+            journalFingerprint = request.journalFingerprint,
+            confirm = true,
+        })
+    end
+
+    ISBaseTimedAction.perform(self)
+end
+
+function BurdJournals.queueLootJournalOpenAction(player, journalRequest, actionKind)
+    if not player or not ISTimedActionQueue or not ISTimedActionQueue.add then
+        return false
+    end
+
+    local journal, request = resolveLootJournalLookup(player, journalRequest)
+    if not journal or not request then
+        return false
+    end
+
+    local action = BurdJournals.OpenLootJournalAction:new(player, request, actionKind)
+    if not action or not action.character then
+        return false
+    end
+    if action.isValid then
+        local okValid, isValid = pcall(action.isValid, action)
+        if not okValid or isValid ~= true then
+            return false
+        end
+    end
+
+    ISTimedActionQueue.add(action)
+    return true
 end
 
 BurdJournals.ConvertToCleanAction = ISBaseTimedAction:derive("BurdJournals_ConvertToCleanAction")
@@ -321,7 +611,7 @@ function BurdJournals.BindJournalAction:perform()
     local config = BurdJournals.ContextMenu and BurdJournals.ContextMenu.getCraftingConfig and
                    BurdJournals.ContextMenu.getCraftingConfig(self.actionType)
     if not config then
-        print("[BurdJournals] ERROR: Invalid action type in BindJournalAction: " .. tostring(self.actionType))
+        bsjWriteLogLine("[BurdJournals] ERROR: Invalid action type in BindJournalAction: " .. tostring(self.actionType))
         ISBaseTimedAction.perform(self)
         return
     end
@@ -379,6 +669,9 @@ end
 
 BurdJournals.DisassembleJournalAction = ISBaseTimedAction:derive("BurdJournals_DisassembleJournalAction")
 
+local DISASSEMBLE_JOURNAL_TIME_SECONDS = 30.0
+local DISASSEMBLE_JOURNAL_OUTPUT = "Base.SheetPaper2:2|Base.LeatherStrips:1"
+
 function BurdJournals.DisassembleJournalAction:new(character, journal)
     local o = ISBaseTimedAction.new(self, character)
 
@@ -387,7 +680,7 @@ function BurdJournals.DisassembleJournalAction:new(character, journal)
     o.stopOnRun = true
     o.stopOnAim = true
 
-    local disassembleTime = BurdJournals.getSandboxOption("CraftingTime_DisassembleJournal") or 30.0
+    local disassembleTime = DISASSEMBLE_JOURNAL_TIME_SECONDS
     o.maxTime = math.floor(disassembleTime * 33)
 
     return o
@@ -437,7 +730,7 @@ function BurdJournals.DisassembleJournalAction:perform()
 
     inventory:Remove(journal)
 
-    local outputStr = BurdJournals.getSandboxOption("Recipe_DisassembleOutput") or "Base.SheetPaper2:2|Base.LeatherStrips:1"
+    local outputStr = DISASSEMBLE_JOURNAL_OUTPUT
     local outputs = BurdJournals.ContextMenu and BurdJournals.ContextMenu.parseRecipeString and
                     BurdJournals.ContextMenu.parseRecipeString(outputStr) or {}
 
@@ -681,6 +974,7 @@ function BurdJournals.LearnFromJournalAction:perform()
     if canUseBatchServerCommand then
         local batchPayload = {
             journalId = self.journal and self.journal:getID() or nil,
+            journalUUID = journalData and journalData.uuid or nil,
             claimSessionId = claimSessionId,
             skills = {},
             traits = {},
@@ -1167,16 +1461,34 @@ function BurdJournals.RecordToJournalAction:perform()
 
     local journalId = self.journal and self.journal:getID() or nil
     local journalType = self.journal and self.journal:getFullType() or "nil"
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or {
+            journalId = journalId,
+            journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+            journalFingerprint = nil,
+            journalData = nil,
+        }
     BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:perform() - journalId=" .. tostring(journalId) .. ", type=" .. tostring(journalType) .. ", skills=" .. skillCount .. ", traits=" .. traitCount .. ", recipes=" .. recipeCount)
 
-    if not journalId then
-        print("[BurdJournals] ERROR: Cannot send recordProgress - journal ID is nil!")
+    if not lookupArgs.journalId and not lookupArgs.journalUUID and not lookupArgs.journalFingerprint then
+        bsjWriteLogLine("[BurdJournals] ERROR: Cannot send recordProgress - journal lookup is missing!")
         ISBaseTimedAction.perform(self)
         return
     end
 
+    local writingToolPayload = BurdJournals.buildWritingToolCommandPayload
+        and BurdJournals.buildWritingToolCommandPayload(player)
+        or nil
+
     sendClientCommand(player, "BurdJournals", "recordProgress", {
-        journalId = journalId,
+        journalId = lookupArgs.journalId,
+        journalUUID = lookupArgs.journalUUID,
+        journalFingerprint = lookupArgs.journalFingerprint,
+        journalData = lookupArgs.journalData,
+        writingToolId = writingToolPayload and writingToolPayload.writingToolId or nil,
+        writingToolFullType = writingToolPayload and writingToolPayload.writingToolFullType or nil,
         skills = skillsToRecord,
         traits = traitsToRecord,
         stats = statsToRecord,

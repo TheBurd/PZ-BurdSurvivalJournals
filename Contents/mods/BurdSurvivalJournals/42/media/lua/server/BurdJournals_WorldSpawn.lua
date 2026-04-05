@@ -92,7 +92,7 @@ local function getContainerKey(container)
     local parent = container:getParent()
     if parent and parent:getSquare() then
         local sq = parent:getSquare()
-        return BurdJournals.formatText("%d_%d_%d_%s", sq:getX(), sq:getY(), sq:getZ(), tostring(container:getType()))
+        return string.format("%d_%d_%d_%s", sq:getX(), sq:getY(), sq:getZ(), tostring(container:getType()))
     end
     return nil
 end
@@ -298,8 +298,10 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
     local traits = nil
     local traitChance = BurdJournals.getSandboxOption("WornJournalTraitChance") or 0
     if traitChance > 0 and ZombRand(100) < traitChance then
-        local traitList = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or 
-                          BurdJournals.GRANTABLE_TRAITS or {}
+        local traitList = (BurdJournals.getGrantableTraitsForJournal
+            and BurdJournals.getGrantableTraitsForJournal({ isWorn = true, isPlayerCreated = false }))
+            or (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits())
+            or BurdJournals.GRANTABLE_TRAITS or {}
         local listSize = #traitList
         
         if listSize > 0 then
@@ -367,6 +369,8 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
         profession = professionId,
         professionName = professionName,
         flavorKey = flavorKey,
+        loreNoteTemplateVersion = 1,
+        loreNoteTemplateFamily = "worn",
         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
         skills = skills,
         recipes = recipes,
@@ -409,10 +413,13 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
 
     local traits = {}
     if ZombRand(100) < traitChance then
-        local grantableTraits = (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or BurdJournals.GRANTABLE_TRAITS or {}
+        local grantableTraits = (BurdJournals.getGrantableTraitsForJournal
+            and BurdJournals.getGrantableTraitsForJournal({ isBloody = true, wasFromBloody = true, isPlayerCreated = false }))
+            or (BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits())
+            or BurdJournals.GRANTABLE_TRAITS or {}
         if #grantableTraits > 0 then
 
-            local maxTraits = SandboxVars.BurdJournals and SandboxVars.BurdJournals.BloodyJournalMaxTraits or 2
+            local maxTraits = tonumber(BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("BloodyJournalMaxTraits")) or 2
             local numTraits = ZombRand(1, maxTraits + 1)
             local availableTraits = {}
             for _, t in ipairs(grantableTraits) do
@@ -475,6 +482,8 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
         profession = professionId,
         professionName = professionName,
         flavorKey = flavorKey,
+        loreNoteTemplateVersion = 1,
+        loreNoteTemplateFamily = "bloody",
         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
         skills = skills,
         traits = traits,
@@ -550,6 +559,14 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
 
         end
 
+    elseif fullType == (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal") then
+        if BurdJournals.Server and BurdJournals.Server.generateYuletideJournalProfile then
+            journalData = BurdJournals.Server.generateYuletideJournalProfile({
+                timestamp = getGameTime():getWorldAgeHours(),
+                yuletideState = BurdJournals.YULETIDE_STATE_WRAPPED,
+            })
+        end
+
     elseif fullType == "BurdJournals.FilledSurvivalJournal" then
 
         local survivorName = BurdJournals.WorldSpawn.SurvivorNames[ZombRand(#BurdJournals.WorldSpawn.SurvivorNames) + 1]
@@ -582,6 +599,8 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
             profession = professionId,
             professionName = professionName,
             flavorKey = flavorKey,
+            loreNoteTemplateVersion = 1,
+            loreNoteTemplateFamily = "worn",
             timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
             skills = skills,
             traits = {},
@@ -661,6 +680,11 @@ local function isUninitializedJournal(item)
         local modData = item:getModData()
 
         return not modData.BurdJournals or not modData.BurdJournals.skills
+    end
+
+    if fullType == (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal") then
+        local modData = item:getModData()
+        return not modData.BurdJournals or modData.BurdJournals.isYuletideJournal ~= true
     end
 
     if fullType:find("BlankSurvivalJournal") then

@@ -5,10 +5,20 @@ require "ISUI/ISButton"
 require "ISUI/ISLabel"
 require "ISUI/ISScrollingListBox"
 require "ISUI/ISModalDialog"
-require "TimedActions/ISInventoryTransferUtil"
+pcall(require, "TimedActions/ISInventoryTransferUtil")
 
 BurdJournals = BurdJournals or {}
 BurdJournals.UI = BurdJournals.UI or {}
+
+local bsjFallbackPrint = print
+
+local function bsjWriteLogLine(msg)
+    if BurdJournals and BurdJournals.writeLogLine then
+        BurdJournals.writeLogLine(msg)
+    elseif bsjFallbackPrint then
+        bsjFallbackPrint(msg)
+    end
+end
 
 BurdJournals.Sounds = {
 
@@ -25,6 +35,569 @@ BurdJournals.Sounds = {
 
 local traitDefCache = {}
 
+-- Centralized reward theme palettes. Rendering code uses self.palette.fieldName
+-- instead of if/elseif branching. To add a new journal type, define a new entry
+-- here Ã¢â‚¬â€ all downstream rendering picks it up automatically via paletteColor().
+-- The "worn" palette is the universal fallback; other palettes only need to
+-- override fields that differ from worn.
+local REWARD_PALETTES = {}
+
+REWARD_PALETTES.worn = {
+    -- Animated backdrop (only used when a theme opts into panel animation)
+    panelBg          = nil,
+    stripePrimary    = nil,
+    stripeSecondary  = nil,
+    panelBorder      = nil,
+
+    -- Header
+    headerColor      = {r=0.22, g=0.20, b=0.15},
+    headerAccent     = {r=0.4, g=0.35, b=0.25},
+    headerTypeText   = {r=1, g=0.9, b=0.85},
+
+    -- Tabs
+    tabActive        = {r=0.35, g=0.28, b=0.18},
+    tabInactive      = {r=0.18, g=0.15, b=0.12},
+    tabAccent        = {r=0.5, g=0.4, b=0.25},
+    forgetTab        = {
+        active       = {r=0.52, g=0.20, b=0.56},
+        inactive     = {r=0.22, g=0.10, b=0.26},
+        accent       = {r=0.93, g=0.60, b=0.28},
+        textInactive = {r=0.88, g=0.72, b=0.84},
+    },
+
+    -- Rarity badge
+    rarityBadgeBg    = {r=0.5, g=0.4, b=0.2, a=0.8},
+
+    -- Author box
+    authorBoxBg      = {r=0.12, g=0.11, b=0.10},
+    authorBoxBorder  = {r=0.30, g=0.28, b=0.25},
+    authorText       = {r=0.80, g=0.85, b=0.90},
+    flavorText       = {r=0.5, g=0.55, b=0.6},
+    claimsText       = {r=0.82, g=0.84, b=0.66},
+    summaryText      = {r=0.7, g=0.75, b=0.8},
+    itemHeaderBg     = {r=0.15, g=0.14, b=0.12, a=0.4},
+    itemHeaderText   = {r=0.9, g=0.8, b=0.6},
+    itemHeaderCount  = {r=0.5, g=0.5, b=0.45},
+    cardText         = {r=0.95, g=0.9, b=0.85},
+
+    -- Cards
+    cardBg           = {r=0.14, g=0.13, b=0.11},
+    cardBorder       = {r=0.35, g=0.32, b=0.28},
+    cardAccent       = {r=0.5, g=0.6, b=0.4},
+
+    -- Level squares (normal unclaimed)
+    levelFilled      = {r=0.5, g=0.6, b=0.4},
+    levelProgress    = {r=0.35, g=0.42, b=0.28},
+    levelEmpty       = {r=0.1, g=0.1, b=0.1},
+    -- Level squares (queued single)
+    levelQueuedFilled   = {r=0.4, g=0.5, b=0.6},
+    levelQueuedProgress = {r=0.25, g=0.3, b=0.4},
+    levelQueuedEmpty    = {r=0.1, g=0.1, b=0.1},
+    -- Level squares (absorb-all)
+    levelAbsorbFilled   = {r=0.45, g=0.55, b=0.35},
+    levelAbsorbProgress = {r=0.3, g=0.38, b=0.22},
+    levelAbsorbEmpty    = {r=0.1, g=0.1, b=0.1},
+
+    -- Progress bar
+    progressBarFill  = {r=0.35, g=0.55, b=0.25, a=0.85},
+
+    -- Footer
+    footerDivider    = {r=0.25, g=0.35, b=0.45, a=0.3},
+
+    -- Buttons
+    dissolveBtnBg     = {r=0.4, g=0.15, b=0.15, a=0.8},
+    dissolveBtnBorder = {r=0.6, g=0.3, b=0.3, a=1},
+    dissolveBtnText   = {r=1, g=0.9, b=0.9, a=1},
+    closeBtnBg        = {r=0.15, g=0.13, b=0.12, a=0.8},
+    closeBtnBorder    = {r=0.4, g=0.35, b=0.3, a=1},
+    closeBtnText      = {r=0.9, g=0.85, b=0.8, a=1},
+    absorbTabBtnBg     = {r=0.18, g=0.22, b=0.14, a=0.8},
+    absorbTabBtnBorder = {r=0.35, g=0.45, b=0.3, a=1},
+    absorbAllBtnBg     = {r=0.2, g=0.25, b=0.15, a=0.8},
+    absorbAllBtnBorder = {r=0.4, g=0.5, b=0.3, a=1},
+    feedbackInfo      = {r=0.5, g=0.7, b=0.8},
+    feedbackWarn      = {r=0.9, g=0.7, b=0.3},
+    feedbackSuccess   = {r=0.6, g=0.8, b=0.5},
+    feedbackMuted     = {r=0.7, g=0.7, b=0.5},
+    feedbackError     = {r=0.9, g=0.4, b=0.4},
+}
+
+REWARD_PALETTES.worn_bloody = {
+    headerColor      = {r=0.30, g=0.22, b=0.12},
+    headerAccent     = {r=0.5, g=0.35, b=0.2},
+    headerTypeText   = {r=1, g=0.9, b=0.85},
+}
+
+REWARD_PALETTES.bloody = {
+    headerColor      = {r=0.45, g=0.08, b=0.08},
+    headerAccent     = {r=0.7, g=0.15, b=0.15},
+    headerTypeText   = {r=1, g=0.9, b=0.85},
+
+    tabActive        = {r=0.5, g=0.15, b=0.15},
+    tabInactive      = {r=0.2, g=0.1, b=0.1},
+    tabAccent        = {r=0.7, g=0.2, b=0.2},
+
+    rarityBadgeBg    = {r=0.6, g=0.15, b=0.15, a=0.8},
+
+    cardBg           = {r=0.18, g=0.12, b=0.12},
+    cardBorder       = {r=0.4, g=0.2, b=0.2},
+    cardAccent       = {r=0.7, g=0.25, b=0.25},
+
+    levelFilled      = {r=0.65, g=0.25, b=0.25},
+    levelProgress    = {r=0.45, g=0.18, b=0.18},
+
+    progressBarFill  = {r=0.6, g=0.2, b=0.15, a=0.85},
+
+    absorbTabBtnBg     = {r=0.3, g=0.1, b=0.1, a=0.8},
+    absorbTabBtnBorder = {r=0.5, g=0.2, b=0.2, a=1},
+    absorbAllBtnBg     = {r=0.35, g=0.1, b=0.1, a=0.8},
+    absorbAllBtnBorder = {r=0.6, g=0.2, b=0.2, a=1},
+}
+
+REWARD_PALETTES.cursed = {
+    panelBg          = {r=0.09, g=0.06, b=0.05, a=0.78},
+    panelBorder      = {r=0.62, g=0.22, b=0.15, a=0.42},
+    smokePrimary     = {r=0.30, g=0.09, b=0.08, a=0.14},
+    smokeSecondary   = {r=0.16, g=0.08, b=0.06, a=0.10},
+    emberPrimary     = {r=0.90, g=0.42, b=0.18, a=0.18},
+    emberSecondary   = {r=0.78, g=0.20, b=0.16, a=0.12},
+    sigil            = {r=0.88, g=0.45, b=0.23, a=0.14},
+    scrollSpeed      = 10,
+
+    headerColor      = {r=0.20, g=0.10, b=0.09},
+    headerAccent     = {r=0.72, g=0.24, b=0.16},
+    headerTypeText   = {r=0.95, g=0.89, b=0.82},
+
+    tabActive        = {r=0.35, g=0.14, b=0.10},
+    tabInactive      = {r=0.15, g=0.09, b=0.08},
+    tabAccent        = {r=0.72, g=0.24, b=0.16},
+    forgetTab        = {
+        active       = {r=0.34, g=0.20, b=0.08},
+        inactive     = {r=0.18, g=0.11, b=0.08},
+        accent       = {r=0.88, g=0.62, b=0.22},
+        textInactive = {r=0.95, g=0.84, b=0.62},
+    },
+
+    rarityBadgeBg    = {r=0.46, g=0.18, b=0.12, a=0.84},
+
+    authorBoxBg      = {r=0.13, g=0.08, b=0.07},
+    authorBoxBorder  = {r=0.40, g=0.18, b=0.13},
+    authorText       = {r=0.92, g=0.86, b=0.82},
+    flavorText       = {r=0.82, g=0.58, b=0.46},
+    claimsText       = {r=0.94, g=0.74, b=0.42},
+    summaryText      = {r=0.84, g=0.68, b=0.54},
+    itemHeaderBg     = {r=0.16, g=0.09, b=0.08, a=0.46},
+    itemHeaderText   = {r=0.96, g=0.90, b=0.84},
+    itemHeaderCount  = {r=0.92, g=0.70, b=0.40},
+    cardText         = {r=0.95, g=0.89, b=0.84},
+
+    cardBg           = {r=0.15, g=0.09, b=0.08},
+    cardBorder       = {r=0.46, g=0.20, b=0.14},
+    cardAccent       = {r=0.74, g=0.28, b=0.18},
+
+    levelFilled      = {r=0.84, g=0.52, b=0.24},
+    levelProgress    = {r=0.52, g=0.24, b=0.16},
+    levelEmpty       = {r=0.08, g=0.08, b=0.08},
+    levelQueuedFilled   = {r=0.82, g=0.58, b=0.28},
+    levelQueuedProgress = {r=0.48, g=0.26, b=0.16},
+    levelQueuedEmpty    = {r=0.08, g=0.08, b=0.08},
+    levelAbsorbFilled   = {r=0.88, g=0.66, b=0.30},
+    levelAbsorbProgress = {r=0.56, g=0.28, b=0.18},
+    levelAbsorbEmpty    = {r=0.08, g=0.08, b=0.08},
+
+    progressBarFill  = {r=0.72, g=0.28, b=0.16, a=0.88},
+
+    absorbTabBtnBg     = {r=0.24, g=0.11, b=0.09, a=0.88},
+    absorbTabBtnBorder = {r=0.60, g=0.24, b=0.16, a=1},
+    absorbAllBtnBg     = {r=0.34, g=0.14, b=0.10, a=0.88},
+    absorbAllBtnBorder = {r=0.74, g=0.28, b=0.18, a=1},
+
+    dissolveBtnBg     = {r=0.45, g=0.14, b=0.12, a=0.84},
+    dissolveBtnBorder = {r=0.72, g=0.28, b=0.22, a=1},
+    dissolveBtnText   = {r=1, g=0.92, b=0.86, a=1},
+    closeBtnBg        = {r=0.16, g=0.10, b=0.09, a=0.84},
+    closeBtnBorder    = {r=0.44, g=0.20, b=0.14, a=1},
+    closeBtnText      = {r=0.92, g=0.86, b=0.82, a=1},
+    feedbackInfo      = {r=0.90, g=0.72, b=0.48},
+    feedbackWarn      = {r=0.94, g=0.74, b=0.42},
+    feedbackSuccess   = {r=0.88, g=0.62, b=0.38},
+    feedbackMuted     = {r=0.70, g=0.60, b=0.52},
+    feedbackError     = {r=0.96, g=0.56, b=0.38},
+}
+
+REWARD_PALETTES.yuletide = {
+    -- Animated backdrop
+    panelBg          = {r=0.94, g=0.95, b=0.91, a=0.74},
+    stripePrimary    = {r=0.78, g=0.19, b=0.16, a=0.12},
+    stripeSecondary  = {r=0.18, g=0.42, b=0.22, a=0.10},
+    panelBorder      = {r=0.74, g=0.18, b=0.15, a=0.50},
+    scrollSpeed      = 12,
+
+    -- Header
+    headerColor      = {r=0.90, g=0.94, b=0.89},
+    headerAccent     = {r=0.74, g=0.18, b=0.15},
+    headerTypeText   = {r=0.18, g=0.32, b=0.18},
+
+    -- Tabs
+    tabActive        = {r=0.20, g=0.42, b=0.22},
+    tabInactive      = {r=0.86, g=0.89, b=0.84},
+    tabAccent        = {r=0.74, g=0.18, b=0.15},
+    forgetTab        = {
+        active       = {r=0.52, g=0.14, b=0.12},
+        inactive     = {r=0.26, g=0.08, b=0.08},
+        accent       = {r=0.74, g=0.18, b=0.15},
+        textInactive = {r=0.92, g=0.78, b=0.72},
+    },
+
+    -- Rarity badge
+    rarityBadgeBg    = {r=0.74, g=0.18, b=0.15, a=0.30},
+
+    -- Author box
+    authorBoxBg      = {r=0.91, g=0.94, b=0.90},
+    authorBoxBorder  = {r=0.28, g=0.50, b=0.28},
+    authorText       = {r=0.22, g=0.30, b=0.22},
+    flavorText       = {r=0.34, g=0.32, b=0.28},
+    claimsText       = {r=0.74, g=0.18, b=0.15},
+    summaryText      = {r=0.24, g=0.27, b=0.24},
+    itemHeaderBg     = {r=0.20, g=0.40, b=0.22, a=0.45},
+    itemHeaderText   = {r=0.98, g=0.95, b=0.90},
+    itemHeaderCount  = {r=0.74, g=0.18, b=0.15},
+    cardText         = {r=0.22, g=0.25, b=0.22},
+
+    -- Cards
+    cardBg           = {r=0.80, g=0.90, b=0.79, a=0.78},
+    cardBorder       = {r=0.56, g=0.22, b=0.20},
+    cardAccent       = {r=0.74, g=0.18, b=0.15},
+
+    -- Level squares (normal unclaimed)
+    levelFilled      = {r=0.82, g=0.78, b=0.30},
+    levelProgress    = {r=0.24, g=0.48, b=0.22},
+    levelEmpty       = {r=0.76, g=0.79, b=0.74},
+    -- Level squares (queued single)
+    levelQueuedFilled   = {r=0.82, g=0.78, b=0.30},
+    levelQueuedProgress = {r=0.18, g=0.36, b=0.16},
+    levelQueuedEmpty    = {r=0.76, g=0.79, b=0.74},
+    -- Level squares (absorb-all)
+    levelAbsorbFilled   = {r=0.48, g=0.72, b=0.32},
+    levelAbsorbProgress = {r=0.18, g=0.36, b=0.16},
+    levelAbsorbEmpty    = {r=0.76, g=0.79, b=0.74},
+
+    -- Progress bar
+    progressBarFill  = {r=0.72, g=0.18, b=0.14, a=0.88},
+
+    -- Footer
+    footerDivider    = {r=0.48, g=0.24, b=0.18, a=0.38},
+
+    -- Buttons
+    dissolveBtnBg     = {r=0.42, g=0.12, b=0.10, a=0.8},
+    dissolveBtnBorder = {r=0.74, g=0.18, b=0.15, a=1},
+    dissolveBtnText   = {r=1, g=0.9, b=0.9, a=1},
+    closeBtnBg        = {r=0.28, g=0.40, b=0.26, a=0.84},
+    closeBtnBorder    = {r=0.74, g=0.18, b=0.15, a=1},
+    closeBtnText      = {r=0.98, g=0.95, b=0.90, a=1},
+    absorbTabBtnBg     = {r=0.20, g=0.43, b=0.21, a=0.88},
+    absorbTabBtnBorder = {r=0.74, g=0.18, b=0.15, a=1},
+    absorbAllBtnBg     = {r=0.62, g=0.18, b=0.16, a=0.88},
+    absorbAllBtnBorder = {r=0.74, g=0.18, b=0.15, a=1},
+    feedbackInfo      = {r=0.24, g=0.45, b=0.24},
+    feedbackWarn      = {r=0.74, g=0.18, b=0.15},
+    feedbackSuccess   = {r=0.24, g=0.45, b=0.24},
+    feedbackMuted     = {r=0.34, g=0.32, b=0.28},
+    feedbackError     = {r=0.74, g=0.18, b=0.15},
+}
+
+local function getRewardPalette(themeKey)
+    return REWARD_PALETTES[themeKey] or REWARD_PALETTES.worn
+end
+
+local function paletteColor(palette, key)
+    return (palette and palette[key]) or REWARD_PALETTES.worn[key]
+end
+
+local function applyPaletteToButton(btn, palette, bgKey, borderKey, textKey)
+    if not btn then return end
+    local bg = paletteColor(palette, bgKey)
+    local bd = paletteColor(palette, borderKey)
+    local tx = paletteColor(palette, textKey)
+    if bg then btn.backgroundColor = {r=bg.r, g=bg.g, b=bg.b, a=bg.a or 0.8} end
+    if bd then btn.borderColor = {r=bd.r, g=bd.g, b=bd.b, a=bd.a or 1} end
+    if tx then btn.textColor = {r=tx.r, g=tx.g, b=tx.b, a=tx.a or 1} end
+end
+
+local isUnwrappedYuletideRewardState
+local getHeaderJournalIconTexture
+
+-- Backward-compat alias: drawAnimatedStripedJournalBackdrop reads panelBg/stripePrimary/etc.
+local YULETIDE_PANEL_THEME = REWARD_PALETTES.yuletide
+local CURSED_PANEL_THEME = REWARD_PALETTES.cursed
+
+local function getAbsorptionRewardThemeState(journal, journalData)
+    local isBloody = BurdJournals.isBloody and BurdJournals.isBloody(journal) or false
+    local hasBloodyOrigin = BurdJournals.hasBloodyOrigin and BurdJournals.hasBloodyOrigin(journal) or false
+    local isYuletideReward = isUnwrappedYuletideRewardState and isUnwrappedYuletideRewardState(journal, journalData) or false
+    local isCursedReward = type(journalData) == "table" and journalData.isCursedReward == true
+    local rewardTheme = isYuletideReward and "yuletide"
+        or (isCursedReward and "cursed")
+        or (isBloody and "bloody")
+        or (hasBloodyOrigin and "worn_bloody")
+        or "worn"
+
+    return {
+        isBloody = isBloody,
+        hasBloodyOrigin = hasBloodyOrigin,
+        isYuletideReward = isYuletideReward,
+        isCursedReward = isCursedReward,
+        rewardTheme = rewardTheme,
+        palette = getRewardPalette(rewardTheme),
+    }
+end
+
+local function getJournalFlavorDisplayText(data, fallbackKey)
+    if type(data) ~= "table" then
+        return getText(fallbackKey)
+    end
+
+    local loreNoteText = data.loreNoteText
+    if type(loreNoteText) == "string" and loreNoteText ~= "" then
+        return loreNoteText
+    end
+
+    local flavorText = data.flavorText
+    if type(flavorText) == "string" and flavorText ~= "" then
+        return flavorText
+    end
+
+    if data.flavorKey then
+        local translated = getText(data.flavorKey)
+        if translated and translated ~= data.flavorKey then
+            return translated
+        end
+    end
+
+    return getText(fallbackKey)
+end
+
+local function buildWrappedTextLayout(font, text, maxWidth)
+    if type(text) ~= "string" or text == "" then
+        return nil
+    end
+
+    local textManager = getTextManager and getTextManager()
+    if not textManager then
+        return nil
+    end
+
+    local width = math.max(80, math.floor(tonumber(maxWidth) or 80))
+    local lines = {}
+    local normalized = tostring(text):gsub("\r\n", "\n"):gsub("\r", "\n")
+
+    for paragraph in (normalized .. "\n"):gmatch("(.-)\n") do
+        if paragraph == "" then
+            if #lines == 0 or lines[#lines] ~= "" then
+                table.insert(lines, "")
+            end
+        else
+            local currentLine = ""
+            for word in paragraph:gmatch("%S+") do
+                local candidate = currentLine == "" and word or (currentLine .. " " .. word)
+                if currentLine ~= "" and textManager:MeasureStringX(font, candidate) > width then
+                    table.insert(lines, currentLine)
+                    currentLine = word
+                else
+                    currentLine = candidate
+                end
+            end
+            if currentLine ~= "" then
+                table.insert(lines, currentLine)
+            end
+        end
+    end
+
+    if #lines == 0 then
+        lines[1] = normalized
+    end
+
+    local lineHeight = math.max(14, textManager:MeasureStringY(font, "Ag"))
+    return {
+        font = font,
+        lines = lines,
+        lineHeight = lineHeight,
+        height = lineHeight * #lines,
+    }
+end
+
+local function drawWrappedTextLayout(target, layout, x, y, color)
+    if not target or not layout or type(layout.lines) ~= "table" then
+        return 0
+    end
+
+    local font = layout.font or UIFont.Small
+    local r = (color and color.r) or 1
+    local g = (color and color.g) or 1
+    local b = (color and color.b) or 1
+    local a = (color and color.a) or 1
+    local lineY = y
+
+    for _, line in ipairs(layout.lines) do
+        target:drawText(line, x, lineY, r, g, b, a, font)
+        lineY = lineY + (layout.lineHeight or 14)
+    end
+
+    return lineY - y
+end
+
+local function refreshAbsorptionAuthorBoxLayout(panel, padding)
+    if not panel or panel.mode ~= "absorb" then
+        return
+    end
+
+    local innerPadding = 10
+    local contentWidth = math.max(80, panel.width - padding * 2 - innerPadding * 2)
+    local authorNameDisplay = panel.authorName or getText("UI_BurdJournals_Unknown")
+    local authorFormat = getText("UI_BurdJournals_FromNotesOf")
+
+    panel.authorBoxInnerPadding = innerPadding
+    panel.authorBoxAuthorText = BurdJournals.formatText(authorFormat, authorNameDisplay)
+    panel.authorTextLayout = buildWrappedTextLayout(UIFont.Small, panel.authorBoxAuthorText, contentWidth)
+    panel.flavorTextLayout = buildWrappedTextLayout(UIFont.Small, panel.flavorText, contentWidth)
+
+    panel.claimsTextDisplay = nil
+    panel.claimsTextLayout = nil
+    if panel.showClaimsLeftBeforeDissolved then
+        local claimsLeft = panel:getLimitedLootClaimsLeft() or 0
+        panel.claimsTextDisplay = BurdJournals.formatText(
+            getText("UI_BurdJournals_ClaimsLeftBeforeDissolved") or "Claims Left Before Dissolved: %d",
+            claimsLeft
+        )
+        panel.claimsTextLayout = buildWrappedTextLayout(UIFont.Small, panel.claimsTextDisplay, contentWidth)
+    end
+
+    local boxPaddingY = 8
+    local sectionSpacing = 4
+    local contentHeight = boxPaddingY * 2
+    if panel.authorTextLayout then
+        contentHeight = contentHeight + panel.authorTextLayout.height
+    end
+    if panel.flavorTextLayout and panel.flavorTextLayout.height > 0 then
+        contentHeight = contentHeight + sectionSpacing + panel.flavorTextLayout.height
+    end
+    if panel.claimsTextLayout and panel.claimsTextLayout.height > 0 then
+        contentHeight = contentHeight + sectionSpacing + panel.claimsTextLayout.height
+    end
+
+    local minHeight = panel.showClaimsLeftBeforeDissolved and 60 or 44
+    panel.authorBoxHeight = math.max(minHeight, contentHeight)
+end
+
+local function applyAbsorptionPresentationState(panel)
+    if not panel or not panel.journal then
+        return nil
+    end
+
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(panel.journal) or nil
+    local state = getAbsorptionRewardThemeState(panel.journal, journalData)
+
+    panel.isBloody = state.isBloody
+    panel.hasBloodyOrigin = state.hasBloodyOrigin
+    panel.isYuletideReward = state.isYuletideReward
+    panel.isCursedReward = state.isCursedReward
+    panel.rewardTheme = state.rewardTheme
+    panel.palette = state.palette
+    panel.headerColor = paletteColor(state.palette, "headerColor")
+    panel.headerAccent = paletteColor(state.palette, "headerAccent")
+
+    if state.isYuletideReward then
+        panel.typeText = getText("UI_BurdJournals_YuletideJournalUnwrapped") or "Yuletide Journal"
+        panel.rarityText = getText("UI_BurdJournals_YuletideRarity") or "Seasonal Gift"
+        panel.flavorText = getJournalFlavorDisplayText(journalData, "UI_BurdJournals_YuletideFlavor")
+    elseif state.isCursedReward then
+        panel.typeText = getText("UI_BurdJournals_CursedJournalHeader")
+        panel.rarityText = getText("UI_BurdJournals_RarityCursed")
+        panel.flavorText = getJournalFlavorDisplayText(journalData, "UI_BurdJournals_CursedFlavor")
+    elseif state.isBloody then
+        panel.typeText = getText("UI_BurdJournals_BloodyJournalHeader")
+        panel.rarityText = getText("UI_BurdJournals_RarityRare")
+        panel.flavorText = getJournalFlavorDisplayText(journalData, "UI_BurdJournals_BloodyFlavor")
+    elseif state.hasBloodyOrigin then
+        panel.typeText = getText("UI_BurdJournals_WornJournalHeader")
+        panel.rarityText = getText("UI_BurdJournals_RarityUncommon")
+        panel.flavorText = getJournalFlavorDisplayText(journalData, "UI_BurdJournals_WornBloodyFlavor")
+    else
+        panel.typeText = getText("UI_BurdJournals_WornJournalHeader")
+        panel.rarityText = nil
+        panel.flavorText = getJournalFlavorDisplayText(journalData, "UI_BurdJournals_WornFlavor")
+    end
+
+    panel.authorName = (type(journalData) == "table" and (journalData.author or journalData.ownerCharacterName))
+        or getText("UI_BurdJournals_UnknownSurvivor")
+    panel.headerIconTexture = getHeaderJournalIconTexture("absorb", panel.journal, journalData, state.isBloody)
+    panel.headerIconSize = 20
+
+    return journalData
+end
+
+local function drawAnimatedStripedJournalBackdrop(target, x, y, width, height, theme, effectKey)
+    if not target or not theme then
+        return
+    end
+    if BurdJournals.shouldRenderAnimatedJournalVisuals
+        and not BurdJournals.shouldRenderAnimatedJournalVisuals(effectKey or "journal_panel_backdrop") then
+        return
+    end
+
+    local drawX = math.floor(tonumber(x) or 0)
+    local drawY = math.floor(tonumber(y) or 0)
+    local drawW = math.floor(tonumber(width) or 0)
+    local drawH = math.floor(tonumber(height) or 0)
+    if drawW <= 0 or drawH <= 0 then
+        return
+    end
+
+    target:drawRect(drawX, drawY, drawW, drawH, theme.panelBg.a or 0.9, theme.panelBg.r, theme.panelBg.g, theme.panelBg.b)
+
+    local useStencil = target.setStencilRect and target.clearStencilRect
+    if useStencil then
+        target:setStencilRect(drawX, drawY, drawW, drawH)
+    end
+
+    local stripeWidth = 26
+    local stripeSpacing = 60
+    local patternSpan = stripeSpacing * 2
+    local segmentHeight = 14
+    local slopeStep = 12
+    local nowMs = (getTimestampMs and getTimestampMs()) or 0
+    local scrollSpeed = tonumber(theme.scrollSpeed) or 18
+    local offset = math.floor(((nowMs / 1000) * scrollSpeed) % patternSpan)
+    local startX = drawX - drawH - patternSpan + offset
+    local maxX = drawX + drawW + drawH + patternSpan
+    local bandIndex = 0
+
+    for bandX = startX, maxX, stripeSpacing do
+        local bandColor = (bandIndex % 2 == 0) and theme.stripePrimary or theme.stripeSecondary
+        local bandAlpha = math.max(0, math.min(1, bandColor.a or 0))
+        if bandAlpha > 0 then
+            local rowY = drawY
+            local rowX = bandX
+            local maxY = drawY + drawH
+            while rowY < maxY do
+                local drawSegmentH = math.min(segmentHeight, maxY - rowY)
+                target:drawRect(math.floor(rowX), rowY, stripeWidth, drawSegmentH, bandAlpha, bandColor.r, bandColor.g, bandColor.b)
+                rowX = rowX + slopeStep
+                rowY = rowY + drawSegmentH
+            end
+        end
+        bandIndex = bandIndex + 1
+    end
+
+    if useStencil then
+        target:clearStencilRect()
+    end
+
+    if theme.border then
+        target:drawRectBorder(drawX, drawY, drawW, drawH, theme.border.a or 0.5, theme.border.r, theme.border.g, theme.border.b)
+    end
+end
+
 local function getTraitDefinition(traitId)
     if not traitId then return nil end
 
@@ -35,9 +608,26 @@ local function getTraitDefinition(traitId)
     local traitIdLower = string.lower(traitId)
     local traitIdNorm = traitIdLower:gsub("%s", "")
 
+    local function resolveTraitTexture(rawTexture)
+        if not rawTexture then
+            return nil
+        end
+        if type(rawTexture) ~= "string" then
+            return rawTexture
+        end
+        if not getTexture then
+            return nil
+        end
+        return getTexture(rawTexture)
+            or getTexture("media/ui/" .. rawTexture)
+            or getTexture("media/ui/" .. rawTexture .. ".png")
+            or getTexture("media/ui/Traits/" .. rawTexture)
+            or getTexture("media/ui/Traits/" .. rawTexture .. ".png")
+    end
+
     local function createCacheEntry(def)
-        local defLabel = def:getLabel() or ""
-        local defType = def:getType()
+        local defLabel = (def.getLabel and def:getLabel()) or ""
+        local defType = def.getType and def:getType() or nil
         local defName = ""
         if defType then
             if defType.getName then
@@ -45,6 +635,9 @@ local function getTraitDefinition(traitId)
             else
                 defName = tostring(defType)
             end
+        elseif def.getName then
+            defName = def:getName() or ""
+            defType = defName
         end
         local cached = {
             def = def,
@@ -52,9 +645,13 @@ local function getTraitDefinition(traitId)
             name = defName,
             type = defType
         }
+        local rawTexture = nil
         if def.getTexture then
-            cached.texture = def:getTexture()
+            rawTexture = def:getTexture()
+        elseif def.texture ~= nil then
+            rawTexture = def.texture
         end
+        cached.texture = resolveTraitTexture(rawTexture)
         traitDefCache[traitId] = cached
         return cached
     end
@@ -123,6 +720,36 @@ local function getTraitDefinition(traitId)
 
             if defLabelLower:find(traitIdLower, 1, true) or defNameLower:find(traitIdLower, 1, true) then
                 return createCacheEntry(def)
+            end
+        end
+    end
+
+    if TraitFactory and TraitFactory.getTrait then
+        local direct = TraitFactory.getTrait(traitId)
+            or TraitFactory.getTrait(string.gsub(traitId, "^base:", ""))
+        if direct then
+            return createCacheEntry(direct)
+        end
+
+        local allTraits = TraitFactory.getTraits and TraitFactory.getTraits() or nil
+        if allTraits and allTraits.size and allTraits.get then
+            for i = 0, allTraits:size() - 1 do
+                local trait = allTraits:get(i)
+                local traitLabel = (trait and trait.getLabel and trait:getLabel()) or ""
+                local traitType = (trait and trait.getType and trait:getType()) or ""
+                local traitLabelLower = string.lower(tostring(traitLabel))
+                local traitTypeLower = string.lower(tostring(traitType))
+                local traitLabelNorm = traitLabelLower:gsub("%s", "")
+                local traitTypeNorm = traitTypeLower:gsub("%s", "")
+
+                if traitLabelLower == traitIdLower
+                    or traitTypeLower == traitIdLower
+                    or traitLabelNorm == traitIdNorm
+                    or traitTypeNorm == traitIdNorm
+                    or traitLabelLower:find(traitIdLower, 1, true)
+                    or traitTypeLower:find(traitIdLower, 1, true) then
+                    return createCacheEntry(trait)
+                end
             end
         end
     end
@@ -226,6 +853,8 @@ local function getMagazineTexture(magazineSource)
     return getTexture("Item_" .. iconName)
 end
 
+BurdJournals.getMagazineTexture = BurdJournals.getMagazineTexture or getMagazineTexture
+
 local function showTooDarkFeedback(player)
     local message = (getText and getText("ContextMenu_TooDark")) or "Too dark to read."
     if message == "ContextMenu_TooDark" then
@@ -275,17 +904,91 @@ local function resolveHeaderIconFromScript(fullType)
     return resolveHeaderIconTexture(script:getIcon())
 end
 
-local function getHeaderJournalIconTexture(mode, journal, journalData, isBloodyHint)
-    local fullType = journal and journal.getFullType and tostring(journal:getFullType() or "") or ""
+local function canProbeHeaderJournalItem(journal)
+    if not journal then
+        return false
+    end
+    local function safeHasMethod(methodName)
+        local ok, method = pcall(function()
+            return journal[methodName]
+        end)
+        return ok and type(method) == "function"
+    end
+    if BurdJournals.isValidItem then
+        local ok, valid = pcall(BurdJournals.isValidItem, journal)
+        if ok then
+            if valid ~= true then
+                return false
+            end
+            return safeHasMethod("getFullType") or safeHasMethod("getModData")
+        end
+    end
+    return safeHasMethod("getFullType") or safeHasMethod("getModData")
+end
+
+local function safeGetHeaderJournalFullType(journal)
+    if not canProbeHeaderJournalItem(journal) then
+        return ""
+    end
+    local okMethod, getFullType = pcall(function()
+        return journal and journal.getFullType
+    end)
+    if not okMethod or type(getFullType) ~= "function" then
+        return ""
+    end
+    local ok, fullType = pcall(function()
+        return getFullType(journal)
+    end)
+    if not ok or fullType == nil then
+        return ""
+    end
+    return tostring(fullType)
+end
+
+local function safeProbeHeaderJournalPredicate(journal, predicate)
+    if not canProbeHeaderJournalItem(journal) or type(predicate) ~= "function" then
+        return false
+    end
+    local ok, result = pcall(predicate, journal)
+    return ok and result == true or false
+end
+
+isUnwrappedYuletideRewardState = function(journal, journalData)
+    if type(journalData) == "table"
+        and journalData.isYuletideJournal == true
+        and journalData.yuletideState == BurdJournals.YULETIDE_STATE_UNWRAPPED
+    then
+        return true
+    end
+    return journal
+        and BurdJournals.isUnwrappedYuletideJournal
+        and safeProbeHeaderJournalPredicate(journal, BurdJournals.isUnwrappedYuletideJournal)
+        or false
+end
+
+getHeaderJournalIconTexture = function(mode, journal, journalData, isBloodyHint)
+    local fullType = safeGetHeaderJournalFullType(journal)
     local isWornType = fullType ~= "" and string.find(fullType, "_Worn", 1, true) ~= nil
     local isBloodyType = fullType ~= "" and string.find(fullType, "_Bloody", 1, true) ~= nil
+    local isYuletideState = isUnwrappedYuletideRewardState(journal, journalData)
+    local isHiddenCursedState = type(journalData) == "table"
+        and journalData.isHiddenCursedJournal == true
+        and journalData.isCursedReward ~= true
     local isCursedState = (journalData and (journalData.isCursedReward == true or journalData.isCursedJournal == true))
-        or (journal and BurdJournals.isCursedJournalItem and BurdJournals.isCursedJournalItem(journal))
-    local isWornState = isWornType or (journalData and journalData.isWorn == true) or (journal and BurdJournals.isWorn and BurdJournals.isWorn(journal))
-    local isBloodyState = isBloodyHint == true or isBloodyType or (journalData and journalData.isBloody == true) or (journal and BurdJournals.isBloody and BurdJournals.isBloody(journal))
+        or safeProbeHeaderJournalPredicate(journal, BurdJournals.isCursedJournalItem)
+    local isWornState = isWornType
+        or (journalData and journalData.isWorn == true)
+        or safeProbeHeaderJournalPredicate(journal, BurdJournals.isWorn)
+    local isBloodyState = isBloodyHint == true
+        or isBloodyType
+        or isHiddenCursedState
+        or (journalData and journalData.isBloody == true)
+        or safeProbeHeaderJournalPredicate(journal, BurdJournals.isBloody)
 
     local iconName = "FilledJournalClean"
-    if isCursedState then
+    if isYuletideState then
+        iconName = "YuletideJournalUnwrapped"
+    elseif isCursedState then
         iconName = "CursedJournal"
     elseif isBloodyState then
         iconName = "FilledJournalBloody"
@@ -306,40 +1009,42 @@ local function getHeaderJournalIconTexture(mode, journal, journalData, isBloodyH
     return resolveHeaderIconTexture("FilledJournalClean")
 end
 
--- Standard (non-passive) skill XP thresholds from PZ wiki
+BurdJournals.getHeaderJournalIconTexture = BurdJournals.getHeaderJournalIconTexture or getHeaderJournalIconTexture
+
+-- Standard (non-passive) skill cumulative XP thresholds from Project Zomboid
 -- These are CUMULATIVE totals to reach each level
--- Per-level: 75, 150, 300, 750, 1500, 3000, 4500, 6000, 7500, 9000
-local STANDARD_XP_THRESHOLDS = {
+-- Per-level increments: 50, 100, 200, 500, 1000, 2000, 3000, 4000, 5000, 6000
+BurdJournals.STANDARD_XP_THRESHOLDS = BurdJournals.STANDARD_XP_THRESHOLDS or {
     [0] = 0,
-    [1] = 75,       -- 75
-    [2] = 225,      -- 75 + 150
-    [3] = 525,      -- 225 + 300
-    [4] = 1275,     -- 525 + 750
-    [5] = 2775,     -- 1275 + 1500
-    [6] = 5775,     -- 2775 + 3000
-    [7] = 10275,    -- 5775 + 4500
-    [8] = 16275,    -- 10275 + 6000
-    [9] = 23775,    -- 16275 + 7500
-    [10] = 32775    -- 23775 + 9000
+    [1] = 50,
+    [2] = 150,      -- 50 + 100
+    [3] = 350,      -- 150 + 200
+    [4] = 850,      -- 350 + 500
+    [5] = 1850,     -- 850 + 1000
+    [6] = 3850,     -- 1850 + 2000
+    [7] = 6850,     -- 3850 + 3000
+    [8] = 10850,    -- 6850 + 4000
+    [9] = 15850,    -- 10850 + 5000
+    [10] = 21850    -- 15850 + 6000
 }
 
--- Exact passive skill (Fitness/Strength) XP thresholds from PZ wiki
+-- Exact passive skill (Fitness/Strength) cumulative XP thresholds from Project Zomboid
 -- These are CUMULATIVE totals to reach each level
-local PASSIVE_XP_THRESHOLDS = {
+BurdJournals.PASSIVE_XP_THRESHOLDS = BurdJournals.PASSIVE_XP_THRESHOLDS or {
     [0] = 0,
-    [1] = 1500,
-    [2] = 4500,    -- 1500 + 3000
-    [3] = 10500,   -- 4500 + 6000
-    [4] = 19500,   -- 10500 + 9000
-    [5] = 37500,   -- 19500 + 18000
-    [6] = 67500,   -- 37500 + 30000
-    [7] = 127500,  -- 67500 + 60000
-    [8] = 217500,  -- 127500 + 90000
-    [9] = 337500,  -- 217500 + 120000
-    [10] = 487500  -- 337500 + 150000
+    [1] = 1000,
+    [2] = 3000,    -- 1000 + 2000
+    [3] = 7000,    -- 3000 + 4000
+    [4] = 13000,   -- 7000 + 6000
+    [5] = 25000,   -- 13000 + 12000
+    [6] = 45000,   -- 25000 + 20000
+    [7] = 85000,   -- 45000 + 40000
+    [8] = 145000,  -- 85000 + 60000
+    [9] = 225000,  -- 145000 + 80000
+    [10] = 325000  -- 225000 + 100000
 }
 
-local function getXPForLevel(skillName, level)
+function BurdJournals.getXPForLevel(skillName, level)
     if level <= 0 then return 0 end
     if level > 10 then level = 10 end
 
@@ -355,18 +1060,23 @@ local function getXPForLevel(skillName, level)
 
     -- For passive skills (Fitness/Strength), use our verified thresholds
     if skillName == "Fitness" or skillName == "Strength" then
-        return PASSIVE_XP_THRESHOLDS[level] or 0
+        return BurdJournals.PASSIVE_XP_THRESHOLDS[level] or 0
     end
 
     -- For standard skills, use our verified thresholds first
     -- This is more reliable than perk:getTotalXpForLevel() which can be inconsistent
-    return STANDARD_XP_THRESHOLDS[level] or 0
+    return BurdJournals.STANDARD_XP_THRESHOLDS[level] or 0
 end
 
--- Helper function to get XP with baseline added for passive skills (Fitness/Strength)
--- Player journals recorded in baseline mode store passive XP as earned delta above
--- level-5 baseline. Loot journals store absolute XP and must NOT be baseline-shifted.
-local function shouldAddPassiveBaselineForDisplay(journalData, player)
+BurdJournals.normalizeProgressPercentLabel = BurdJournals.normalizeProgressPercentLabel or function(text)
+    return tostring(text or ""):gsub("%%%%", "%%")
+end
+
+-- Helper function to determine whether a player journal skill entry should have
+-- its baseline added back for level/square display. Player journals recorded in
+-- baseline mode store earned XP only, while loot journals and legacy absolute
+-- entries must remain untouched.
+function BurdJournals.shouldAddPassiveBaselineForDisplay(journalData, player)
     if type(journalData) ~= "table" or journalData.isPlayerCreated ~= true then
         return false
     end
@@ -386,55 +1096,96 @@ local function shouldAddPassiveBaselineForDisplay(journalData, player)
     return true
 end
 
-local function getXPWithBaselineForDisplay(skillName, recordedXP, journalData, player)
+function BurdJournals.getXPWithBaselineForDisplay(skillName, recordedXP, journalData, player)
     local storedXP = math.max(0, tonumber(recordedXP) or 0)
-    if (skillName == "Fitness" or skillName == "Strength")
-        and shouldAddPassiveBaselineForDisplay(journalData, player) then
-        -- Compatibility: some legacy player journals were saved with absolute XP
-        -- while marked as recordedWithBaseline=true. In that case do not shift again.
-        if player
-            and player.getXp
-            and type(journalData) == "table"
-            and journalData.isPlayerCreated == true
-            and journalData.recordedWithBaseline == true
-            and BurdJournals.getPerkByName
-            and BurdJournals.getSkillBaseline then
-            local perk = BurdJournals.getPerkByName(skillName)
-            if perk then
-                local okActual, actualXP = pcall(function()
-                    return BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
-                end)
-                actualXP = math.max(0, tonumber(actualXP) or 0)
-                if okActual and actualXP > 0 then
-                    local baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
-                    local earnedXP = math.max(0, actualXP - baselineXP)
-                    if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
-                        return storedXP
-                    end
-                end
-            end
-        end
-
-        -- Use canonical passive baseline XP for level 5.
-        local baselineXP = (BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[5]) or PASSIVE_XP_THRESHOLDS[5] or 37500
-        return baselineXP + storedXP
-    end
     return storedXP
 end
 
-local function isSkillVisibleForJournal(journalData, skillName)
+local function drawAnimatedCursedJournalBackdrop(target, x, y, width, height, theme, effectKey)
+    if not target or not theme then
+        return
+    end
+    if BurdJournals.shouldRenderAnimatedJournalVisuals
+        and not BurdJournals.shouldRenderAnimatedJournalVisuals(effectKey or "journal_panel_backdrop") then
+        return
+    end
+
+    local drawX = math.floor(tonumber(x) or 0)
+    local drawY = math.floor(tonumber(y) or 0)
+    local drawW = math.floor(tonumber(width) or 0)
+    local drawH = math.floor(tonumber(height) or 0)
+    if drawW <= 0 or drawH <= 0 then
+        return
+    end
+
+    local nowMs = (getTimestampMs and getTimestampMs()) or 0
+    local now = nowMs / 1000
+    local pulse = 0.50 + (0.50 * math.sin(now * 2.0))
+    local useStencil = target.setStencilRect and target.clearStencilRect
+
+    target:drawRect(drawX, drawY, drawW, drawH, theme.panelBg.a or 0.78, theme.panelBg.r, theme.panelBg.g, theme.panelBg.b)
+
+    if useStencil then
+        target:setStencilRect(drawX, drawY, drawW, drawH)
+    end
+
+    local hazeLayers = 10
+    local hazeBaseY = drawY + math.floor(drawH * 0.76)
+    local hazeHeight = math.max(8, math.floor(drawH * 0.05))
+    local hazeStep = math.max(5, math.floor(hazeHeight * 0.70))
+    for i = 0, hazeLayers - 1 do
+        local bandY = hazeBaseY + (i * hazeStep)
+        if bandY < (drawY + drawH) then
+            local fade = (i + 1) / hazeLayers
+            local bandAlpha = (0.004 + (0.003 * pulse)) + (fade * (0.012 + (0.008 * pulse)))
+            local bandColor = (i >= hazeLayers - 4) and theme.smokePrimary or theme.smokeSecondary
+            local bandHeight = math.min(hazeHeight + math.floor(i * 0.6), (drawY + drawH) - bandY)
+            target:drawRect(drawX, bandY, drawW, bandHeight, bandAlpha, bandColor.r, bandColor.g, bandColor.b)
+        end
+    end
+    target:drawRect(drawX, drawY + math.floor(drawH * 0.92), drawW, math.max(10, math.floor(drawH * 0.08)), 0.022 + (0.013 * pulse), theme.smokePrimary.r, theme.smokePrimary.g, theme.smokePrimary.b)
+
+    local emberCount = math.max(12, math.floor(drawW / 40))
+    local emberLift = math.max(54, math.floor(drawH * 0.54))
+    for i = 0, emberCount - 1 do
+        local seed = (i * 1.61)
+        local drift = math.sin((now * 1.5) + seed)
+        local rise = ((now * (16 + (i % 5) * 4)) + (i * 19)) % emberLift
+        local emberY = math.floor((drawY + drawH - 12) - rise)
+        local emberBaseX = drawX + (((i * 43) % math.max(1, drawW - 28)) + 14)
+        local emberX = math.floor(emberBaseX + (drift * (8 + (i % 4) * 5)))
+        local emberSize = (i % 4 == 0) and 3 or 2
+        local emberColor = (i % 2 == 0) and theme.emberPrimary or theme.emberSecondary
+        local emberAlpha = math.max(0.04, math.min(0.22, (emberColor.a or 0.14) + (0.04 * pulse) - ((rise / emberLift) * 0.07)))
+
+        if emberY >= (drawY + 8) and emberY <= (drawY + drawH - 4) then
+            target:drawRect(emberX, emberY, emberSize, emberSize, emberAlpha, emberColor.r, emberColor.g, emberColor.b)
+            if emberSize > 2 then
+                target:drawRect(emberX - 1, emberY + 1, emberSize + 2, 1, emberAlpha * 0.30, theme.cardAccent.r, theme.cardAccent.g, theme.cardAccent.b)
+            end
+        end
+    end
+
+    if useStencil then
+        target:clearStencilRect()
+    end
+
+    target:drawRectBorder(drawX, drawY, drawW, drawH, theme.panelBorder.a or 0.42, theme.panelBorder.r, theme.panelBorder.g, theme.panelBorder.b)
+end
+
+function BurdJournals.isSkillVisibleForJournal(journalData, skillName)
     if not skillName then return false end
     if not BurdJournals.isSkillEnabledForJournal then return true end
     return BurdJournals.isSkillEnabledForJournal(journalData, skillName)
 end
 
-local function isSkillRecordableInPlayerJournal(skillName)
+function BurdJournals.isSkillRecordableInPlayerJournal(skillName)
     if not skillName then return false end
     if not BurdJournals.isSkillEnabledForJournal then return true end
     return BurdJournals.isSkillEnabledForJournal({isPlayerCreated = true}, skillName)
 end
 
-local function hasEntries(map)
+function BurdJournals.hasEntries(map)
     if type(map) ~= "table" then
         return false
     end
@@ -444,38 +1195,38 @@ local function hasEntries(map)
     return false
 end
 
-local function hasTraitEntriesForJournal(journalData)
-    return type(journalData) == "table" and hasEntries(journalData.traits)
+function BurdJournals.hasTraitEntriesForJournal(journalData)
+    return type(journalData) == "table" and BurdJournals.hasEntries(journalData.traits)
 end
 
-local function hasRecipeEntriesForJournal(journalData)
-    return type(journalData) == "table" and hasEntries(journalData.recipes)
+function BurdJournals.hasRecipeEntriesForJournal(journalData)
+    return type(journalData) == "table" and BurdJournals.hasEntries(journalData.recipes)
 end
 
-local function createClaimSessionId()
+function BurdJournals.createClaimSessionId()
     local now = getTimestampMs and getTimestampMs() or 0
     local rand = ZombRand and ZombRand(1000000) or math.floor(math.random() * 1000000)
     return tostring(now) .. "-" .. tostring(rand)
 end
 
-local function getClaimSessionIdForPanel(panel, createIfMissing)
+function BurdJournals.getClaimSessionIdForPanel(panel, createIfMissing)
     if not panel then
         return nil
     end
     if panel.learningState and panel.learningState.active then
         if createIfMissing and not panel.learningState.claimSessionId then
-            panel.learningState.claimSessionId = createClaimSessionId()
+            panel.learningState.claimSessionId = BurdJournals.createClaimSessionId()
         end
         return panel.learningState.claimSessionId
     end
     if createIfMissing then
-        return createClaimSessionId()
+        return BurdJournals.createClaimSessionId()
     end
     return nil
 end
 
 -- Returns preview data for the NEXT claim read (or an offset read) so UI mirrors server-side diminishing returns.
-local function getClaimPreviewForSkill(journalData, player, skillName, recordedXP, readOffset, claimSessionId)
+function BurdJournals.getClaimPreviewForSkill(journalData, player, skillName, recordedXP, readOffset, claimSessionId)
     local sourceXP = math.max(0, tonumber(recordedXP) or 0)
     local claimMultiplier, readCount = 1.0, tonumber(journalData and journalData.readCount) or 0
 
@@ -488,7 +1239,7 @@ local function getClaimPreviewForSkill(journalData, player, skillName, recordedX
 
     local effectiveLevel = 0
     if effectiveXP > 0 and BurdJournals.getSkillLevelFromXP then
-        local xpForLevelCalc = getXPWithBaselineForDisplay(skillName, effectiveXP, journalData, player)
+        local xpForLevelCalc = BurdJournals.getXPWithBaselineForDisplay(skillName, effectiveXP, journalData, player)
         effectiveLevel = BurdJournals.getSkillLevelFromXP(xpForLevelCalc, skillName) or 0
     end
 
@@ -502,7 +1253,7 @@ local function getClaimPreviewForSkill(journalData, player, skillName, recordedX
     }
 end
 
-local function resolveJournalRecordingModeForPlayer(journalData, player)
+function BurdJournals.resolveJournalRecordingModeForPlayer(journalData, player)
     local useBaseline = BurdJournals.getJournalSkillRecordingMode
         and BurdJournals.getJournalSkillRecordingMode(journalData, player)
         or BurdJournals.shouldEnforceBaseline(player)
@@ -526,7 +1277,10 @@ local function resolveJournalRecordingModeForPlayer(journalData, player)
                     local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline and BurdJournals.getSkillBaseline(player, skillName) or 0) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
-                    if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
+                    local storedLevel = tonumber(type(storedData) == "table" and storedData.level) or 0
+                    if BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+                        and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, storedXP, storedLevel, actualXP, baselineXP)
+                    then
                         suspiciousAbsoluteSkills = suspiciousAbsoluteSkills + 1
                     end
                 end
@@ -542,7 +1296,7 @@ local function resolveJournalRecordingModeForPlayer(journalData, player)
     return useBaseline, autoRepaired
 end
 
-local function shouldForceBaselineRecordingMode(journalData, player, legacyAbsoluteDetected)
+function BurdJournals.shouldForceBaselineRecordingMode(journalData, player, legacyAbsoluteDetected)
     if not legacyAbsoluteDetected then
         return false
     end
@@ -558,7 +1312,7 @@ local function shouldForceBaselineRecordingMode(journalData, player, legacyAbsol
     return false
 end
 
-local function isLikelyAbsoluteSkillEntryForBaseline(journalData, player, skillName, storedXP, currentXP, baselineXP)
+function BurdJournals.isLikelyAbsoluteSkillEntryForBaseline(journalData, player, skillName, storedXP, currentXP, baselineXP)
     local stored = tonumber(storedXP) or 0
     if stored <= 0 then
         return false
@@ -569,30 +1323,12 @@ local function isLikelyAbsoluteSkillEntryForBaseline(journalData, player, skillN
     if journalData.recordedWithBaseline ~= true then
         return false
     end
-    if BurdJournals.shouldEnforceBaseline and not BurdJournals.shouldEnforceBaseline(player) then
-        return false
-    end
-    if not player or not player.getXp then
-        return false
-    end
-
-    local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
-    if not perk then
-        return false
-    end
-
-    local actualXP = math.max(0, tonumber(currentXP) or (BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName)) or player:getXp():getXP(perk) or 0)
-    local baseline = math.max(
-        0,
-        tonumber(baselineXP)
-            or tonumber(BurdJournals.getSkillBaseline and BurdJournals.getSkillBaseline(player, skillName) or 0)
-            or 0
-    )
-    local earnedXP = math.max(0, actualXP - baseline)
-    return stored > (earnedXP + 0.001) and stored <= (actualXP + 0.001)
+    return BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+        and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, stored, nil, currentXP, baselineXP)
+        or false
 end
 
-local function isLikelyNewCharacterForBaseline(player)
+function BurdJournals.isLikelyNewCharacterForBaseline(player)
     if not player then
         return false
     end
@@ -609,7 +1345,7 @@ local function isLikelyNewCharacterForBaseline(player)
     return false
 end
 
-local function queueNewCharacterBaselineCapture(panel)
+function BurdJournals.queueNewCharacterBaselineCapture(panel)
     if not panel or not panel.player then
         return
     end
@@ -634,7 +1370,7 @@ local function queueNewCharacterBaselineCapture(panel)
     Events.OnTick.Add(delayedCapture)
 end
 
-local function ensureBaselineReadyForRecording(panel, useBaseline, contextTag)
+function BurdJournals.ensureBaselineReadyForRecording(panel, useBaseline, contextTag)
     if not useBaseline then
         return true, false
     end
@@ -645,8 +1381,8 @@ local function ensureBaselineReadyForRecording(panel, useBaseline, contextTag)
         return true, true
     end
 
-    if isLikelyNewCharacterForBaseline(panel.player) then
-        queueNewCharacterBaselineCapture(panel)
+    if BurdJournals.isLikelyNewCharacterForBaseline(panel.player) then
+        BurdJournals.queueNewCharacterBaselineCapture(panel)
         if BurdJournals.Client
             and BurdJournals.Client.requestServerBaseline
             and not BurdJournals.Client._awaitingServerBaseline then
@@ -665,11 +1401,12 @@ local function ensureBaselineReadyForRecording(panel, useBaseline, contextTag)
     return true, false
 end
 
-local function getClaimTargetXPForPlayer(journalData, player, skillName, effectiveXP)
+function BurdJournals.getClaimTargetXPForPlayer(journalData, player, skillName, effectiveXP)
     local targetXP = math.max(0, tonumber(effectiveXP) or 0)
     local baselineXP = 0
     local baselineSuppressed = false
-    local useBaselineForJournal = resolveJournalRecordingModeForPlayer(journalData, player)
+    local claimUsesEarnedDeltaGrant = false
+    local useBaselineForJournal = BurdJournals.resolveJournalRecordingModeForPlayer(journalData, player)
 
     local playerModData = player and player.getModData and player:getModData() or nil
     if playerModData and playerModData.BurdJournals and playerModData.BurdJournals.debugModified == true then
@@ -680,16 +1417,37 @@ local function getClaimTargetXPForPlayer(journalData, player, skillName, effecti
         and journalData.isPlayerCreated
         and useBaselineForJournal
         and BurdJournals.getSkillBaseline
-        and not baselineSuppressed
     then
-        baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
-        targetXP = targetXP + baselineXP
+        if not baselineSuppressed then
+            baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(player, skillName)) or 0)
+        end
+        local recordedLevel = 0
+        if type(journalData.skills) == "table" and type(journalData.skills[skillName]) == "table" then
+            recordedLevel = tonumber(journalData.skills[skillName].level) or 0
+        end
+        local legacyAbsolute = BurdJournals.isLikelyLegacyAbsoluteSkillEntry
+            and BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skillName, effectiveXP, recordedLevel, nil, baselineXP)
+            or false
+        if not legacyAbsolute then
+            local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
+            local currentXP = 0
+            if perk and player and player.getXp then
+                currentXP = math.max(
+                    0,
+                    tonumber(BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)) or 0
+                )
+            end
+            local currentEarnedXP = math.max(0, currentXP - baselineXP)
+            local missingEarnedXP = math.max(0, targetXP - currentEarnedXP)
+            targetXP = currentXP + missingEarnedXP
+            claimUsesEarnedDeltaGrant = true
+        end
     end
 
-    return targetXP, baselineXP, baselineSuppressed
+    return targetXP, baselineXP, baselineSuppressed, claimUsesEarnedDeltaGrant
 end
 
-local function getSkillVhsBreakdown(skillData, fallbackNetXP)
+function BurdJournals.getSkillVhsBreakdown(skillData, fallbackNetXP)
     local netXP = math.max(0, tonumber((skillData and skillData.xp) or fallbackNetXP) or 0)
     local rawXP = tonumber(skillData and skillData.rawXP)
     if rawXP == nil then
@@ -712,7 +1470,7 @@ local function getSkillVhsBreakdown(skillData, fallbackNetXP)
     return netXP, rawXP, excludedXP
 end
 
-local function formatXPWithVhsBreakdown(netXP, rawXP, excludedXP)
+function BurdJournals.formatXPWithVhsBreakdown(netXP, rawXP, excludedXP)
     local fmtNet = BurdJournals.formatXP(math.max(0, tonumber(netXP) or 0))
     local fmtRaw = BurdJournals.formatXP(math.max(0, tonumber(rawXP) or 0))
     local fmtExcluded = BurdJournals.formatXP(math.max(0, tonumber(excludedXP) or 0))
@@ -722,17 +1480,21 @@ local function formatXPWithVhsBreakdown(netXP, rawXP, excludedXP)
     return fmtNet .. " XP"
 end
 
-local function buildSkillVhsTooltip(skillData, claimableXP, claimPercent)
-    local netXP, rawXP, excludedXP = getSkillVhsBreakdown(skillData)
+function BurdJournals.buildSkillVhsTooltip(skillData, claimableXP, claimPercent, startingXP)
+    local netXP, rawXP, excludedXP = BurdJournals.getSkillVhsBreakdown(skillData)
     local hasVhsDelta = excludedXP > 0 and rawXP > netXP
     local hasClaimDelta = claimableXP ~= nil and netXP > 0 and math.max(0, tonumber(claimableXP) or 0) < netXP
-    if not hasVhsDelta and not hasClaimDelta then
+    local startingXPValue = math.max(0, tonumber(startingXP) or 0)
+    local hasStartingXP = startingXPValue > 0
+    if not hasVhsDelta and not hasClaimDelta and not hasStartingXP then
         return nil
     end
 
-    local lines = {
-        "Recorded net XP: " .. BurdJournals.formatXP(netXP)
-    }
+    local lines = {}
+    if hasStartingXP then
+        table.insert(lines, BurdJournals.formatText(getText("UI_BurdJournals_StartingXP") or "Starting: %s XP", BurdJournals.formatXP(startingXPValue)))
+    end
+    table.insert(lines, "Recorded net XP: " .. BurdJournals.formatXP(netXP))
     if hasVhsDelta then
         table.insert(lines, "Recorded raw XP: " .. BurdJournals.formatXP(rawXP))
         table.insert(lines, "VHS excluded at record: -" .. BurdJournals.formatXP(excludedXP))
@@ -748,17 +1510,30 @@ local function buildSkillVhsTooltip(skillData, claimableXP, claimPercent)
     return table.concat(lines, "\n")
 end
 
-local function calculateLevelProgress(skillName, totalXP)
+function BurdJournals.calculateLevelProgress(skillName, totalXP)
+    local resolvedTotalXP = math.max(0, tonumber(totalXP) or 0)
+    local xpResolver = BurdJournals.getXPForLevel or function(name, level)
+        if BurdJournals.getXPThresholdForLevel then
+            local ok, threshold = pcall(BurdJournals.getXPThresholdForLevel, name, level)
+            if ok and tonumber(threshold) then
+                return math.max(0, tonumber(threshold) or 0)
+            end
+        end
+        if name == "Fitness" or name == "Strength" then
+            return (BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[level]) or 0
+        end
+        return (BurdJournals.STANDARD_XP_THRESHOLDS and BurdJournals.STANDARD_XP_THRESHOLDS[level]) or 0
+    end
     local currentLevel = 0
     local xpForCurrentLevel = 0
-    local xpForNextLevel = getXPForLevel(skillName, 1)
+    local xpForNextLevel = math.max(0, tonumber(xpResolver(skillName, 1)) or 0)
 
     for level = 1, 10 do
-        local xpNeeded = getXPForLevel(skillName, level)
-        if totalXP >= xpNeeded then
+        local xpNeeded = math.max(0, tonumber(xpResolver(skillName, level)) or 0)
+        if resolvedTotalXP >= xpNeeded then
             currentLevel = level
             xpForCurrentLevel = xpNeeded
-            xpForNextLevel = getXPForLevel(skillName, level + 1)
+            xpForNextLevel = math.max(xpNeeded, tonumber(xpResolver(skillName, level + 1)) or xpNeeded)
         else
             break
         end
@@ -766,7 +1541,7 @@ local function calculateLevelProgress(skillName, totalXP)
 
     local progressToNext = 0
     if currentLevel < 10 then
-        local xpInThisLevel = totalXP - xpForCurrentLevel
+        local xpInThisLevel = resolvedTotalXP - xpForCurrentLevel
         local xpRangeForLevel = xpForNextLevel - xpForCurrentLevel
         if xpRangeForLevel > 0 then
             progressToNext = math.min(1, math.max(0, xpInThisLevel / xpRangeForLevel))
@@ -775,19 +1550,31 @@ local function calculateLevelProgress(skillName, totalXP)
         progressToNext = 1
     end
 
-    return currentLevel, progressToNext, totalXP - xpForCurrentLevel, xpForNextLevel - xpForCurrentLevel
+    return currentLevel, progressToNext, resolvedTotalXP - xpForCurrentLevel, xpForNextLevel - xpForCurrentLevel
 end
 
 -- Helper to calculate level with override support (for when stored level is more accurate)
-local function calculateLevelProgressWithOverride(skillName, totalXP, storedLevel)
-    local level, progress, xpInLevel, xpRange = calculateLevelProgress(skillName, totalXP)
+function BurdJournals.calculateLevelProgressWithOverride(skillName, totalXP, storedLevel)
+    local level, progress, xpInLevel, xpRange = BurdJournals.calculateLevelProgress(skillName, totalXP)
     local isPassive = (BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(skillName))
         or (skillName == "Fitness" or skillName == "Strength")
 
     if isPassive and storedLevel and storedLevel >= 0 then
         local clampedStored = math.max(0, math.min(10, tonumber(storedLevel) or 0))
-        local xpCurrentStart = getXPForLevel(skillName, clampedStored)
-        local xpNextStart = getXPForLevel(skillName, clampedStored + 1)
+        local xpResolver = BurdJournals.getXPForLevel or function(name, levelValue)
+            if BurdJournals.getXPThresholdForLevel then
+                local ok, threshold = pcall(BurdJournals.getXPThresholdForLevel, name, levelValue)
+                if ok and tonumber(threshold) then
+                    return math.max(0, tonumber(threshold) or 0)
+                end
+            end
+            if name == "Fitness" or name == "Strength" then
+                return (BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[levelValue]) or 0
+            end
+            return (BurdJournals.STANDARD_XP_THRESHOLDS and BurdJournals.STANDARD_XP_THRESHOLDS[levelValue]) or 0
+        end
+        local xpCurrentStart = math.max(0, tonumber(xpResolver(skillName, clampedStored)) or 0)
+        local xpNextStart = math.max(xpCurrentStart, tonumber(xpResolver(skillName, clampedStored + 1)) or xpCurrentStart)
         local passiveProgress = 0
         if clampedStored >= 10 then
             passiveProgress = 1
@@ -808,7 +1595,7 @@ local function calculateLevelProgressWithOverride(skillName, totalXP, storedLeve
     return level, progress, xpInLevel, xpRange
 end
 
-local function drawLevelSquares(self, x, y, level, progress, squareSize, spacing, filledColor, emptyColor, progressColor)
+function BurdJournals.drawLevelSquares(self, x, y, level, progress, squareSize, spacing, filledColor, emptyColor, progressColor)
     squareSize = squareSize or 12
     spacing = spacing or 2
     filledColor = filledColor or {r=0.85, g=0.75, b=0.2}
@@ -838,6 +1625,16 @@ local function drawLevelSquares(self, x, y, level, progress, squareSize, spacing
     return 10 * squareSize + 9 * spacing
 end
 
+local function getBaselineSquareColor(filledColor, emptyColor)
+    local filled = filledColor or {r=0.3, g=0.65, b=0.55}
+    local empty = emptyColor or {r=0.1, g=0.1, b=0.1}
+    return {
+        r = math.min(1, (filled.r * 0.55) + (empty.r * 0.45)),
+        g = math.min(1, (filled.g * 0.55) + (empty.g * 0.45)),
+        b = math.min(1, (filled.b * 0.55) + (empty.b * 0.45)),
+    }
+end
+
 -- Draw level squares with baseline distinction
 -- Shows baseline levels as dimmed, earned levels as bright, giving accurate visual representation
 -- Parameters:
@@ -847,7 +1644,7 @@ end
 --   earnedColor: Color for earned portion (bright)
 --   emptyColor: Color for empty squares
 --   progressColor: Color for partial progress square
-local function drawLevelSquaresWithBaseline(self, x, y, baselineLevel, baselineProgress, totalLevel, totalProgress, squareSize, spacing, baselineColor, earnedColor, emptyColor, progressColor)
+function BurdJournals.drawLevelSquaresWithBaseline(self, x, y, baselineLevel, baselineProgress, totalLevel, totalProgress, squareSize, spacing, baselineColor, earnedColor, emptyColor, progressColor)
     squareSize = squareSize or 12
     spacing = spacing or 2
     baselineColor = baselineColor or {r=0.35, g=0.28, b=0.22}
@@ -898,6 +1695,52 @@ local function drawLevelSquaresWithBaseline(self, x, y, baselineLevel, baselineP
     return 10 * squareSize + 9 * spacing
 end
 
+function BurdJournals.drawPlayerJournalViewSkillSquares(self, x, y, skillName, displayXP, visualXP, storedLevel, journalData, player, squareSize, spacing, colors)
+    local xpForDisplay = BurdJournals.getXPWithBaselineForDisplay(skillName, visualXP, journalData, player)
+    BurdJournals.drawEarnedOnlySkillSquares(
+        self,
+        x,
+        y,
+        skillName,
+        xpForDisplay,
+        squareSize,
+        spacing,
+        {
+            filledColor = colors.filledColor or colors.earnedColor,
+            emptyColor = colors.emptyColor,
+            progressColor = colors.progressColor,
+        }
+    )
+    return 0
+end
+
+function BurdJournals.drawEarnedOnlySkillSquares(self, x, y, skillName, visualXP, squareSize, spacing, colors)
+    local level, progress = BurdJournals.calculateLevelProgress(skillName, math.max(0, tonumber(visualXP) or 0))
+    BurdJournals.drawLevelSquares(
+        self,
+        x,
+        y,
+        level,
+        progress,
+        squareSize,
+        spacing,
+        colors.filledColor,
+        colors.emptyColor,
+        colors.progressColor
+    )
+end
+
+function BurdJournals.getEarnedOnlyDisplayLevel(skillName, visualXP, fallbackLevel)
+    local xp = math.max(0, tonumber(visualXP) or 0)
+    if BurdJournals.getSkillLevelFromXP then
+        local level = tonumber(BurdJournals.getSkillLevelFromXP(xp, skillName))
+        if level ~= nil then
+            return math.max(0, level)
+        end
+    end
+    return math.max(0, tonumber(fallbackLevel) or 0)
+end
+
 -- Helper function to check if an item is in the current batch being recorded
 local function isInCurrentBatch(recordingState, itemType, itemName)
     if not recordingState or not recordingState.active or not recordingState.isRecordAll then
@@ -928,6 +1771,49 @@ local function isInCurrentAbsorbBatch(learningState, itemType, itemName)
         end
     end
     return false
+end
+
+BurdJournals.isInCurrentAbsorbBatch = BurdJournals.isInCurrentAbsorbBatch or isInCurrentAbsorbBatch
+
+local function closePlayerInventoryPanelsForController(player)
+    if not player then
+        return
+    end
+
+    local playerNum = player.getPlayerNum and player:getPlayerNum() or 0
+    local joypadActive = false
+    if BurdJournals and BurdJournals.isJoypadActiveForPlayer then
+        joypadActive = BurdJournals.isJoypadActiveForPlayer(playerNum)
+    elseif getJoypadData then
+        local joypadData = getJoypadData(playerNum)
+        if joypadData and (not joypadData.isConnected or joypadData:isConnected()) and joypadData.id ~= -1 then
+            joypadActive = true
+        end
+    end
+
+    if not joypadActive then
+        return
+    end
+
+    local function closePanel(panel)
+        if not panel then
+            return
+        end
+        if panel.close then
+            panel:close()
+            return
+        end
+        if panel.setVisible then
+            panel:setVisible(false)
+        end
+    end
+
+    if getPlayerInventory then
+        closePanel(getPlayerInventory(playerNum))
+    end
+    if getPlayerLoot then
+        closePanel(getPlayerLoot(playerNum))
+    end
 end
 
 local function isEligibleJournalReturnContainer(player, container)
@@ -1270,6 +2156,49 @@ function BurdJournals.UI.MainPanel:findJoypadControl(control)
     return nil, nil
 end
 
+function BurdJournals.UI.MainPanel:getVisibleJoypadChildren(rowIndex)
+    if self.getVisibleChildren then
+        local visibleChildren = self:getVisibleChildren(rowIndex)
+        if type(visibleChildren) == "table" then
+            return visibleChildren
+        end
+    end
+
+    local children = {}
+    local row = type(self.joypadButtonsY) == "table" and self.joypadButtonsY[rowIndex] or nil
+    if type(row) ~= "table" then
+        return children
+    end
+
+    for _, child in ipairs(row) do
+        if self:isControlVisible(child) then
+            table.insert(children, child)
+        end
+    end
+    return children
+end
+
+function BurdJournals.UI.MainPanel:getFirstVisibleJoypadRow()
+    if self.getMinVisibleRow then
+        local rowIndex = tonumber(self:getMinVisibleRow())
+        if rowIndex and rowIndex >= 1 then
+            return rowIndex
+        end
+    end
+
+    if type(self.joypadButtonsY) ~= "table" then
+        return -1
+    end
+
+    for rowIndex = 1, #self.joypadButtonsY do
+        if #self:getVisibleJoypadChildren(rowIndex) > 0 then
+            return rowIndex
+        end
+    end
+
+    return -1
+end
+
 function BurdJournals.UI.MainPanel:rebuildJoypadRows()
     if not self.joypadButtonsY then
         self.joypadButtonsY = {}
@@ -1367,14 +2296,14 @@ function BurdJournals.UI.MainPanel:rebuildJoypadRows()
     if panelHadFocus then
         local rowIndex, colIndex = self:findJoypadControl(preferredControl)
         if not rowIndex and self.joypadIndexY and self.joypadIndexY >= 1 and self.joypadIndexY <= #self.joypadButtonsY then
-            local currentRow = self:getVisibleChildren(self.joypadIndexY)
+            local currentRow = self:getVisibleJoypadChildren(self.joypadIndexY)
             if #currentRow > 0 then
                 rowIndex = self.joypadIndexY
                 colIndex = math.min(math.max(self.joypadIndex or 1, 1), #currentRow)
             end
         end
         if not rowIndex then
-            rowIndex = self:getMinVisibleRow()
+            rowIndex = self:getFirstVisibleJoypadRow()
             if rowIndex == -1 then
                 rowIndex = 1
             end
@@ -1383,7 +2312,7 @@ function BurdJournals.UI.MainPanel:rebuildJoypadRows()
 
         self.joypadIndexY = rowIndex
         self.joypadButtons = self.joypadButtonsY[rowIndex]
-        local visibleChildren = self:getVisibleChildren(rowIndex)
+        local visibleChildren = self:getVisibleJoypadChildren(rowIndex)
         if #visibleChildren > 0 then
             self.joypadIndex = math.min(math.max(colIndex or 1, 1), #visibleChildren)
             local child = visibleChildren[self.joypadIndex]
@@ -1405,11 +2334,11 @@ function BurdJournals.UI.MainPanel:rebuildJoypadRows()
         end
     else
         self.listFocusActive = false
-        local firstRow = self:getMinVisibleRow()
+        local firstRow = self:getFirstVisibleJoypadRow()
         if firstRow ~= -1 then
             self.joypadIndexY = firstRow
             self.joypadButtons = self.joypadButtonsY[firstRow]
-            local firstChildren = self:getVisibleChildren(firstRow)
+            local firstChildren = self:getVisibleJoypadChildren(firstRow)
             self.joypadIndex = (#firstChildren > 0) and 1 or 0
         end
     end
@@ -1556,7 +2485,9 @@ function BurdJournals.UI.MainPanel:performPrimaryListAction(item)
 
     if self.mode == "log" then
         if not item.canRecord then
-            if item.isAtBaseline then
+            if not self:hasRecordWritingTool() then
+                self:showNeedWritingToolFeedback()
+            elseif item.isAtBaseline then
                 self:showFeedback(getText("UI_BurdJournals_CantRecordStartingSkills") or "Can't record starting skills", {r=0.7, g=0.5, b=0.3})
             elseif item.isStartingTrait then
                 self:showFeedback(getText("UI_BurdJournals_CantRecordStartingTraits") or "Can't record starting traits", {r=0.7, g=0.5, b=0.3})
@@ -1564,7 +2495,7 @@ function BurdJournals.UI.MainPanel:performPrimaryListAction(item)
             return false
         end
         if item.isSkill then
-            self:recordSkill(item.skillName, item.xp, item.level)
+            self:recordSkill(item.skillName, item.xp, item.level, item.baselineXP)
             return true
         end
         if item.isTrait then
@@ -2686,8 +3617,15 @@ function BurdJournals.UI.MainPanel:onHeaderRefresh()
     if self.journal then
         if isClient() and not isServer() then
             if BurdJournals.Client and BurdJournals.Client.sendToServer then
+                local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+                local lookupArgs = BurdJournals.buildJournalCommandPayload
+                    and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+                    or { journalId = self.journal:getID(), journalUUID = nil, journalFingerprint = nil }
                 BurdJournals.Client.sendToServer("sanitizeJournal", {
-                    journalId = self.journal:getID()
+                    journalId = lookupArgs.journalId,
+                    journalUUID = lookupArgs.journalUUID,
+                    journalFingerprint = lookupArgs.journalFingerprint,
+                    journalData = lookupArgs.journalData,
                 })
                 BurdJournals.Client.sendToServer("requestXpSync", {})
             end
@@ -2716,41 +3654,7 @@ function BurdJournals.UI.MainPanel:onHeaderRefresh()
         self:forceCurrentTabRebuild()
     end
 
-    -- MP refresh is async; schedule a few follow-up refresh passes so UI updates
-    -- after server sanitize/xp-sync responses land.
-    if self._headerRefreshTickHandler then
-        BurdJournals.safeRemoveEvent(Events.OnTick, self._headerRefreshTickHandler)
-        self._headerRefreshTickHandler = nil
-    end
-    local panelRef = self
-    local ticks = 0
-    local nextCheckpointIndex = 1
-    local checkpoints = {6, 18, 36}
-    local function delayedRefresh()
-        ticks = ticks + 1
-        if not panelRef or not panelRef:getIsVisible() then
-            BurdJournals.safeRemoveEvent(Events.OnTick, delayedRefresh)
-            if panelRef then panelRef._headerRefreshTickHandler = nil end
-            return
-        end
-        if ticks >= checkpoints[nextCheckpointIndex] then
-            if panelRef.refreshJournalData then
-                panelRef:refreshJournalData()
-            else
-                panelRef:refreshCurrentList()
-            end
-            if panelRef.forceCurrentTabRebuild then
-                panelRef:forceCurrentTabRebuild()
-            end
-            nextCheckpointIndex = nextCheckpointIndex + 1
-            if nextCheckpointIndex > #checkpoints then
-                BurdJournals.safeRemoveEvent(Events.OnTick, delayedRefresh)
-                panelRef._headerRefreshTickHandler = nil
-            end
-        end
-    end
-    self._headerRefreshTickHandler = delayedRefresh
-    Events.OnTick.Add(delayedRefresh)
+    self:scheduleDeferredRefreshPasses()
 
     self:showFeedback(getText("UI_BurdJournals_JournalRefreshed") or "Journal refreshed", {r=0.5, g=0.8, b=1})
 end
@@ -2796,6 +3700,104 @@ function BurdJournals.UI.MainPanel:forceCurrentTabRebuild()
     if self.refreshCurrentList then self:refreshCurrentList() end
 end
 
+function BurdJournals.UI.MainPanel:scheduleDeferredRefreshPasses()
+    if self._headerRefreshTickHandler then
+        BurdJournals.safeRemoveEvent(Events.OnTick, self._headerRefreshTickHandler)
+        self._headerRefreshTickHandler = nil
+    end
+
+    local panelRef = self
+    local ticks = 0
+    local nextCheckpointIndex = 1
+    local checkpoints = {6, 18, 36}
+    local function delayedRefresh()
+        ticks = ticks + 1
+        if not panelRef or not panelRef:getIsVisible() then
+            BurdJournals.safeRemoveEvent(Events.OnTick, delayedRefresh)
+            if panelRef then
+                panelRef._headerRefreshTickHandler = nil
+            end
+            return
+        end
+        if ticks >= checkpoints[nextCheckpointIndex] then
+            if panelRef.refreshJournalData then
+                panelRef:refreshJournalData()
+            else
+                panelRef:refreshCurrentList()
+            end
+            if panelRef.forceCurrentTabRebuild then
+                panelRef:forceCurrentTabRebuild()
+            end
+            nextCheckpointIndex = nextCheckpointIndex + 1
+            if nextCheckpointIndex > #checkpoints then
+                BurdJournals.safeRemoveEvent(Events.OnTick, delayedRefresh)
+                panelRef._headerRefreshTickHandler = nil
+            end
+        end
+    end
+
+    self._headerRefreshTickHandler = delayedRefresh
+    Events.OnTick.Add(delayedRefresh)
+end
+
+local function revealLootRewardsLocallyForOpenPanel(panel)
+    if not (panel and panel.journal and panel.mode == "absorb") then
+        return false
+    end
+    local journalData = nil
+    if panel.journal and panel.journal.getModData then
+        local modData = panel.journal:getModData()
+        journalData = (BurdJournals.getJournalData and BurdJournals.getJournalData(panel.journal))
+            or (modData and modData.BurdJournals)
+            or nil
+        if type(journalData) ~= "table" and journalData ~= nil and BurdJournals.normalizeTable then
+            local normalized = BurdJournals.normalizeTable(journalData)
+            if type(normalized) == "table" and modData then
+                modData.BurdJournals = normalized
+                journalData = normalized
+            end
+        end
+    end
+    if type(journalData) ~= "table" or journalData.isPlayerCreated == true or journalData.lootRewardsRevealed == true then
+        return false
+    end
+    if BurdJournals.resolveJournalUUIDForRuntime then
+        BurdJournals.resolveJournalUUIDForRuntime(journalData, panel.journal, true)
+    end
+    journalData.lootRewardsRevealed = true
+    local revealName = nil
+    if panel.player then
+        revealName = (panel.player.getDisplayName and panel.player:getDisplayName())
+            or (panel.player.getUsername and panel.player:getUsername())
+            or nil
+    end
+    if revealName and revealName ~= "" then
+        journalData.lootRewardsRevealedByName = revealName
+    end
+    if getGameTime and getGameTime() and getGameTime().getWorldAgeHours then
+        journalData.lootRewardsRevealedAtHours = getGameTime():getWorldAgeHours()
+    end
+    if BurdJournals.Client and BurdJournals.Client.markLootRewardRevealedLocally then
+        BurdJournals.Client.markLootRewardRevealedLocally(panel.journal, journalData)
+    end
+    if (not isClient() or isServer()) and panel.journal.transmitModData then
+        panel.journal:transmitModData()
+    end
+    if BurdJournals.updateJournalName then
+        BurdJournals.updateJournalName(panel.journal, true)
+    end
+    if BurdJournals.updateJournalIcon then
+        BurdJournals.updateJournalIcon(panel.journal)
+    end
+    local container = panel.journal.getContainer and panel.journal:getContainer() or nil
+    if container and container.setDrawDirty then
+        BurdJournals.safePcall(function()
+            container:setDrawDirty(true)
+        end)
+    end
+    return true
+end
+
 function BurdJournals.UI.MainPanel:createChildren()
     ISPanelJoypad.createChildren(self)
     
@@ -2805,19 +3807,29 @@ function BurdJournals.UI.MainPanel:createChildren()
     -- In MP, request server to sanitize the journal (server-authoritative)
     -- In SP/host, sanitize directly
     if self.journal then
+        revealLootRewardsLocallyForOpenPanel(self)
         if isClient() and not isServer() then
             -- MP: Request server to sanitize and check dissolution
             if BurdJournals.Client and BurdJournals.Client.sendToServer then
-                local journalId = self.journal:getID()
+                local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+                local lookupArgs = BurdJournals.buildJournalCommandPayload
+                    and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+                    or { journalId = self.journal:getID(), journalUUID = nil, journalFingerprint = nil }
+                local journalId = lookupArgs.journalId
                 BurdJournals.Client.sendToServer("sanitizeJournal", {
-                    journalId = journalId
+                    journalId = lookupArgs.journalId,
+                    journalUUID = lookupArgs.journalUUID,
+                    journalFingerprint = lookupArgs.journalFingerprint,
+                    journalData = lookupArgs.journalData,
                 })
                 -- Keep any filled-journal open in sync with deferred UUID edits and update server UUID index/cache.
-                local shouldSync = journalId and BurdJournals.isFilledJournal and BurdJournals.isFilledJournal(self.journal)
+                local shouldSync = journalId and (
+                    (BurdJournals.isFilledJournal and BurdJournals.isFilledJournal(self.journal))
+                    or self.mode == "absorb"
+                    or (self.mode ~= "log" and BurdJournals.isHiddenCursedJournal and BurdJournals.isHiddenCursedJournal(self.journal))
+                )
                 if shouldSync then
-                    BurdJournals.Client.sendToServer("syncJournalData", {
-                        journalId = journalId
-                    })
+                    BurdJournals.Client.requestJournalSync(self.journal, "mainPanelCreateChildren")
                 end
             end
             -- Server will send back result if journal was dissolved
@@ -2862,6 +3874,24 @@ function BurdJournals.UI.MainPanel:createChildren()
         self:createLogUI()
     else
         self:createViewUI()
+    end
+
+    if self.mode == "log" then
+        if isClient() and not isServer() then
+            if BurdJournals.Client and BurdJournals.Client.sendToServer then
+                BurdJournals.Client.sendToServer("requestXpSync", {})
+            end
+        end
+
+        if self.forceCurrentTabRebuild then
+            self:forceCurrentTabRebuild()
+        elseif self.refreshCurrentList then
+            self:refreshCurrentList()
+        end
+
+        if self.scheduleDeferredRefreshPasses then
+            self:scheduleDeferredRefreshPasses()
+        end
     end
 end
 
@@ -2910,6 +3940,141 @@ function BurdJournals.UI.MainPanel:ensureDebugJournalDataRestored()
     end
 end
 
+local function journalDataHasRecordedEntries(journalData)
+    if type(journalData) ~= "table" then
+        return false
+    end
+    return (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.skills))
+        or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.traits))
+        or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.recipes))
+        or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.stats))
+        or false
+end
+
+local function pendingRecordSetSatisfied(liveSet, pendingSet, kind)
+    if type(pendingSet) ~= "table" or not (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(pendingSet)) then
+        return true
+    end
+    if type(liveSet) ~= "table" then
+        return false
+    end
+
+    for key, pendingValue in pairs(pendingSet) do
+        local liveValue = liveSet[key]
+        if liveValue == nil and type(key) == "string" then
+            liveValue = liveSet[string.lower(key)]
+        end
+        if liveValue == nil then
+            return false
+        end
+
+        if kind == "skills" then
+            local pendingXP = type(pendingValue) == "table" and tonumber(pendingValue.xp) or tonumber(pendingValue)
+            local liveXP = type(liveValue) == "table" and tonumber(liveValue.xp) or tonumber(liveValue)
+            if pendingXP ~= nil and (liveXP == nil or liveXP < pendingXP) then
+                return false
+            end
+
+            local pendingLevel = type(pendingValue) == "table" and tonumber(pendingValue.level) or nil
+            local liveLevel = type(liveValue) == "table" and tonumber(liveValue.level) or nil
+            if pendingLevel ~= nil and (liveLevel == nil or liveLevel < pendingLevel) then
+                return false
+            end
+        elseif kind == "stats" then
+            local pendingStatValue = type(pendingValue) == "table" and pendingValue.value or pendingValue
+            local liveStatValue = type(liveValue) == "table" and liveValue.value or liveValue
+            if pendingStatValue ~= nil and liveStatValue == nil then
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+function BurdJournals.UI.MainPanel:shouldRetainPendingRecordJournalData(journal, pendingData)
+    if type(pendingData) ~= "table" then
+        return false
+    end
+
+    local pendingJournalId = self.pendingNewJournalId
+    if pendingJournalId ~= nil then
+        local liveJournalId = journal and journal.getID and journal:getID() or nil
+        if liveJournalId == nil or tostring(liveJournalId) ~= tostring(pendingJournalId) then
+            return true
+        end
+    end
+
+    if not journal then
+        return true
+    end
+
+    local liveData = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+    if type(liveData) ~= "table" then
+        return true
+    end
+
+    local pendingUUID = type(pendingData.uuid) == "string" and pendingData.uuid ~= "" and pendingData.uuid or nil
+    local liveUUID = type(liveData.uuid) == "string" and liveData.uuid ~= "" and liveData.uuid or nil
+    if pendingUUID and liveUUID and tostring(pendingUUID) ~= tostring(liveUUID) then
+        return true
+    end
+
+    if journalDataHasRecordedEntries(pendingData) and not journalDataHasRecordedEntries(liveData) then
+        return true
+    end
+    if not pendingRecordSetSatisfied(liveData.skills, pendingData.skills, "skills") then
+        return true
+    end
+    if not pendingRecordSetSatisfied(liveData.traits, pendingData.traits, "traits") then
+        return true
+    end
+    if not pendingRecordSetSatisfied(liveData.recipes, pendingData.recipes, "recipes") then
+        return true
+    end
+    if not pendingRecordSetSatisfied(liveData.stats, pendingData.stats, "stats") then
+        return true
+    end
+
+    return false
+end
+
+function BurdJournals.UI.MainPanel:resolvePendingRecordJournalDataForRefresh()
+    local pendingData = type(self.pendingRecordJournalData) == "table"
+        and (BurdJournals.normalizeJournalData and BurdJournals.normalizeJournalData(self.pendingRecordJournalData) or self.pendingRecordJournalData)
+        or nil
+
+    if not pendingData then
+        if self.pendingNewJournalId ~= nil and self.journal and self.journal.getID
+            and tostring(self.journal:getID()) == tostring(self.pendingNewJournalId)
+        then
+            self.pendingNewJournalId = nil
+        end
+        self.pendingRecordJournalData = nil
+        return nil
+    end
+
+    self.pendingRecordJournalData = pendingData
+
+    local shouldRetain = self:shouldRetainPendingRecordJournalData(self.journal, pendingData)
+    if shouldRetain
+        and self.journal
+        and BurdJournals.Client
+        and BurdJournals.Client.projectAuthoritativeJournalDataToLocalItem
+    then
+        BurdJournals.Client.projectAuthoritativeJournalDataToLocalItem(self.player, self.journal, pendingData)
+        shouldRetain = self:shouldRetainPendingRecordJournalData(self.journal, pendingData)
+    end
+
+    if not shouldRetain then
+        self.pendingNewJournalId = nil
+        self.pendingRecordJournalData = nil
+        return nil
+    end
+
+    return pendingData
+end
+
 function BurdJournals.UI.MainPanel:refreshJournalData()
 
     self:refreshPlayer()
@@ -2921,7 +4086,6 @@ function BurdJournals.UI.MainPanel:refreshJournalData()
         if newJournal then
             BurdJournals.debugPrint("[BurdJournals] refreshJournalData: Found pending journal! Updating reference.")
             self.journal = newJournal
-            self.pendingNewJournalId = nil
         else
             BurdJournals.debugPrint("[BurdJournals] refreshJournalData: Pending journal still not found")
         end
@@ -2934,9 +4098,13 @@ function BurdJournals.UI.MainPanel:refreshJournalData()
             local journal = BurdJournals.findItemById(self.player, self.pendingNewJournalId)
             if journal then
                 self.journal = journal
-                self.pendingNewJournalId = nil
             end
         end
+    end
+
+    local pendingRecordJournalData = self:resolvePendingRecordJournalDataForRefresh()
+    if self.mode == "absorb" then
+        applyAbsorptionPresentationState(self)
     end
 
     self:rememberListSelection()
@@ -2944,7 +4112,7 @@ function BurdJournals.UI.MainPanel:refreshJournalData()
 
         if self.skillList then
             if self.populateRecordList then
-                self:populateRecordList()
+                self:populateRecordList(pendingRecordJournalData)
             end
         end
     elseif self.mode == "view" then
@@ -2967,76 +4135,68 @@ function BurdJournals.UI.MainPanel:refreshJournalData()
     self:updateHeaderUUIDTooltip()
 end
 
+function BurdJournals.UI.MainPanel:isLimitedClaimLootJournal()
+    if self.mode ~= "absorb" or not self.journal or not self.player then
+        return false
+    end
+    return BurdJournals.isLimitedClaimLootJournalActive
+        and BurdJournals.isLimitedClaimLootJournalActive(self.journal)
+        or false
+end
+
+function BurdJournals.UI.MainPanel:getLimitedLootClaimsLeft()
+    if not self:isLimitedClaimLootJournal() then
+        return nil
+    end
+    return BurdJournals.getClaimsLeftBeforeDissolve
+        and BurdJournals.getClaimsLeftBeforeDissolve(self.journal, self.player)
+        or 0
+end
+
+function BurdJournals.UI.MainPanel:hasLimitedLootClaimAvailable()
+    local claimsLeft = self:getLimitedLootClaimsLeft()
+    if claimsLeft == nil then
+        return true
+    end
+    if claimsLeft <= 0 then
+        self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsSpent") or "This journal has no claims left.", "error")
+        return false
+    end
+    return true
+end
+
+function BurdJournals.UI.MainPanel:shouldBlockLimitedLootQueue()
+    if self:isLimitedClaimLootJournal() and self.learningState and self.learningState.active and not self.learningState.isAbsorbAll then
+        self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsNoQueue") or "Finish the current claim before choosing another reward.", {r=0.9, g=0.72, b=0.45})
+        return true
+    end
+    return false
+end
+
 function BurdJournals.UI.MainPanel:createAbsorptionUI()
 
     self:refreshPlayer()
 
     local padding = 16
+    self.layoutPadding = padding
     local y = 0
     local btnHeight = 32
 
-    local isBloody = BurdJournals.isBloody(self.journal)
-    local hasBloodyOrigin = BurdJournals.hasBloodyOrigin(self.journal)
-    local journalData = BurdJournals.getJournalData(self.journal)
-    local isCursedReward = journalData and journalData.isCursedReward == true
-
-    self.isBloody = isBloody
-    self.hasBloodyOrigin = hasBloodyOrigin
-    self.isCursedReward = isCursedReward
+    local journalData = applyAbsorptionPresentationState(self)
+    local isBloody = self.isBloody
+    local hasBloodyOrigin = self.hasBloodyOrigin
+    local isYuletideReward = self.isYuletideReward
+    local isCursedReward = self.isCursedReward
 
     local headerHeight = 52
     self.headerRightInset = 0
-
-    local function getFlavorText(data, fallbackKey)
-        if data and data.flavorKey then
-            local translated = getText(data.flavorKey)
-            if translated and translated ~= data.flavorKey then
-                return translated
-            end
-        end
-
-        if data and data.flavorText then
-            return data.flavorText
-        end
-
-        return getText(fallbackKey)
-    end
-
-    if isCursedReward then
-        self.headerColor = {r=0.40, g=0.18, b=0.38}
-        self.headerAccent = {r=0.78, g=0.42, b=0.68}
-        self.typeText = getText("UI_BurdJournals_CursedJournalHeader")
-        self.rarityText = getText("UI_BurdJournals_RarityCursed")
-        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_CursedFlavor")
-    elseif isBloody then
-        self.headerColor = {r=0.45, g=0.08, b=0.08}
-        self.headerAccent = {r=0.7, g=0.15, b=0.15}
-        self.typeText = getText("UI_BurdJournals_BloodyJournalHeader")
-        self.rarityText = getText("UI_BurdJournals_RarityRare")
-        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_BloodyFlavor")
-    elseif hasBloodyOrigin then
-        self.headerColor = {r=0.30, g=0.22, b=0.12}
-        self.headerAccent = {r=0.5, g=0.35, b=0.2}
-        self.typeText = getText("UI_BurdJournals_WornJournalHeader")
-        self.rarityText = getText("UI_BurdJournals_RarityUncommon")
-        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_WornBloodyFlavor")
-    else
-        self.headerColor = {r=0.22, g=0.20, b=0.15}
-        self.headerAccent = {r=0.4, g=0.35, b=0.25}
-        self.typeText = getText("UI_BurdJournals_WornJournalHeader")
-        self.rarityText = nil
-        self.flavorText = getFlavorText(journalData, "UI_BurdJournals_WornFlavor")
-    end
-    self.headerIconTexture = getHeaderJournalIconTexture("absorb", self.journal, journalData, isBloody)
-    self.headerIconSize = 20
     self.headerHeight = headerHeight
     self:createHeaderRefreshButton(10, 15)
     y = headerHeight + 6
 
-    local authorName = journalData and journalData.author or getText("UI_BurdJournals_UnknownSurvivor")
-    self.authorName = authorName
     self.authorBoxY = y
-    self.authorBoxHeight = 44
+    self.showClaimsLeftBeforeDissolved = self:isLimitedClaimLootJournal()
+    refreshAbsorptionAuthorBoxLayout(self, padding)
     y = y + self.authorBoxHeight + 10
 
     local skillCount = 0
@@ -3051,7 +4211,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
 
     if journalData and journalData.skills then
         for skillName, skillData in pairs(journalData.skills) do
-            if isSkillVisibleForJournal(journalData, skillName) then
+            if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                 totalSkillCount = totalSkillCount + 1
                 if not BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
                     skillCount = skillCount + 1
@@ -3060,7 +4220,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
             end
         end
     end
-    if hasTraitEntriesForJournal(journalData) then
+    if BurdJournals.hasTraitEntriesForJournal(journalData) then
         for traitId, _ in pairs(journalData.traits) do
             totalTraitCount = totalTraitCount + 1
             if not BurdJournals.hasCharacterClaimedTrait(journalData, self.player, traitId) then
@@ -3100,15 +4260,11 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
         table.insert(tabs, {id = "traits", label = getText("UI_BurdJournals_TabTraits")})
     end
     if hasForgetSlot and not forgetClaimed then
+        local forgetColors = paletteColor(self.palette, "forgetTab")
         table.insert(tabs, {
             id = "forget",
             label = getText("UI_BurdJournals_TabForget") or "Forget",
-            themeColors = {
-                active = {r=0.52, g=0.20, b=0.56},
-                inactive = {r=0.22, g=0.10, b=0.26},
-                accent = {r=0.93, g=0.60, b=0.28},
-                textInactive = {r=0.88, g=0.72, b=0.84},
-            }
+            themeColors = forgetColors,
         })
     end
     if totalRecipeCount > 0 then
@@ -3116,11 +4272,11 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     end
 
     local tabThemeColors
-    if isCursedReward then
+    if isYuletideReward or isCursedReward then
         tabThemeColors = {
-            active = {r=0.45, g=0.21, b=0.44},
-            inactive = {r=0.22, g=0.12, b=0.24},
-            accent = {r=0.78, g=0.42, b=0.68}
+            active = paletteColor(self.palette, "tabActive"),
+            inactive = paletteColor(self.palette, "tabInactive"),
+            accent = paletteColor(self.palette, "tabAccent"),
         }
     elseif isBloody then
         tabThemeColors = {
@@ -3218,12 +4374,22 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     local closeW = getTextManager():MeasureStringX(UIFont.Small, closeText) + 20
     local btnWidth = math.max(90, maxAbsorbTabW, absorbAllW, dissolveW, closeW)
 
-    -- Show dissolve button only for worn/bloody journals that can dissolve
+    -- Show dissolve button for loot-style one-shot journals, including unwrapped Yuletides.
     local isWorn = BurdJournals.isWorn and BurdJournals.isWorn(self.journal) or false
-    local showDissolveBtn = (isWorn or isBloody or isCursedReward) and BurdJournals.shouldDissolve and true or false
+    local isYuletide = BurdJournals.getYuletideState
+        and BurdJournals.getYuletideState(self.journal) == BurdJournals.YULETIDE_STATE_UNWRAPPED
+        or false
+    local showDissolveBtn = (isWorn or isBloody or isCursedReward or isYuletide) and BurdJournals.shouldDissolve and true or false
+    local showAbsorbAllBtn = not self:isLimitedClaimLootJournal()
 
     local btnSpacing = 12
-    local numButtons = showDissolveBtn and 4 or 3
+    local numButtons = 2
+    if showAbsorbAllBtn then
+        numButtons = numButtons + 1
+    end
+    if showDissolveBtn then
+        numButtons = numButtons + 1
+    end
     local totalBtnWidth = btnWidth * numButtons + btnSpacing * (numButtons - 1)
     local btnStartX = (self.width - totalBtnWidth) / 2
     local btnY = self.footerY + 32
@@ -3231,45 +4397,27 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self.absorbTabBtn = ISButton:new(btnStartX, btnY, btnWidth, btnHeight, absorbTabText, self, BurdJournals.UI.MainPanel.onAbsorbTab)
     self.absorbTabBtn:initialise()
     self.absorbTabBtn:instantiate()
-    if isCursedReward then
-        self.absorbTabBtn.borderColor = {r=0.58, g=0.32, b=0.58, a=1}
-        self.absorbTabBtn.backgroundColor = {r=0.24, g=0.12, b=0.26, a=0.86}
-    elseif isBloody then
-        self.absorbTabBtn.borderColor = {r=0.5, g=0.2, b=0.2, a=1}
-        self.absorbTabBtn.backgroundColor = {r=0.3, g=0.1, b=0.1, a=0.8}
-    else
-        self.absorbTabBtn.borderColor = {r=0.35, g=0.45, b=0.3, a=1}
-        self.absorbTabBtn.backgroundColor = {r=0.18, g=0.22, b=0.14, a=0.8}
-    end
+    applyPaletteToButton(self.absorbTabBtn, self.palette, "absorbTabBtnBg", "absorbTabBtnBorder", nil)
     self.absorbTabBtn.textColor = {r=1, g=1, b=1, a=1}
     self:addChild(self.absorbTabBtn)
 
-    self.absorbAllBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 1, btnY, btnWidth, btnHeight, absorbAllText, self, BurdJournals.UI.MainPanel.onAbsorbAll)
-    self.absorbAllBtn:initialise()
-    self.absorbAllBtn:instantiate()
-    if isCursedReward then
-        self.absorbAllBtn.borderColor = {r=0.68, g=0.38, b=0.68, a=1}
-        self.absorbAllBtn.backgroundColor = {r=0.30, g=0.14, b=0.33, a=0.86}
-    elseif isBloody then
-        self.absorbAllBtn.borderColor = {r=0.6, g=0.2, b=0.2, a=1}
-        self.absorbAllBtn.backgroundColor = {r=0.35, g=0.1, b=0.1, a=0.8}
-    else
-        self.absorbAllBtn.borderColor = {r=0.4, g=0.5, b=0.3, a=1}
-        self.absorbAllBtn.backgroundColor = {r=0.2, g=0.25, b=0.15, a=0.8}
+    local nextBtnIndex = 1
+    if showAbsorbAllBtn then
+        self.absorbAllBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * 1, btnY, btnWidth, btnHeight, absorbAllText, self, BurdJournals.UI.MainPanel.onAbsorbAll)
+        self.absorbAllBtn:initialise()
+        self.absorbAllBtn:instantiate()
+        applyPaletteToButton(self.absorbAllBtn, self.palette, "absorbAllBtnBg", "absorbAllBtnBorder", nil)
+        self.absorbAllBtn.textColor = {r=1, g=1, b=1, a=1}
+        self:addChild(self.absorbAllBtn)
+        nextBtnIndex = 2
     end
-    self.absorbAllBtn.textColor = {r=1, g=1, b=1, a=1}
-    self:addChild(self.absorbAllBtn)
-
-    local nextBtnIndex = 2  -- Next button position
 
     -- Add dissolve button for worn/bloody journals
     if showDissolveBtn then
         self.dissolveBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * nextBtnIndex, btnY, btnWidth, btnHeight, dissolveText, self, BurdJournals.UI.MainPanel.onDissolveJournal)
         self.dissolveBtn:initialise()
         self.dissolveBtn:instantiate()
-        self.dissolveBtn.borderColor = {r=0.6, g=0.3, b=0.3, a=1}
-        self.dissolveBtn.backgroundColor = {r=0.4, g=0.15, b=0.15, a=0.8}
-        self.dissolveBtn.textColor = {r=1, g=0.9, b=0.9, a=1}
+        applyPaletteToButton(self.dissolveBtn, self.palette, "dissolveBtnBg", "dissolveBtnBorder", "dissolveBtnText")
         self:addChild(self.dissolveBtn)
         nextBtnIndex = nextBtnIndex + 1
     end
@@ -3277,9 +4425,7 @@ function BurdJournals.UI.MainPanel:createAbsorptionUI()
     self.closeBottomBtn = ISButton:new(btnStartX + (btnWidth + btnSpacing) * nextBtnIndex, btnY, btnWidth, btnHeight, closeText, self, BurdJournals.UI.MainPanel.onClose)
     self.closeBottomBtn:initialise()
     self.closeBottomBtn:instantiate()
-    self.closeBottomBtn.borderColor = {r=0.4, g=0.35, b=0.3, a=1}
-    self.closeBottomBtn.backgroundColor = {r=0.15, g=0.13, b=0.12, a=0.8}
-    self.closeBottomBtn.textColor = {r=0.9, g=0.85, b=0.8, a=1}
+    applyPaletteToButton(self.closeBottomBtn, self.palette, "closeBtnBg", "closeBtnBorder", "closeBtnText")
     self:addChild(self.closeBottomBtn)
 
     self:populateAbsorptionList()
@@ -3338,8 +4484,20 @@ function BurdJournals.UI.MainPanel:onDissolveConfirm(button)
         -- In MP, send command to server to remove
         -- Keep dissolve UX consistent for all journals, including debug-spawned.
         BurdJournals.debugPrint("[BurdJournals] Dissolving via dissolveJournal")
+        local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+        local lookupArgs = BurdJournals.buildJournalCommandPayload
+            and BurdJournals.buildJournalCommandPayload(journal, journalData, true)
+            or {
+                journalId = journal and journal.getID and journal:getID() or nil,
+                journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+                journalFingerprint = nil,
+                journalData = nil,
+            }
         sendClientCommand(player, "BurdJournals", "dissolveJournal", {
-            journalId = journal:getID()
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
         })
     else
         -- In SP, remove directly and show message
@@ -3358,7 +4516,10 @@ function BurdJournals.UI.MainPanel:onDissolveConfirm(button)
 end
 
 function BurdJournals.UI.MainPanel:onAbsorbAll()
-
+    if self:isLimitedClaimLootJournal() then
+        self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsNoBatch") or "Batch absorb is disabled for limited-claim loot journals.", "warn")
+        return
+    end
     self:startLearningAll()
 end
 
@@ -3398,6 +4559,13 @@ end
 
 function BurdJournals.UI.MainPanel:prerenderJournalUI()
     local padding = 16
+    local pal = self.palette or getRewardPalette(self.rewardTheme)
+
+    if self.rewardTheme == "yuletide" then
+        drawAnimatedStripedJournalBackdrop(self, 0, 0, self.width, self.height, YULETIDE_PANEL_THEME, "journal_panel_backdrop")
+    elseif self.rewardTheme == "cursed" then
+        drawAnimatedCursedJournalBackdrop(self, 0, 0, self.width, self.height, CURSED_PANEL_THEME, "journal_panel_backdrop_cursed")
+    end
 
     local isProgressActive = false
     if self.mode == "log" then
@@ -3505,7 +4673,8 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
         if self.typeText then
             local typeTextH = getTextManager():MeasureStringY(UIFont.Medium, self.typeText)
             local typeTextY = math.floor(headerCenterY - (typeTextH / 2)) + 1
-            self:drawText(self.typeText, titleX, typeTextY, 1, 0.9, 0.85, 1, UIFont.Medium)
+            local ht = paletteColor(pal, "headerTypeText")
+            self:drawText(self.typeText, titleX, typeTextY, ht.r, ht.g, ht.b, ht.a or 1, UIFont.Medium)
         end
 
         if self.rarityText and self.mode == "absorb" then
@@ -3516,13 +4685,8 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             local rarityH = math.max(18, rarityTextH + 6)
             local rarityY = math.floor(headerCenterY - (rarityH / 2)) + 1
             local rarityTextY = math.floor(rarityY + ((rarityH - rarityTextH) / 2))
-            if self.isCursedReward then
-                self:drawRect(rarityX - 6, rarityY, rarityW, rarityH, 0.82, 0.52, 0.28, 0.50)
-            elseif self.isBloody then
-                self:drawRect(rarityX - 6, rarityY, rarityW, rarityH, 0.8, 0.6, 0.15, 0.15)
-            else
-                self:drawRect(rarityX - 6, rarityY, rarityW, rarityH, 0.8, 0.5, 0.4, 0.2)
-            end
+            local rb = paletteColor(self.palette, "rarityBadgeBg")
+            self:drawRect(rarityX - 6, rarityY, rarityW, rarityH, rb.a or 0.8, rb.r, rb.g, rb.b)
             self:drawText(self.rarityText, rarityX, rarityTextY, 1, 0.95, 0.85, 1, UIFont.Small)
         end
     end
@@ -3534,15 +4698,12 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
         if self.mode == "log" or self.mode == "view" then
             boxBg = {r=0.10, g=0.14, b=0.18}
             boxBorder = {r=0.20, g=0.30, b=0.38}
-        elseif self.isCursedReward then
-            boxBg = {r=0.18, g=0.10, b=0.18}
-            boxBorder = {r=0.48, g=0.26, b=0.46}
         else
-            boxBg = {r=0.12, g=0.11, b=0.10}
-            boxBorder = {r=0.30, g=0.28, b=0.25}
+            boxBg = paletteColor(pal, "authorBoxBg")
+            boxBorder = paletteColor(pal, "authorBoxBorder")
         end
 
-        self:drawRect(padding, self.authorBoxY, self.width - padding * 2, self.authorBoxHeight, 0.6, boxBg.r, boxBg.g, boxBg.b)
+        self:drawRect(padding, self.authorBoxY, self.width - padding * 2, self.authorBoxHeight, (self.mode == "absorb" and ((boxBg.a or 0.6))) or 0.6, boxBg.r, boxBg.g, boxBg.b)
         self:drawRectBorder(padding, self.authorBoxY, self.width - padding * 2, self.authorBoxHeight, 0.5, boxBorder.r, boxBorder.g, boxBorder.b)
 
         local authorText
@@ -3552,20 +4713,48 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
         else
             authorText = BurdJournals.formatText(getText("UI_BurdJournals_FromNotesOf"), authorNameDisplay)
         end
-        self:drawText(authorText, padding + 10, self.authorBoxY + 8, 0.8, 0.85, 0.9, 1, UIFont.Small)
+        local authorColor = (self.mode == "absorb") and paletteColor(pal, "authorText") or {r=0.8, g=0.85, b=0.9, a=1}
+        local contentX = padding + (self.authorBoxInnerPadding or 10)
+        local contentY = self.authorBoxY + 8
+
+        if self.mode == "absorb" and self.authorTextLayout then
+            contentY = contentY + drawWrappedTextLayout(self, self.authorTextLayout, contentX, contentY, authorColor)
+        else
+            self:drawText(authorText, contentX, contentY, authorColor.r, authorColor.g, authorColor.b, authorColor.a or 1, UIFont.Small)
+            contentY = contentY + math.max(14, getTextManager():MeasureStringY(UIFont.Small, "Ag"))
+        end
 
         if self.flavorText then
-            if self.isCursedReward then
-                self:drawText(self.flavorText, padding + 10, self.authorBoxY + 24, 0.85, 0.62, 0.84, 1, UIFont.Small)
+            local flavorColor = (self.mode == "absorb") and paletteColor(pal, "flavorText") or {r=0.5, g=0.55, b=0.6, a=1}
+            contentY = contentY + 4
+            if self.mode == "absorb" and self.flavorTextLayout then
+                contentY = contentY + drawWrappedTextLayout(self, self.flavorTextLayout, contentX, contentY, flavorColor)
             else
-                self:drawText(self.flavorText, padding + 10, self.authorBoxY + 24, 0.5, 0.55, 0.6, 1, UIFont.Small)
+                self:drawText(self.flavorText, contentX, contentY, flavorColor.r, flavorColor.g, flavorColor.b, flavorColor.a or 1, UIFont.Small)
+                contentY = contentY + math.max(14, getTextManager():MeasureStringY(UIFont.Small, "Ag"))
+            end
+        end
+
+        if self.showClaimsLeftBeforeDissolved then
+            local claimsText = self.claimsTextDisplay
+            if not claimsText then
+                local claimsLeft = self:getLimitedLootClaimsLeft() or 0
+                claimsText = BurdJournals.formatText(getText("UI_BurdJournals_ClaimsLeftBeforeDissolved") or "Claims Left Before Dissolved: %d", claimsLeft)
+            end
+            local claimsColor = (self.mode == "absorb") and paletteColor(pal, "claimsText") or {r=0.82, g=0.84, b=0.66, a=1}
+            contentY = contentY + 4
+            if self.mode == "absorb" and self.claimsTextLayout then
+                drawWrappedTextLayout(self, self.claimsTextLayout, contentX, contentY, claimsColor)
+            else
+                self:drawText(claimsText, contentX, contentY, claimsColor.r, claimsColor.g, claimsColor.b, claimsColor.a or 1, UIFont.Small)
             end
         end
     end
 
     if self.footerY then
 
-        self:drawRect(padding, self.footerY, self.width - padding * 2, 1, 0.3, 0.25, 0.35, 0.45)
+        local divider = (self.mode == "absorb") and paletteColor(pal, "footerDivider") or {r=0.25, g=0.35, b=0.45, a=0.3}
+        self:drawRect(padding, self.footerY, self.width - padding * 2, 1, divider.a or 0.3, divider.r, divider.g, divider.b)
 
         if self.mode == "log" then
 
@@ -3586,7 +4775,7 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
                 self:drawRectBorder(barX, barY, barW, barH, 0.8, 0.4, 0.6, 0.7)
 
                 local progressFormat = getText("UI_BurdJournals_RecordingAllProgress") or "Recording All: %d%% (%s remaining)"
-                local progressText = BurdJournals.formatText(progressFormat, math.floor(progress * 100), remainingText)
+                local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(progress * 100), remainingText))
                 local textWidth = getTextManager():MeasureStringX(UIFont.Small, progressText)
                 self:drawText(progressText, (self.width - textWidth) / 2, barY + 1, 1, 1, 1, 1, UIFont.Small)
 
@@ -3610,15 +4799,13 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
 
             self:drawRect(barX, barY, barW, barH, 0.7, 0.12, 0.12, 0.12)
             local fillW = barW * progress
-            if self.isCursedReward then
-                self:drawRect(barX, barY, fillW, barH, 0.88, 0.56, 0.28, 0.56)
-            elseif self.isBloody then
-                self:drawRect(barX, barY, fillW, barH, 0.85, 0.6, 0.2, 0.15)
-            elseif self.mode == "view" then
-                self:drawRect(barX, barY, fillW, barH, 0.85, 0.25, 0.50, 0.60)
+            local pFill
+            if self.mode == "view" then
+                pFill = {r=0.25, g=0.50, b=0.60, a=0.85}
             else
-                self:drawRect(barX, barY, fillW, barH, 0.85, 0.35, 0.55, 0.25)
+                pFill = paletteColor(self.palette, "progressBarFill")
             end
+            self:drawRect(barX, barY, fillW, barH, pFill.a or 0.85, pFill.r, pFill.g, pFill.b)
             self:drawRectBorder(barX, barY, barW, barH, 0.8, 0.5, 0.5, 0.5)
 
             local progressFormat
@@ -3627,7 +4814,7 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
             else
                 progressFormat = getText("UI_BurdJournals_AbsorbingAllProgress") or "Absorbing All: %d%% (%s remaining)"
             end
-            local progressText = BurdJournals.formatText(progressFormat, math.floor(progress * 100), remainingText)
+            local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(progress * 100), remainingText))
             local textWidth = getTextManager():MeasureStringX(UIFont.Small, progressText)
             self:drawText(progressText, (self.width - textWidth) / 2, barY + 1, 1, 1, 1, 1, UIFont.Small)
 
@@ -3652,7 +4839,8 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
         end
         if summaryText ~= "" then
             local textWidth = getTextManager():MeasureStringX(UIFont.Small, summaryText)
-                    self:drawText(summaryText, (self.width - textWidth) / 2, self.footerY + 10, 0.7, 0.75, 0.8, 1, UIFont.Small)
+                    local summaryColor = (self.mode == "absorb") and paletteColor(pal, "summaryText") or {r=0.7, g=0.75, b=0.8, a=1}
+                    self:drawText(summaryText, (self.width - textWidth) / 2, self.footerY + 10, summaryColor.r, summaryColor.g, summaryColor.b, summaryColor.a or 1, UIFont.Small)
                 end
             end
         end
@@ -3667,44 +4855,375 @@ function BurdJournals.UI.MainPanel:prerenderJournalUI()
     self:refreshControllerPrompts(false)
 end
 
+local function drawAbsorptionSkillSquares(ctx, filledColor, emptyColor, progressColor, displayXP, visualXP, statusText, statusColor)
+    local self = ctx.listBox
+    local data = ctx.data
+    local mainPanel = ctx.mainPanel
+    local journalData = ctx.journalData
+    local squaresX = ctx.textX
+    local squaresY = ctx.cardY + 26
+    local squareSize = 10
+    local squareSpacing = 2
+    BurdJournals.drawPlayerJournalViewSkillSquares(self, squaresX, squaresY, data.skillName, displayXP, visualXP, data.level, journalData, mainPanel.player, squareSize, squareSpacing, {
+        baselineColor = getBaselineSquareColor(filledColor, emptyColor),
+        earnedColor = filledColor,
+        filledColor = filledColor,
+        emptyColor = emptyColor,
+        progressColor = progressColor,
+    })
+    local squaresWidth = 10 * squareSize + 9 * squareSpacing
+    self:drawText(statusText, squaresX + squaresWidth + 8, squaresY, statusColor.r, statusColor.g, statusColor.b, statusColor.a or 1, UIFont.Small)
+end
+
+local function doDrawAbsorptionSkillContent(ctx)
+    local self = ctx.listBox
+    local mainPanel = ctx.mainPanel
+    local data = ctx.data
+    local pal = ctx.pal
+    local accentColor = ctx.accentColor
+    local learningState = mainPanel.learningState
+    local isLearningThis = learningState.active and not learningState.isAbsorbAll and learningState.skillName == data.skillName
+    local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll and not data.isClaimed
+    local queuePosition = mainPanel:getQueuePosition(data.skillName)
+    local isQueued = queuePosition ~= nil
+    local displayName = data.displayName or data.skillName or "Unknown Skill"
+
+    self:drawText(displayName, ctx.textX, ctx.cardY + 6, ctx.textColor.r, ctx.textColor.g, ctx.textColor.b, 1, UIFont.Small)
+
+    if isLearningThis then
+        local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
+        local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(learningState.progress * 100)))
+        local progressColor = ctx.yuletideLearningTextColor or {r=0.9, g=0.8, b=0.3}
+        local barX = ctx.textX + 90
+        local barY = ctx.cardY + 27
+        local barW = ctx.cardW - 120 - ctx.padding
+        local barH = 10
+        local progressFill = paletteColor(pal, "progressBarFill")
+        self:drawText(progressText, ctx.textX, ctx.cardY + 24, progressColor.r, progressColor.g, progressColor.b, 1, UIFont.Small)
+        self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
+        self:drawRect(barX, barY, barW * learningState.progress, barH, progressFill.a or 0.9, progressFill.r, progressFill.g, progressFill.b)
+        self:drawRectBorder(barX, barY, barW, barH, 0.7, accentColor.r, accentColor.g, accentColor.b)
+    else
+        local displayXP = math.max(0, tonumber(data.effectiveXP or data.xp or 0) or 0)
+        local visualXP = displayXP
+        local xpText = "+" .. BurdJournals.formatXP(displayXP) .. " XP"
+        if data.hasBookBoost then
+            xpText = xpText .. " " .. (getText("UI_BurdJournals_XPBoosted") or "(boosted)")
+        end
+
+        if isQueued then
+            local filledColor = paletteColor(pal, "levelQueuedFilled")
+            local emptyColor = paletteColor(pal, "levelQueuedEmpty")
+            local progressColor = paletteColor(pal, "levelQueuedProgress")
+            local xpColor = data.hasBookBoost and {r=1.0, g=0.85, b=0.3} or paletteColor(pal, "feedbackInfo")
+            drawAbsorptionSkillSquares(ctx, filledColor, emptyColor, progressColor, displayXP, visualXP, xpText .. "  #" .. queuePosition, xpColor)
+        elseif isQueuedInAbsorbAll then
+            local filledColor = paletteColor(pal, "levelAbsorbFilled")
+            local emptyColor = paletteColor(pal, "levelAbsorbEmpty")
+            local progressColor = paletteColor(pal, "levelAbsorbProgress")
+            local xpColor = data.hasBookBoost and {r=1.0, g=0.85, b=0.3} or paletteColor(pal, "feedbackInfo")
+            drawAbsorptionSkillSquares(ctx, filledColor, emptyColor, progressColor, displayXP, visualXP, xpText .. "  Queued", xpColor)
+        elseif data.xp and not data.isClaimed then
+            local filledColor = paletteColor(pal, "levelFilled")
+            local emptyColor = paletteColor(pal, "levelEmpty")
+            local progressColor = paletteColor(pal, "levelProgress")
+            local xpColor = data.hasBookBoost and {r=1.0, g=0.85, b=0.3} or paletteColor(pal, "feedbackSuccess")
+            drawAbsorptionSkillSquares(ctx, filledColor, emptyColor, progressColor, displayXP, visualXP, xpText, xpColor)
+        elseif data.isClaimed then
+            drawAbsorptionSkillSquares(ctx, {r=0.2, g=0.2, b=0.2}, {r=0.08, g=0.08, b=0.08}, {r=0.15, g=0.15, b=0.15}, displayXP, visualXP, getText("UI_BurdJournals_StatusClaimed") or "Claimed", {r=0.35, g=0.35, b=0.35})
+        end
+    end
+
+    if not data.isClaimed and not isLearningThis then
+        local btnW = 60
+        local btnH = 24
+        local btnX = ctx.cardX + ctx.cardW - btnW - 10
+        local btnY = ctx.cardY + (ctx.cardH - btnH) / 2
+        local isInBatch = isInCurrentAbsorbBatch(learningState, "skill", data.skillName)
+
+        if isQueued then
+            local btnText = "#" .. queuePosition
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.5, 0.6)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
+        elseif isInBatch then
+            local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.45, 0.55, 0.45)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.7, 0.6)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.95, 1, 0.95, 1, UIFont.Small)
+        elseif learningState.active and not learningState.isAbsorbAll then
+            local btnText = getText("UI_BurdJournals_BtnQueue")
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.25, 0.35, 0.5)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.4, 0.55, 0.7)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
+        elseif not learningState.active then
+            local btnText = getText("UI_BurdJournals_Absorb")
+            self:drawRect(btnX, btnY, btnW, btnH, 0.7, accentColor.r * 0.6, accentColor.g * 0.6, accentColor.b * 0.6)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, accentColor.r, accentColor.g, accentColor.b)
+            mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
+        end
+    end
+end
+
+local function doDrawAbsorptionRecipeContent(ctx)
+    local self = ctx.listBox
+    local mainPanel = ctx.mainPanel
+    local data = ctx.data
+    local pal = ctx.pal
+    local learningState = mainPanel.learningState
+    local isLearningThis = learningState.active and not learningState.isAbsorbAll and learningState.recipeName == data.recipeName
+    local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll and not data.isClaimed and not data.alreadyKnown
+    local queuePosition = mainPanel:getQueuePosition(data.recipeName)
+    local isQueued = queuePosition ~= nil
+    local recipeName = data.displayName or data.recipeName or "Unknown Recipe"
+    local recipeTextX = ctx.textX
+    local magazineTexture = getMagazineTexture(data.magazineSource)
+
+    if magazineTexture then
+        local iconSize = 24
+        local iconX = ctx.textX
+        local iconY = ctx.cardY + (ctx.cardH - iconSize) / 2
+        local iconAlpha = (data.isClaimed or data.alreadyKnown) and 0.4 or 1.0
+        self:drawTextureScaledAspect(magazineTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
+        recipeTextX = ctx.textX + iconSize + 6
+    end
+
+    local recipeColor
+    if data.isClaimed then
+        recipeColor = {r=0.4, g=0.4, b=0.4}
+    elseif data.alreadyKnown then
+        recipeColor = ctx.isYuletideReward and paletteColor(pal, "feedbackMuted") or {r=0.5, g=0.5, b=0.45}
+    else
+        recipeColor = ctx.isYuletideReward and paletteColor(pal, "feedbackInfo") or {r=0.5, g=0.85, b=0.9}
+    end
+    self:drawText(recipeName, recipeTextX, ctx.cardY + 6, recipeColor.r, recipeColor.g, recipeColor.b, 1, UIFont.Small)
+
+    if isLearningThis then
+        local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText("Learning... %d%%", math.floor(learningState.progress * 100)))
+        local progressColor = ctx.yuletideLearningTextColor or {r=0.5, g=0.8, b=0.9}
+        local barX = recipeTextX + 100
+        local barY = ctx.cardY + 25
+        local barW = ctx.cardW - barX - 20
+        local barH = 10
+        local progressFill = ctx.isYuletideReward and paletteColor(pal, "progressBarFill") or {r=0.3, g=0.7, b=0.8, a=0.9}
+        local progressBorder = ctx.isYuletideReward and ctx.accentColor or {r=0.4, g=0.8, b=0.9}
+        self:drawText(progressText, recipeTextX, ctx.cardY + 22, progressColor.r, progressColor.g, progressColor.b, 1, UIFont.Small)
+        self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
+        self:drawRect(barX, barY, barW * learningState.progress, barH, progressFill.a or 0.9, progressFill.r, progressFill.g, progressFill.b)
+        self:drawRectBorder(barX, barY, barW, barH, 0.7, progressBorder.r, progressBorder.g, progressBorder.b)
+    elseif isQueued then
+        local queueText = BurdJournals.formatText(getText("UI_BurdJournals_RecipeKnowledgeQueuedNum") or "Recipe knowledge - Queued #%d", queuePosition)
+        local queueColor = ctx.isYuletideReward and paletteColor(pal, "feedbackInfo") or {r=0.6, g=0.75, b=0.9}
+        self:drawText(queueText, recipeTextX, ctx.cardY + 22, queueColor.r, queueColor.g, queueColor.b, 1, UIFont.Small)
+    elseif isQueuedInAbsorbAll then
+        local queuedText = getText("UI_BurdJournals_RecipeKnowledgeQueued") or "Recipe knowledge - Queued"
+        local queuedColor = ctx.isYuletideReward and paletteColor(pal, "feedbackMuted") or {r=0.4, g=0.6, b=0.65}
+        self:drawText(queuedText, recipeTextX, ctx.cardY + 22, queuedColor.r, queuedColor.g, queuedColor.b, 1, UIFont.Small)
+    elseif data.isClaimed then
+        self:drawText(getText("UI_BurdJournals_RecipeClaimed") or "Claimed", recipeTextX, ctx.cardY + 22, 0.35, 0.35, 0.35, 1, UIFont.Small)
+    elseif data.alreadyKnown then
+        local knownColor = ctx.isYuletideReward and paletteColor(pal, "feedbackMuted") or {r=0.5, g=0.4, b=0.3}
+        self:drawText(getText("UI_BurdJournals_RecipeAlreadyKnown") or "Already known", recipeTextX, ctx.cardY + 22, knownColor.r, knownColor.g, knownColor.b, 1, UIFont.Small)
+    else
+        local sourceText = getText("UI_BurdJournals_RecipeKnowledge") or "Recipe knowledge"
+        if data.magazineSource then
+            local magazineName = BurdJournals.getMagazineDisplayName(data.magazineSource)
+            sourceText = BurdJournals.formatText(getText("UI_BurdJournals_RecipeFromMagazine") or "From: %s", magazineName)
+        end
+        local sourceColor = ctx.isYuletideReward and paletteColor(pal, "feedbackMuted") or {r=0.5, g=0.7, b=0.75}
+        self:drawText(sourceText, recipeTextX, ctx.cardY + 22, sourceColor.r, sourceColor.g, sourceColor.b, 1, UIFont.Small)
+    end
+
+    if not data.isClaimed and not data.alreadyKnown and not isLearningThis then
+        local btnW = 55
+        local btnH = 24
+        local btnX = ctx.cardX + ctx.cardW - btnW - 10
+        local btnY = ctx.cardY + (ctx.cardH - btnH) / 2
+        local isInBatch = isInCurrentAbsorbBatch(learningState, "recipe", data.recipeName)
+
+        if isQueued then
+            local queuedBtnBg = ctx.isYuletideReward and paletteColor(pal, "itemHeaderBg") or {r=0.3, g=0.5, b=0.55}
+            local queuedBtnBorder = ctx.isYuletideReward and ctx.accentColor or {r=0.4, g=0.6, b=0.7}
+            local queuedBtnTextColor = ctx.isYuletideReward and paletteColor(pal, "itemHeaderText") or {r=0.8, g=0.9, b=1.0}
+            local btnText = "#" .. queuePosition
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.5, queuedBtnBg.r, queuedBtnBg.g, queuedBtnBg.b)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, queuedBtnBorder.r, queuedBtnBorder.g, queuedBtnBorder.b)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, queuedBtnTextColor.r, queuedBtnTextColor.g, queuedBtnTextColor.b, 1, UIFont.Small)
+        elseif isInBatch then
+            local batchBtnBg = ctx.isYuletideReward and paletteColor(pal, "absorbTabBtnBg") or {r=0.45, g=0.55, b=0.5}
+            local batchBtnBorder = ctx.isYuletideReward and paletteColor(pal, "absorbTabBtnBorder") or {r=0.55, g=0.7, b=0.7}
+            local batchBtnTextColor = ctx.isYuletideReward and paletteColor(pal, "closeBtnText") or {r=0.95, g=1.0, b=0.95}
+            local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.6, batchBtnBg.r, batchBtnBg.g, batchBtnBg.b)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, batchBtnBorder.r, batchBtnBorder.g, batchBtnBorder.b)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, batchBtnTextColor.r, batchBtnTextColor.g, batchBtnTextColor.b, 1, UIFont.Small)
+        elseif learningState.active and not learningState.isAbsorbAll then
+            local queueBtnBg = ctx.isYuletideReward and paletteColor(pal, "itemHeaderBg") or {r=0.25, g=0.45, b=0.5}
+            local queueBtnBorder = ctx.isYuletideReward and ctx.accentColor or {r=0.35, g=0.6, b=0.7}
+            local queueBtnTextColor = ctx.isYuletideReward and paletteColor(pal, "itemHeaderText") or {r=0.9, g=0.95, b=1.0}
+            local btnText = getText("UI_BurdJournals_BtnQueue")
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.6, queueBtnBg.r, queueBtnBg.g, queueBtnBg.b)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, queueBtnBorder.r, queueBtnBorder.g, queueBtnBorder.b)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, queueBtnTextColor.r, queueBtnTextColor.g, queueBtnTextColor.b, 1, UIFont.Small)
+        elseif not learningState.active then
+            local claimBtnBg = ctx.isYuletideReward and paletteColor(pal, "absorbTabBtnBg") or {r=0.2, g=0.45, b=0.5}
+            local claimBtnBorder = ctx.isYuletideReward and ctx.accentColor or {r=0.3, g=0.6, b=0.7}
+            local claimBtnTextColor = ctx.isYuletideReward and paletteColor(pal, "closeBtnText") or {r=0.9, g=1.0, b=1.0}
+            local btnText = getText("UI_BurdJournals_BtnClaim")
+            self:drawRect(btnX, btnY, btnW, btnH, 0.7, claimBtnBg.r, claimBtnBg.g, claimBtnBg.b)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, claimBtnBorder.r, claimBtnBorder.g, claimBtnBorder.b)
+            mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=claimBtnTextColor.r, g=claimBtnTextColor.g, b=claimBtnTextColor.b, a=1}, "A")
+        end
+    end
+end
+
+local function doDrawAbsorptionTraitContent(ctx)
+    local self = ctx.listBox
+    local mainPanel = ctx.mainPanel
+    local data = ctx.data
+    local learningState = mainPanel.learningState
+    local isLearningThis = learningState.active and not learningState.isAbsorbAll and (
+        (data.isForgetSlot and learningState.forgetTraitId == data.traitId) or
+        ((not data.isForgetSlot) and learningState.traitId == data.traitId)
+    )
+    local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll and not data.isClaimed and not data.alreadyKnown and not data.isForgetSlot
+    local queuePosition = mainPanel:getQueuePosition(data.traitId)
+    local isQueued = queuePosition ~= nil
+    local traitName = data.traitName or data.traitId or getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait"
+    local traitTextX = ctx.textX
+
+    if data.traitTexture then
+        local iconSize = 24
+        local iconX = ctx.textX
+        local iconY = ctx.cardY + (ctx.cardH - iconSize) / 2
+        local iconAlpha = data.isClaimed and 0.4 or 1.0
+        self:drawTextureScaledAspect(data.traitTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
+        traitTextX = ctx.textX + iconSize + 6
+    end
+
+    local traitColor
+    if data.isClaimed then
+        traitColor = {r=0.4, g=0.4, b=0.4}
+    elseif data.isForgetSlot then
+        traitColor = {r=0.95, g=0.65, b=0.72}
+    elseif data.isPositive == true then
+        traitColor = {r=0.5, g=0.9, b=0.5}
+    elseif data.isPositive == false then
+        traitColor = {r=0.9, g=0.5, b=0.5}
+    else
+        traitColor = {r=0.9, g=0.75, b=0.5}
+    end
+    self:drawText(traitName, traitTextX, ctx.cardY + 6, traitColor.r, traitColor.g, traitColor.b, 1, UIFont.Small)
+
+    if isLearningThis then
+        local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(getText("UI_BurdJournals_AbsorbingProgress") or "Absorbing... %d%%", math.floor(learningState.progress * 100)))
+        local progressColor = ctx.yuletideLearningTextColor or {r=0.9, g=0.7, b=0.3}
+        local barX = traitTextX + 100
+        local barY = ctx.cardY + 25
+        local barW = ctx.cardW - barX - 20
+        local barH = 10
+        self:drawText(progressText, traitTextX, ctx.cardY + 22, progressColor.r, progressColor.g, progressColor.b, 1, UIFont.Small)
+        self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
+        self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.8, 0.6, 0.2)
+        self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.9, 0.7, 0.3)
+    elseif isQueued then
+        if data.isPositive == false then
+            local queueText = BurdJournals.formatText(getText("UI_BurdJournals_NegativeTraitQueued") or "Cursed trait - Queued #%d", queuePosition)
+            self:drawText(queueText, traitTextX, ctx.cardY + 22, 0.7, 0.4, 0.4, 1, UIFont.Small)
+        else
+            local queueText = BurdJournals.formatText(getText("UI_BurdJournals_RareTraitQueued") or "Rare trait - Queued #%d", queuePosition)
+            self:drawText(queueText, traitTextX, ctx.cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
+        end
+    elseif isQueuedInAbsorbAll then
+        if data.isPositive == false then
+            self:drawText(getText("UI_BurdJournals_NegativeTraitCurseQueued") or "Cursed knowledge... - Queued", traitTextX, ctx.cardY + 22, 0.5, 0.35, 0.35, 1, UIFont.Small)
+        else
+            self:drawText(getText("UI_BurdJournals_RareTraitBonusQueued") or "Rare trait bonus! - Queued", traitTextX, ctx.cardY + 22, 0.5, 0.45, 0.25, 1, UIFont.Small)
+        end
+    elseif data.isClaimed then
+        self:drawText(getText("UI_BurdJournals_StatusClaimed") or "Claimed", traitTextX, ctx.cardY + 22, 0.35, 0.35, 0.35, 1, UIFont.Small)
+    elseif data.isForgetSlot then
+        self:drawText(getText("UI_BurdJournals_ForgetTraitHint") or "Remove this negative trait", traitTextX, ctx.cardY + 22, 0.8, 0.55, 0.6, 1, UIFont.Small)
+    elseif data.alreadyKnown then
+        self:drawText(getText("UI_BurdJournals_StatusAlreadyKnown") or "Already known", traitTextX, ctx.cardY + 22, 0.5, 0.4, 0.3, 1, UIFont.Small)
+    elseif data.isPositive == false then
+        self:drawText(getText("UI_BurdJournals_NegativeTraitCurse") or "Cursed knowledge...", traitTextX, ctx.cardY + 22, 0.7, 0.4, 0.4, 1, UIFont.Small)
+    else
+        self:drawText(getText("UI_BurdJournals_RareTraitBonus") or "Rare trait bonus!", traitTextX, ctx.cardY + 22, 0.7, 0.55, 0.3, 1, UIFont.Small)
+    end
+
+    if not data.isClaimed and not data.alreadyKnown and not isLearningThis then
+        local btnW = 60
+        local btnH = 24
+        local btnX = ctx.cardX + ctx.cardW - btnW - 10
+        local btnY = ctx.cardY + (ctx.cardH - btnH) / 2
+        local batchType = data.isForgetSlot and "forget" or "trait"
+        local isInBatch = isInCurrentAbsorbBatch(learningState, batchType, data.traitId)
+
+        if isQueued then
+            local btnText = "#" .. queuePosition
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
+        elseif isInBatch then
+            local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.45)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.65, 0.55, 0.6)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
+        elseif learningState.active and not learningState.isAbsorbAll then
+            local btnText = getText("UI_BurdJournals_BtnQueue")
+            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.35, 0.25)
+            self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.5, 0.35)
+            self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
+        elseif not learningState.active then
+            local btnText = data.isForgetSlot and (getText("UI_BurdJournals_BtnForget") or "FORGET") or getText("UI_BurdJournals_BtnClaim")
+            if data.isForgetSlot then
+                self:drawRect(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.2, 0.28)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.9, 0.85, 0.4, 0.45)
+            else
+                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.5, 0.35, 0.15)
+                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.7, 0.5, 0.25)
+            end
+            mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=0.95, b=0.85, a=1}, "A")
+        end
+    end
+end
+
 function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     local mainPanel = self.mainPanel
     if not mainPanel then return y + self.itemheight end
 
     local data = item.item or {}
-    local journalData = (mainPanel.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(mainPanel.journal)) or nil
-
     local x = 0
-
     local scrollBarWidth = 13
     local w = self:getWidth() - scrollBarWidth
     local h = self.itemheight
     local padding = 12
-
-    local isBloody = mainPanel.isBloody
-    local isCursedReward = mainPanel.isCursedReward
-    local cardBg, cardBorder, accentColor
-    if isCursedReward then
-        cardBg = {r=0.17, g=0.10, b=0.18}
-        cardBorder = {r=0.46, g=0.24, b=0.48}
-        accentColor = {r=0.76, g=0.40, b=0.68}
-    elseif isBloody then
-        cardBg = {r=0.18, g=0.12, b=0.12}
-        cardBorder = {r=0.4, g=0.2, b=0.2}
-        accentColor = {r=0.7, g=0.25, b=0.25}
-    else
-        cardBg = {r=0.14, g=0.13, b=0.11}
-        cardBorder = {r=0.35, g=0.32, b=0.28}
-        accentColor = {r=0.5, g=0.6, b=0.4}
-    end
+    local isYuletideReward = mainPanel.isYuletideReward
+    local pal = mainPanel.palette or getRewardPalette(mainPanel.rewardTheme)
+    local cardBg = paletteColor(pal, "cardBg")
+    local cardBorder = paletteColor(pal, "cardBorder")
+    local accentColor = paletteColor(pal, "cardAccent")
 
     if data.isHeader then
-        self:drawRect(x, y + 2, w, h - 4, 0.4, 0.15, 0.14, 0.12)
-        self:drawText(data.text or getText("UI_BurdJournals_Skills") or "SKILLS", x + padding, y + (h - 18) / 2, 0.9, 0.8, 0.6, 1, UIFont.Medium)
+        local headerBg = paletteColor(pal, "itemHeaderBg")
+        local headerText = paletteColor(pal, "itemHeaderText")
+        local headerCount = paletteColor(pal, "itemHeaderCount")
+        self:drawRect(x, y + 2, w, h - 4, headerBg.a or 0.4, headerBg.r, headerBg.g, headerBg.b)
+        self:drawText(data.text or getText("UI_BurdJournals_Skills") or "SKILLS", x + padding, y + (h - 18) / 2, headerText.r, headerText.g, headerText.b, headerText.a or 1, UIFont.Medium)
         if data.count then
             local countText = BurdJournals.formatText(getText("UI_BurdJournals_Available") or "(%d available)", data.count)
             local countWidth = getTextManager():MeasureStringX(UIFont.Small, countText)
-            self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, 0.5, 0.5, 0.45, 1, UIFont.Small)
+            self:drawText(countText, w - padding - countWidth, y + (h - 14) / 2, headerCount.r, headerCount.g, headerCount.b, headerCount.a or 1, UIFont.Small)
         end
         return y + h
     end
@@ -3745,7 +5264,8 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     if data.isClaimed then
         self:drawRect(cardX, cardY, cardW, cardH, 0.3, 0.1, 0.1, 0.1)
     else
-        self:drawRect(cardX, cardY, cardW, cardH, 0.7, bgColor.r, bgColor.g, bgColor.b)
+        local bodyAlpha = bgColor.a or (isYuletideReward and 0.76 or 0.7)
+        self:drawRect(cardX, cardY, cardW, cardH, bodyAlpha, bgColor.r, bgColor.g, bgColor.b)
     end
 
     self:drawRectBorder(cardX, cardY, cardW, cardH, 0.6, borderColor.r, borderColor.g, borderColor.b)
@@ -3754,426 +5274,35 @@ function BurdJournals.UI.MainPanel.doDrawAbsorptionItem(self, y, item, alt)
     mainPanel:drawSelectedRowOutline(self, item, cardX, cardY, cardW, cardH)
 
     local textX = cardX + padding + 4
-    local textColor = data.isClaimed and {r=0.4, g=0.4, b=0.4} or {r=0.95, g=0.9, b=0.85}
+    local ctx = {
+        accentColor = accentColor,
+        cardH = cardH,
+        cardW = cardW,
+        cardX = cardX,
+        cardY = cardY,
+        data = data,
+        h = h,
+        isYuletideReward = isYuletideReward,
+        journalData = (mainPanel.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(mainPanel.journal)) or nil,
+        listBox = self,
+        mainPanel = mainPanel,
+        padding = padding,
+        pal = pal,
+        textColor = data.isClaimed and {r=0.4, g=0.4, b=0.4} or paletteColor(pal, "cardText"),
+        textX = textX,
+        yuletideLearningTextColor = isYuletideReward and {r=0.82, g=0.22, b=0.22} or nil,
+    }
 
     if data.isSkill then
-
-        local learningState = mainPanel.learningState
-        local isLearningThis = learningState.active and not learningState.isAbsorbAll
-                              and learningState.skillName == data.skillName
-        local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll
-                                   and not data.isClaimed
-
-        local queuePosition = mainPanel:getQueuePosition(data.skillName)
-        local isQueued = queuePosition ~= nil
-
-        local displayName = data.displayName or data.skillName or "Unknown Skill"
-        self:drawText(displayName, textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
-
-        if isLearningThis then
-
-            local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor(learningState.progress * 100))
-            self:drawText(progressText, textX, cardY + 24, 0.9, 0.8, 0.3, 1, UIFont.Small)
-
-            local barX = textX + 90
-            local barY = cardY + 27
-            local barW = cardW - 120 - padding
-            local barH = 10
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-            self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.3, 0.7, 0.4)
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.4, 0.8, 0.5)
-
-        elseif isQueued then
-
-            local squaresX = textX
-            local squaresY = cardY + 26
-            local squareSize = 10
-            local squareSpacing = 2
-            -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-            local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, data.xp or 0, journalData, mainPanel.player)
-            local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-
-            drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-                {r=0.4, g=0.5, b=0.6},
-                {r=0.1, g=0.1, b=0.1},
-                {r=0.25, g=0.3, b=0.4}
-            )
-            local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            local displayXP = data.effectiveXP or data.xp
-            local xpText = "+" .. BurdJournals.formatXP(displayXP) .. " XP"
-            if data.hasBookBoost then
-                xpText = xpText .. " " .. (getText("UI_BurdJournals_XPBoosted") or "(boosted)")
-            end
-            xpText = xpText .. "  #" .. queuePosition
-            local xpColor = data.hasBookBoost and {r=1.0, g=0.85, b=0.3} or {r=0.6, g=0.75, b=0.9}
-            self:drawText(xpText, squaresX + squaresWidth + 8, squaresY, xpColor.r, xpColor.g, xpColor.b, 1, UIFont.Small)
-
-        elseif isQueuedInAbsorbAll then
-
-            local squaresX = textX
-            local squaresY = cardY + 26
-            local squareSize = 10
-            local squareSpacing = 2
-            -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-            local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, data.xp or 0, journalData, mainPanel.player)
-            local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-
-            drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-                {r=0.45, g=0.55, b=0.35},
-                {r=0.1, g=0.1, b=0.1},
-                {r=0.3, g=0.38, b=0.22}
-            )
-            local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            local displayXP = data.effectiveXP or data.xp
-            local xpText = "+" .. BurdJournals.formatXP(displayXP) .. " XP"
-            if data.hasBookBoost then
-                xpText = xpText .. " " .. (getText("UI_BurdJournals_XPBoosted") or "(boosted)")
-            end
-            xpText = xpText .. "  Queued"
-            local xpColor = data.hasBookBoost and {r=1.0, g=0.85, b=0.3} or {r=0.5, g=0.6, b=0.4}
-            self:drawText(xpText, squaresX + squaresWidth + 8, squaresY, xpColor.r, xpColor.g, xpColor.b, 1, UIFont.Small)
-
-        elseif data.xp and not data.isClaimed then
-
-            local squaresX = textX
-            local squaresY = cardY + 26
-            local squareSize = 10
-            local squareSpacing = 2
-            -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-            local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, data.xp or 0, journalData, mainPanel.player)
-            local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-
-            local filledColor, progressColor
-            if isCursedReward then
-                filledColor = {r=0.68, g=0.34, b=0.70}
-                progressColor = {r=0.45, g=0.20, b=0.46}
-            elseif isBloody then
-                filledColor = {r=0.65, g=0.25, b=0.25}
-                progressColor = {r=0.45, g=0.18, b=0.18}
-            else
-                filledColor = {r=0.5, g=0.6, b=0.4}
-                progressColor = {r=0.35, g=0.42, b=0.28}
-            end
-
-            drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-                filledColor,
-                {r=0.1, g=0.1, b=0.1},
-                progressColor
-            )
-            local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            local displayXP = data.effectiveXP or data.xp
-            local xpText = "+" .. BurdJournals.formatXP(displayXP) .. " XP"
-            if data.hasBookBoost then
-                xpText = xpText .. " " .. (getText("UI_BurdJournals_XPBoosted") or "(boosted)")
-            end
-            -- Use golden color for boosted XP, normal green otherwise
-            local xpColor = data.hasBookBoost and {r=1.0, g=0.85, b=0.3} or {r=0.6, g=0.8, b=0.5}
-            self:drawText(xpText, squaresX + squaresWidth + 8, squaresY, xpColor.r, xpColor.g, xpColor.b, 1, UIFont.Small)
-
-        elseif data.isClaimed then
-
-            local squaresX = textX
-            local squaresY = cardY + 26
-            local squareSize = 10
-            local squareSpacing = 2
-            -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-            local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, data.xp or 0, journalData, mainPanel.player)
-            local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-
-            drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-                {r=0.2, g=0.2, b=0.2},
-                {r=0.08, g=0.08, b=0.08},
-                {r=0.15, g=0.15, b=0.15}
-            )
-            local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            self:drawText(getText("UI_BurdJournals_StatusClaimed") or "Claimed", squaresX + squaresWidth + 8, squaresY, 0.35, 0.35, 0.35, 1, UIFont.Small)
-        end
-
-        if not data.isClaimed and not isLearningThis then
-            local btnW = 60
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            local isInBatch = isInCurrentAbsorbBatch(learningState, "skill", data.skillName)
-
-            if isQueued then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.4, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.5, 0.6)
-                local btnText = "#" .. queuePosition
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
-            elseif isInBatch then
-                -- Item is part of current batch being absorbed
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.45, 0.55, 0.45)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.7, 0.6)
-                local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.95, 1, 0.95, 1, UIFont.Small)
-            elseif learningState.active and not learningState.isAbsorbAll then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.25, 0.35, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.4, 0.55, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnQueue")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
-            elseif not learningState.active then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, accentColor.r * 0.6, accentColor.g * 0.6, accentColor.b * 0.6)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, accentColor.r, accentColor.g, accentColor.b)
-                local btnText = getText("UI_BurdJournals_Absorb")
-                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
-            end
-        end
+        doDrawAbsorptionSkillContent(ctx)
     end
 
     if data.isTrait then
-
-        local learningState = mainPanel.learningState
-        local isLearningThis = learningState.active and not learningState.isAbsorbAll and (
-            (data.isForgetSlot and learningState.forgetTraitId == data.traitId) or
-            ((not data.isForgetSlot) and learningState.traitId == data.traitId)
-        )
-        local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll
-                                   and not data.isClaimed and not data.alreadyKnown and not data.isForgetSlot
-
-        local queuePosition = mainPanel:getQueuePosition(data.traitId)
-        local isQueued = queuePosition ~= nil
-
-        local traitName = data.traitName or data.traitId or getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait"
-        local traitTextX = textX
-
-        if data.traitTexture then
-            local iconSize = 24
-            local iconX = textX
-            local iconY = cardY + (cardH - iconSize) / 2
-            local iconAlpha = data.isClaimed and 0.4 or 1.0
-            self:drawTextureScaledAspect(data.traitTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
-            traitTextX = textX + iconSize + 6
-        end
-
-        local traitColor
-        if data.isClaimed then
-            traitColor = {r=0.4, g=0.4, b=0.4}
-        elseif data.isForgetSlot then
-            traitColor = {r=0.95, g=0.65, b=0.72}
-        elseif data.isPositive == true then
-            traitColor = {r=0.5, g=0.9, b=0.5}
-        elseif data.isPositive == false then
-            traitColor = {r=0.9, g=0.5, b=0.5}
-        else
-            traitColor = {r=0.9, g=0.75, b=0.5}
-        end
-        self:drawText(traitName, traitTextX, cardY + 6, traitColor.r, traitColor.g, traitColor.b, 1, UIFont.Small)
-
-        if isLearningThis then
-            local progressText = BurdJournals.formatText(getText("UI_BurdJournals_AbsorbingProgress") or "Absorbing... %d%%", math.floor(learningState.progress * 100))
-            self:drawText(progressText, traitTextX, cardY + 22, 0.9, 0.7, 0.3, 1, UIFont.Small)
-
-            local barX = traitTextX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-
-            self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.8, 0.6, 0.2)
-
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.9, 0.7, 0.3)
-
-        elseif isQueued then
-
-            if data.isPositive == false then
-                local queueText = BurdJournals.formatText(getText("UI_BurdJournals_NegativeTraitQueued") or "Cursed trait - Queued #%d", queuePosition)
-                self:drawText(queueText, traitTextX, cardY + 22, 0.7, 0.4, 0.4, 1, UIFont.Small)
-            else
-                local queueText = BurdJournals.formatText(getText("UI_BurdJournals_RareTraitQueued") or "Rare trait - Queued #%d", queuePosition)
-                self:drawText(queueText, traitTextX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
-            end
-
-        elseif isQueuedInAbsorbAll then
-
-            if data.isPositive == false then
-                local curseText = getText("UI_BurdJournals_NegativeTraitCurseQueued") or "Cursed knowledge... - Queued"
-                self:drawText(curseText, traitTextX, cardY + 22, 0.5, 0.35, 0.35, 1, UIFont.Small)
-            else
-                local bonusText = getText("UI_BurdJournals_RareTraitBonusQueued") or "Rare trait bonus! - Queued"
-                self:drawText(bonusText, traitTextX, cardY + 22, 0.5, 0.45, 0.25, 1, UIFont.Small)
-            end
-
-        elseif data.isClaimed then
-            self:drawText(getText("UI_BurdJournals_StatusClaimed") or "Claimed", traitTextX, cardY + 22, 0.35, 0.35, 0.35, 1, UIFont.Small)
-        elseif data.isForgetSlot then
-            self:drawText(getText("UI_BurdJournals_ForgetTraitHint") or "Remove this negative trait", traitTextX, cardY + 22, 0.8, 0.55, 0.6, 1, UIFont.Small)
-        elseif data.alreadyKnown then
-            self:drawText(getText("UI_BurdJournals_StatusAlreadyKnown") or "Already known", traitTextX, cardY + 22, 0.5, 0.4, 0.3, 1, UIFont.Small)
-        else
-
-            if data.isPositive == false then
-                local curseText = getText("UI_BurdJournals_NegativeTraitCurse") or "Cursed knowledge..."
-                self:drawText(curseText, traitTextX, cardY + 22, 0.7, 0.4, 0.4, 1, UIFont.Small)
-            else
-                local bonusText = getText("UI_BurdJournals_RareTraitBonus") or "Rare trait bonus!"
-                self:drawText(bonusText, traitTextX, cardY + 22, 0.7, 0.55, 0.3, 1, UIFont.Small)
-            end
-        end
-
-        if not data.isClaimed and not data.alreadyKnown and not isLearningThis then
-            local btnW = 60
-            local btnH = 24
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            local batchType = data.isForgetSlot and "forget" or "trait"
-            local isInBatch = isInCurrentAbsorbBatch(learningState, batchType, data.traitId)
-
-            if isQueued then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
-                local btnText = "#" .. queuePosition
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
-            elseif isInBatch then
-                -- Item is part of current batch being absorbed
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.45)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.65, 0.55, 0.6)
-                local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
-            elseif learningState.active and not learningState.isAbsorbAll then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.35, 0.25)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.5, 0.35)
-                local btnText = getText("UI_BurdJournals_BtnQueue")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
-            elseif not learningState.active then
-
-                if data.isForgetSlot then
-                    self:drawRect(btnX, btnY, btnW, btnH, 0.8, 0.6, 0.2, 0.28)
-                    self:drawRectBorder(btnX, btnY, btnW, btnH, 0.9, 0.85, 0.4, 0.45)
-                else
-                    self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.5, 0.35, 0.15)
-                    self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.7, 0.5, 0.25)
-                end
-                local btnText = data.isForgetSlot and (getText("UI_BurdJournals_BtnForget") or "FORGET") or getText("UI_BurdJournals_BtnClaim")
-                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=1, g=0.95, b=0.85, a=1}, "A")
-            end
-        end
+        doDrawAbsorptionTraitContent(ctx)
     end
 
     if data.isRecipe then
-
-        local learningState = mainPanel.learningState
-        local isLearningThis = learningState.active and not learningState.isAbsorbAll
-                              and learningState.recipeName == data.recipeName
-        local isQueuedInAbsorbAll = learningState.active and learningState.isAbsorbAll
-                                   and not data.isClaimed and not data.alreadyKnown
-
-        local queuePosition = mainPanel:getQueuePosition(data.recipeName)
-        local isQueued = queuePosition ~= nil
-
-        local recipeName = data.displayName or data.recipeName or "Unknown Recipe"
-        local recipeTextX = textX
-
-        local magazineTexture = getMagazineTexture(data.magazineSource)
-
-        if magazineTexture then
-            local iconSize = 24
-            local iconX = textX
-            local iconY = cardY + (cardH - iconSize) / 2
-            local iconAlpha = (data.isClaimed or data.alreadyKnown) and 0.4 or 1.0
-            self:drawTextureScaledAspect(magazineTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
-            recipeTextX = textX + iconSize + 6
-        end
-
-        local recipeColor
-        if data.isClaimed then
-            recipeColor = {r=0.4, g=0.4, b=0.4}
-        elseif data.alreadyKnown then
-            recipeColor = {r=0.5, g=0.5, b=0.45}
-        else
-            recipeColor = {r=0.5, g=0.85, b=0.9}
-        end
-        self:drawText(recipeName, recipeTextX, cardY + 6, recipeColor.r, recipeColor.g, recipeColor.b, 1, UIFont.Small)
-
-        if isLearningThis then
-            local progressText = BurdJournals.formatText("Learning... %d%%", math.floor(learningState.progress * 100))
-            self:drawText(progressText, recipeTextX, cardY + 22, 0.5, 0.8, 0.9, 1, UIFont.Small)
-
-            local barX = recipeTextX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-
-            self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.3, 0.7, 0.8)
-
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.4, 0.8, 0.9)
-
-        elseif isQueued then
-
-            local queueText = BurdJournals.formatText(getText("UI_BurdJournals_RecipeKnowledgeQueuedNum") or "Recipe knowledge - Queued #%d", queuePosition)
-            self:drawText(queueText, recipeTextX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
-
-        elseif isQueuedInAbsorbAll then
-
-            local bonusText = getText("UI_BurdJournals_RecipeKnowledgeQueued") or "Recipe knowledge - Queued"
-            self:drawText(bonusText, recipeTextX, cardY + 22, 0.4, 0.6, 0.65, 1, UIFont.Small)
-
-        elseif data.isClaimed then
-            self:drawText(getText("UI_BurdJournals_RecipeClaimed") or "Claimed", recipeTextX, cardY + 22, 0.35, 0.35, 0.35, 1, UIFont.Small)
-        elseif data.alreadyKnown then
-            self:drawText(getText("UI_BurdJournals_RecipeAlreadyKnown") or "Already known", recipeTextX, cardY + 22, 0.5, 0.4, 0.3, 1, UIFont.Small)
-        else
-
-            local sourceText = getText("UI_BurdJournals_RecipeKnowledge") or "Recipe knowledge"
-            if data.magazineSource then
-                local magazineName = BurdJournals.getMagazineDisplayName(data.magazineSource)
-                sourceText = BurdJournals.formatText(getText("UI_BurdJournals_RecipeFromMagazine") or "From: %s", magazineName)
-            end
-            self:drawText(sourceText, recipeTextX, cardY + 22, 0.5, 0.7, 0.75, 1, UIFont.Small)
-        end
-
-        if not data.isClaimed and not data.alreadyKnown and not isLearningThis then
-            local btnW = 55
-            local btnH = 24
-
-            local btnX = cardX + cardW - btnW - 10
-            local btnY = cardY + (cardH - btnH) / 2
-            local isInBatch = isInCurrentAbsorbBatch(learningState, "recipe", data.recipeName)
-
-            if isQueued then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.3, 0.5, 0.55)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.6, 0.4, 0.6, 0.7)
-                local btnText = "#" .. queuePosition
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
-            elseif isInBatch then
-                -- Item is part of current batch being absorbed
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.45, 0.55, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.55, 0.7, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.95, 1, 0.95, 1, UIFont.Small)
-            elseif learningState.active and not learningState.isAbsorbAll then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.6, 0.25, 0.45, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.35, 0.6, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnQueue")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, btnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.95, 1, 1, UIFont.Small)
-            elseif not learningState.active then
-
-                self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.5)
-                self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnClaim")
-                mainPanel:drawPillLabelWithPrompt(self, btnX, btnY, btnW, btnH, btnText, {r=0.9, g=1, b=1, a=1}, "A")
-            end
-        end
+        doDrawAbsorptionRecipeContent(ctx)
     end
 
     return y + h
@@ -4203,14 +5332,24 @@ function BurdJournals.UI.MainPanel:populateAbsorptionList()
 
     local journalData = BurdJournals.getJournalData(self.journal)
     local currentTab = self.currentTab or "skills"
+    local sessionClaimedSkills = self.sessionClaimedSkills or {}
+    local function isSkillClaimedForAbsorb(skillName)
+        if not skillName then
+            return false
+        end
+        if BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+            return true
+        end
+        return sessionClaimedSkills[skillName] == true
+    end
 
     if currentTab == "skills" then
 
         local skillCount = 0
         if journalData and journalData.skills then
             for skillName, _ in pairs(journalData.skills) do
-                if isSkillVisibleForJournal(journalData, skillName) then
-                    if not BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+                if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
+                    if not isSkillClaimedForAbsorb(skillName) then
                         skillCount = skillCount + 1
                     end
                 end
@@ -4221,9 +5360,9 @@ function BurdJournals.UI.MainPanel:populateAbsorptionList()
             local hasSkills = false
             local matchCount = 0
             for skillName, skillData in pairs(journalData.skills) do
-                if isSkillVisibleForJournal(journalData, skillName) then
+                if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                     hasSkills = true
-                    local isClaimed = BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName)
+                    local isClaimed = isSkillClaimedForAbsorb(skillName)
                     local displayName = BurdJournals.getPerkDisplayName(skillName)
                     local modSource = BurdJournals.getSkillModId(skillName)
 
@@ -4263,7 +5402,7 @@ function BurdJournals.UI.MainPanel:populateAbsorptionList()
         local hasTraitEntries = false
         local matchCount = 0
 
-        if hasTraitEntriesForJournal(journalData) then
+        if BurdJournals.hasTraitEntriesForJournal(journalData) then
             for traitId, traitData in pairs(journalData.traits) do
                 hasTraitEntries = true
                 local isClaimed = BurdJournals.hasCharacterClaimedTrait(journalData, self.player, traitId)
@@ -4394,11 +5533,21 @@ function BurdJournals.UI.MainPanel:refreshAbsorptionList()
     local forgetCount = 0
     local recipeCount = 0
     local totalXP = 0
+    local sessionClaimedSkills = self.sessionClaimedSkills or {}
+    local function isSkillClaimedForAbsorb(skillName)
+        if not skillName then
+            return false
+        end
+        if BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+            return true
+        end
+        return sessionClaimedSkills[skillName] == true
+    end
 
     if journalData and journalData.skills then
         for skillName, skillData in pairs(journalData.skills) do
-            if isSkillVisibleForJournal(journalData, skillName) then
-                if not BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+            if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
+                if not isSkillClaimedForAbsorb(skillName) then
                     skillCount = skillCount + 1
                     -- Calculate effective XP with skill book multiplier
                     local effectiveXP = BurdJournals.getEffectiveXP(self.player, skillName, skillData.xp or 0)
@@ -4407,7 +5556,7 @@ function BurdJournals.UI.MainPanel:refreshAbsorptionList()
             end
         end
     end
-    if hasTraitEntriesForJournal(journalData) then
+    if BurdJournals.hasTraitEntriesForJournal(journalData) then
         for traitId, _ in pairs(journalData.traits) do
             if not BurdJournals.hasCharacterClaimedTrait(journalData, self.player, traitId) then
                 traitCount = traitCount + 1
@@ -4657,7 +5806,7 @@ function BurdJournals.UI.MainPanel:startLearningStat(statId, value)
         elseif reason == "no_benefit" then
             message = "Your current value is already higher or equal"
         end
-        self:showFeedback(message, {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(message, "warn")
         return false
     end
 
@@ -4700,7 +5849,11 @@ end
 
 function BurdJournals.UI.MainPanel:startLearningAll()
     if self.learningState.active then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
+        return false
+    end
+    if self:isLimitedClaimLootJournal() then
+        self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsNoBatch") or "Batch absorb is disabled for limited-claim loot journals.", "warn")
         return false
     end
 
@@ -4709,24 +5862,34 @@ function BurdJournals.UI.MainPanel:startLearningAll()
 
     local isPlayerJournal = self.isPlayerJournal or self.mode == "view"
     local pendingRewards = {}
+    local sessionClaimedSkills = self.sessionClaimedSkills or {}
+    local function isSkillClaimedForPendingReward(skillName)
+        if not skillName then
+            return false
+        end
+        if BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+            return true
+        end
+        return sessionClaimedSkills[skillName] == true
+    end
 
     if journalData.skills then
         for skillName, skillData in pairs(journalData.skills) do
-            if isSkillVisibleForJournal(journalData, skillName) then
+            if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                 local shouldInclude = false
                 local recordedXP = skillData.xp or 0
-                local preview = getClaimPreviewForSkill(journalData, self.player, skillName, recordedXP, 0, getClaimSessionIdForPanel(self, false))
+                local preview = BurdJournals.getClaimPreviewForSkill(journalData, self.player, skillName, recordedXP, 0, BurdJournals.getClaimSessionIdForPanel(self, false))
 
                 if isPlayerJournal then
                     local perk = BurdJournals.getPerkByName(skillName)
                     if perk then
                         local playerXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
-                        local claimTargetXP = getClaimTargetXPForPlayer(journalData, self.player, skillName, preview.effectiveXP)
+                        local claimTargetXP = BurdJournals.getClaimTargetXPForPlayer(journalData, self.player, skillName, preview.effectiveXP)
                         shouldInclude = playerXP < claimTargetXP
                     end
                 else
                     -- For non-player journals, check per-character claim status
-                    if not BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+                    if not isSkillClaimedForPendingReward(skillName) then
                         shouldInclude = true
                     end
                 end
@@ -4738,7 +5901,7 @@ function BurdJournals.UI.MainPanel:startLearningAll()
         end
     end
 
-    local hasTraits = hasTraitEntriesForJournal(journalData)
+    local hasTraits = BurdJournals.hasTraitEntriesForJournal(journalData)
     if hasTraits then
         for traitId, _ in pairs(journalData.traits) do
             local shouldInclude = false
@@ -4796,8 +5959,20 @@ function BurdJournals.UI.MainPanel:startLearningAll()
     end
 
     if #pendingRewards == 0 then
-        self:showFeedback(getText("UI_BurdJournals_NoNewRewards") or "No new rewards to claim", {r=0.7, g=0.7, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NoNewRewards") or "No new rewards to claim", "muted")
         return false
+    end
+
+    if self:isLimitedClaimLootJournal() then
+        local claimsLeft = self:getLimitedLootClaimsLeft() or 0
+        if claimsLeft <= 0 then
+            self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsSpent") or "This journal has no claims left.", "error")
+            return false
+        end
+        if #pendingRewards > claimsLeft then
+            self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsChooseIndividually") or "Choose rewards individually from this journal.", "warn")
+            return false
+        end
     end
 
     if BurdJournals.queueLearnAction then
@@ -4842,7 +6017,7 @@ end
 
 function BurdJournals.UI.MainPanel:startLearningTab(tabId)
     if self.learningState.active then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
         return false
     end
 
@@ -4851,27 +6026,37 @@ function BurdJournals.UI.MainPanel:startLearningTab(tabId)
 
     local isPlayerJournal = self.isPlayerJournal or self.mode == "view"
     local pendingRewards = {}
+    local sessionClaimedSkills = self.sessionClaimedSkills or {}
+    local function isSkillClaimedForPendingReward(skillName)
+        if not skillName then
+            return false
+        end
+        if BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+            return true
+        end
+        return sessionClaimedSkills[skillName] == true
+    end
 
     if tabId == "skills" then
 
         if journalData.skills then
             for skillName, skillData in pairs(journalData.skills) do
-                if isSkillVisibleForJournal(journalData, skillName) then
+                if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                     local shouldInclude = false
                     local recordedXP = skillData.xp or 0
-                    local preview = getClaimPreviewForSkill(journalData, self.player, skillName, recordedXP, 0, getClaimSessionIdForPanel(self, false))
+                    local preview = BurdJournals.getClaimPreviewForSkill(journalData, self.player, skillName, recordedXP, 0, BurdJournals.getClaimSessionIdForPanel(self, false))
 
                     if isPlayerJournal then
                         local perk = BurdJournals.getPerkByName(skillName)
                         if perk then
                             local playerXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
-                            local claimTargetXP = getClaimTargetXPForPlayer(journalData, self.player, skillName, preview.effectiveXP)
+                            local claimTargetXP = BurdJournals.getClaimTargetXPForPlayer(journalData, self.player, skillName, preview.effectiveXP)
                             if playerXP < claimTargetXP then
                                 shouldInclude = true
                             end
                         end
                     else
-                        if not BurdJournals.hasCharacterClaimedSkill(journalData, self.player, skillName) then
+                        if not isSkillClaimedForPendingReward(skillName) then
                             shouldInclude = true
                         end
                     end
@@ -4885,7 +6070,7 @@ function BurdJournals.UI.MainPanel:startLearningTab(tabId)
 
     elseif tabId == "traits" then
 
-        local hasTraits = hasTraitEntriesForJournal(journalData)
+        local hasTraits = BurdJournals.hasTraitEntriesForJournal(journalData)
         if hasTraits then
             for traitId, _ in pairs(journalData.traits) do
                 local shouldInclude = false
@@ -4947,8 +6132,20 @@ function BurdJournals.UI.MainPanel:startLearningTab(tabId)
 
     if #pendingRewards == 0 then
         local tabName = self:getTabDisplayName(tabId)
-        self:showFeedback(getText("UI_BurdJournals_NoNewRewards") or "No new rewards", {r=0.7, g=0.7, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NoNewRewards") or "No new rewards", "muted")
         return false
+    end
+
+    if self:isLimitedClaimLootJournal() then
+        local claimsLeft = self:getLimitedLootClaimsLeft() or 0
+        if claimsLeft <= 0 then
+            self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsSpent") or "This journal has no claims left.", "error")
+            return false
+        end
+        if #pendingRewards > claimsLeft then
+            self:showFeedback(getText("UI_BurdJournals_LimitedLootClaimsChooseIndividually") or "Choose rewards individually from this journal.", "warn")
+            return false
+        end
     end
 
     if BurdJournals.queueLearnAction then
@@ -5029,8 +6226,56 @@ function BurdJournals.UI.MainPanel:getTraitRecordingTime()
     return baseTime * multiplier
 end
 
-function BurdJournals.UI.MainPanel:startRecordingSkill(skillName, xp, level)
+function BurdJournals.UI.MainPanel:isWritingToolRequiredForRecordMode()
+    if self.mode ~= "log" then
+        return false
+    end
+    return BurdJournals.getSandboxOption("RequirePenToWrite") ~= false
+end
+
+function BurdJournals.UI.MainPanel:hasRecordWritingTool()
+    if not self:isWritingToolRequiredForRecordMode() then
+        return true
+    end
+    return (BurdJournals.hasWritingTool and BurdJournals.hasWritingTool(self.player)) or false
+end
+
+function BurdJournals.UI.MainPanel:showNeedWritingToolFeedback()
+    self:showFeedback(getText("Tooltip_BurdJournals_NeedPen") or "Requires a pen or pencil to write.", {r=0.9, g=0.5, b=0.3})
+end
+
+function BurdJournals.UI.MainPanel:ensureRecordWritingTool()
+    if self:hasRecordWritingTool() then
+        return true
+    end
+    self:showNeedWritingToolFeedback()
+    return false
+end
+
+function BurdJournals.UI.MainPanel:updateRecordActionAvailability()
+    if self.mode ~= "log" then
+        return
+    end
+
+    local canWrite = self:hasRecordWritingTool()
+    if self.recordTabBtn and self.recordTabBtn.setVisible then
+        self.recordTabBtn:setVisible(canWrite)
+    end
+    if self.recordAllBtn and self.recordAllBtn.setVisible then
+        self.recordAllBtn:setVisible(canWrite)
+    end
+    if self._recordButtonLayout and self.closeBottomBtn and self.closeBottomBtn.setX then
+        local closeX = canWrite and self._recordButtonLayout.closeX
+            or math.floor((self.width - self.closeBottomBtn:getWidth()) / 2)
+        self.closeBottomBtn:setX(closeX)
+    end
+end
+
+function BurdJournals.UI.MainPanel:startRecordingSkill(skillName, xp, level, baselineXP)
     if self.recordingState and self.recordingState.active then
+        return false
+    end
+    if not self:ensureRecordWritingTool() then
         return false
     end
 
@@ -5038,7 +6283,7 @@ function BurdJournals.UI.MainPanel:startRecordingSkill(skillName, xp, level)
         self.recordingState = {}
     end
 
-    local records = {{type = "skill", name = skillName, xp = xp, level = level}}
+    local records = {{type = "skill", name = skillName, xp = xp, level = level, baselineXP = baselineXP}}
 
     if BurdJournals.queueRecordAction then
         return BurdJournals.queueRecordAction(self.player, self.journal, records, false, self)
@@ -5063,6 +6308,9 @@ end
 
 function BurdJournals.UI.MainPanel:startRecordingTrait(traitId)
     if self.recordingState and self.recordingState.active then
+        return false
+    end
+    if not self:ensureRecordWritingTool() then
         return false
     end
 
@@ -5095,6 +6343,9 @@ end
 
 function BurdJournals.UI.MainPanel:startRecordingStat(statId, value)
     if self.recordingState and self.recordingState.active then
+        return false
+    end
+    if not self:ensureRecordWritingTool() then
         return false
     end
 
@@ -5138,6 +6389,9 @@ end
 
 function BurdJournals.UI.MainPanel:startRecordingRecipe(recipeName)
     if self.recordingState and self.recordingState.active then
+        return false
+    end
+    if not self:ensureRecordWritingTool() then
         return false
     end
 
@@ -5231,18 +6485,21 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
         BurdJournals.debugPrint("[BurdJournals] startRecordingAll: BLOCKED - recordingState.active is true")
         return false
     end
+    if not self:ensureRecordWritingTool() then
+        return false
+    end
     BurdJournals.debugPrint("[BurdJournals] startRecordingAll: Starting...")
 
     local journalData = BurdJournals.getJournalData(self.journal) or {}
-    local useBaseline, autoRepairedMode = resolveJournalRecordingModeForPlayer(journalData, self.player)
-    if shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
+    local useBaseline, autoRepairedMode = BurdJournals.resolveJournalRecordingModeForPlayer(journalData, self.player)
+    if BurdJournals.shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
         useBaseline = true
     end
     if autoRepairedMode then
         BurdJournals.debugPrint("[BurdJournals] startRecordingAll: detected legacy absolute journal entries while baseline flag was set; forcing baseline-mode recording so entries can be repaired")
     end
 
-    local baselineReady, normalizedUseBaseline = ensureBaselineReadyForRecording(self, useBaseline, "startRecordingAll")
+    local baselineReady, normalizedUseBaseline = BurdJournals.ensureBaselineReadyForRecording(self, useBaseline, "startRecordingAll")
     useBaseline = normalizedUseBaseline
     if not baselineReady then
         self:showFeedback(getText("UI_BurdJournals_BaselineInitializing") or "Please wait - character data initializing...", {r=1, g=0.8, b=0.3})
@@ -5260,10 +6517,10 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
     local recordedTraits = self.recordedTraits or {}
 
     for _, skillName in ipairs(allowedSkills) do
-        if isSkillRecordableInPlayerJournal(skillName) then
+        if BurdJournals.isSkillRecordableInPlayerJournal(skillName) then
             local perk = BurdJournals.getPerkByName(skillName)
             if perk then
-                local currentXP = self.player:getXp():getXP(perk)
+                local currentXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
                 local currentLevel = self.player:getPerkLevel(perk)
                 local recordedData = recordedSkills[skillName]
                 local recordedXP = recordedData and recordedData.xp or 0
@@ -5275,10 +6532,10 @@ function BurdJournals.UI.MainPanel:startRecordingAll()
 
                 local earnedXP = math.max(0, currentXP - baselineXP)
                 local needsBaselineRepair = useBaseline
-                    and isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
+                    and BurdJournals.isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
 
                 if earnedXP > 0 and (earnedXP > recordedXP or needsBaselineRepair) then
-                    table.insert(pendingRecords, {type = "skill", name = skillName, xp = earnedXP, level = currentLevel})
+                    table.insert(pendingRecords, {type = "skill", name = skillName, xp = earnedXP, level = currentLevel, baselineXP = baselineXP})
                 end
             end
         end
@@ -5389,17 +6646,20 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
     if self.recordingState and self.recordingState.active then
         return false
     end
+    if not self:ensureRecordWritingTool() then
+        return false
+    end
 
     local journalData = BurdJournals.getJournalData(self.journal) or {}
-    local useBaseline, autoRepairedMode = resolveJournalRecordingModeForPlayer(journalData, self.player)
-    if shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
+    local useBaseline, autoRepairedMode = BurdJournals.resolveJournalRecordingModeForPlayer(journalData, self.player)
+    if BurdJournals.shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
         useBaseline = true
     end
     if autoRepairedMode then
         BurdJournals.debugPrint("[BurdJournals] startRecordingTab: detected legacy absolute journal entries while baseline flag was set; forcing baseline-mode recording so entries can be repaired")
     end
 
-    local baselineReady, normalizedUseBaseline = ensureBaselineReadyForRecording(self, useBaseline, "startRecordingTab")
+    local baselineReady, normalizedUseBaseline = BurdJournals.ensureBaselineReadyForRecording(self, useBaseline, "startRecordingTab")
     useBaseline = normalizedUseBaseline
     if not baselineReady then
         self:showFeedback(getText("UI_BurdJournals_BaselineInitializing") or "Please wait - character data initializing...", {r=1, g=0.8, b=0.3})
@@ -5419,10 +6679,10 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
 
         local allowedSkills = BurdJournals.getAllowedSkills()
         for _, skillName in ipairs(allowedSkills) do
-            if isSkillRecordableInPlayerJournal(skillName) then
+            if BurdJournals.isSkillRecordableInPlayerJournal(skillName) then
                 local perk = BurdJournals.getPerkByName(skillName)
                 if perk then
-                    local currentXP = self.player:getXp():getXP(perk)
+                    local currentXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
                     local currentLevel = self.player:getPerkLevel(perk)
                     local recordedData = recordedSkills[skillName]
                     local recordedXP = recordedData and recordedData.xp or 0
@@ -5434,10 +6694,10 @@ function BurdJournals.UI.MainPanel:startRecordingTab(tabId)
 
                     local earnedXP = math.max(0, currentXP - baselineXP)
                     local needsBaselineRepair = useBaseline
-                        and isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
+                        and BurdJournals.isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
 
                     if earnedXP > 0 and (earnedXP > recordedXP or needsBaselineRepair) then
-                        table.insert(pendingRecords, {type = "skill", name = skillName, xp = earnedXP, level = currentLevel})
+                        table.insert(pendingRecords, {type = "skill", name = skillName, xp = earnedXP, level = currentLevel, baselineXP = baselineXP})
                     end
                 end
             end
@@ -5695,7 +6955,8 @@ function BurdJournals.UI.MainPanel:completeRecording()
         if record.type == "skill" then
             skillsToRecord[record.name] = {
                 xp = record.xp,
-                level = record.level
+                level = record.level,
+                baselineXP = record.baselineXP
             }
             skillCount = skillCount + 1
         elseif record.type == "trait" then
@@ -5724,8 +6985,26 @@ function BurdJournals.UI.MainPanel:completeRecording()
         recipes = recipeCount
     }
 
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or {
+            journalId = self.journal and self.journal.getID and self.journal:getID() or nil,
+            journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+            journalFingerprint = nil,
+            journalData = nil,
+        }
+    local writingToolPayload = BurdJournals.buildWritingToolCommandPayload
+        and BurdJournals.buildWritingToolCommandPayload(self.player)
+        or nil
+
     sendClientCommand(self.player, "BurdJournals", "recordProgress", {
-        journalId = self.journal:getID(),
+        journalId = lookupArgs.journalId,
+        journalUUID = lookupArgs.journalUUID,
+        journalFingerprint = lookupArgs.journalFingerprint,
+        journalData = lookupArgs.journalData,
+        writingToolId = writingToolPayload and writingToolPayload.writingToolId or nil,
+        writingToolFullType = writingToolPayload and writingToolPayload.writingToolFullType or nil,
         skills = skillsToRecord,
         traits = traitsToRecord,
         stats = statsToRecord,
@@ -5753,7 +7032,7 @@ function BurdJournals.UI.MainPanel:completeRecording()
                 progress = 0,
                 totalTime = self:getSkillRecordingTime(),
                 startTime = getTimestampMs and getTimestampMs() or 0,
-                pendingRecords = {{type = "skill", name = nextRecord.name, xp = nextRecord.xp, level = nextRecord.level}},
+                pendingRecords = {{type = "skill", name = nextRecord.name, xp = nextRecord.xp, level = nextRecord.level, baselineXP = nextRecord.baselineXP}},
                 currentIndex = 1,
                 queue = savedQueue,
             }
@@ -5833,10 +7112,10 @@ function BurdJournals.UI.MainPanel:completeRecording()
 
 end
 
-function BurdJournals.UI.MainPanel:recordSkill(skillName, xp, level)
+function BurdJournals.UI.MainPanel:recordSkill(skillName, xp, level, baselineXP)
 
     if self.recordingState and self.recordingState.active and not self.recordingState.isRecordAll then
-        if self:addToRecordQueue("skill", skillName, xp, level) then
+        if self:addToRecordQueue("skill", skillName, xp, level, baselineXP) then
             local displayName = BurdJournals.getPerkDisplayName(skillName) or skillName
             self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", displayName), {r=0.5, g=0.7, b=0.8})
         else
@@ -5845,7 +7124,7 @@ function BurdJournals.UI.MainPanel:recordSkill(skillName, xp, level)
         return
     end
 
-    if not self:startRecordingSkill(skillName, xp, level) then
+    if not self:startRecordingSkill(skillName, xp, level, baselineXP) then
         self:showFeedback(getText("UI_BurdJournals_CannotRecord") or "Cannot record", {r=0.9, g=0.5, b=0.3})
     end
 end
@@ -5932,6 +7211,63 @@ function BurdJournals.UI.MainPanel:onLearningTick()
     end
 end
 
+function BurdJournals.UI.MainPanel:buildBatchClaimRewardsPayload(rewards)
+    if not self.journal or not self.player then
+        return nil
+    end
+
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+    local journalUUID = type(journalData) == "table" and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = self.journal:getID(), journalUUID = journalUUID, journalFingerprint = nil }
+    local payload = {
+        journalId = lookupArgs.journalId,
+        journalUUID = lookupArgs.journalUUID,
+        journalFingerprint = lookupArgs.journalFingerprint,
+        journalData = lookupArgs.journalData,
+        skills = {},
+        traits = {},
+        recipes = {},
+        stats = {},
+    }
+    local total = 0
+
+    for _, reward in ipairs(rewards or {}) do
+        if reward.type == "skill" and reward.name then
+            payload.skills[#payload.skills + 1] = {
+                skillName = reward.name,
+            }
+            total = total + 1
+        elseif reward.type == "trait" and reward.name then
+            payload.traits[#payload.traits + 1] = reward.name
+            total = total + 1
+        elseif reward.type == "recipe" and reward.name then
+            payload.recipes[#payload.recipes + 1] = reward.name
+            total = total + 1
+        elseif reward.type == "stat" and reward.name then
+            payload.stats[#payload.stats + 1] = {
+                statId = reward.name,
+                value = reward.value,
+            }
+            total = total + 1
+        elseif reward.type == "forget" then
+            return nil
+        end
+    end
+
+    if total <= 0 then
+        return nil
+    end
+
+    if BurdJournals.getXPRecoveryMode and BurdJournals.getXPRecoveryMode() == 2
+        and BurdJournals.getDiminishingTrackingMode and BurdJournals.getDiminishingTrackingMode() == 2 then
+        payload.claimSessionId = BurdJournals.getClaimSessionIdForPanel(self, true)
+    end
+
+    return payload
+end
+
 function BurdJournals.UI.MainPanel:completeLearning()
     Events.OnTick.Remove(BurdJournals.UI.MainPanel.onLearningTickStatic)
 
@@ -5948,8 +7284,25 @@ function BurdJournals.UI.MainPanel:completeLearning()
     end
 
     local isPlayerJournal = self.isPlayerJournal or self.mode == "view"
-
-    local skipRefresh = true
+    local batchClaimPayload = nil
+    if isPlayerJournal
+        and self.learningState
+        and self.learningState.isAbsorbAll == true
+        and isClient() and not isServer()
+        and BurdJournals.Client
+        and BurdJournals.Client.sendToServer
+        and self.buildBatchClaimRewardsPayload then
+        batchClaimPayload = self:buildBatchClaimRewardsPayload(self.learningState.pendingRewards)
+    end
+    if batchClaimPayload then
+        self.isProcessingRewards = true
+        self.pendingBatchRewardMode = "claim"
+        if BurdJournals.Client.sendToServer("batchClaimRewards", batchClaimPayload) then
+            return
+        end
+        self.isProcessingRewards = false
+        self.pendingBatchRewardMode = nil
+    end
 
     -- Queue rewards for tick-based pacing instead of sending all at once
     -- This prevents server rate-limiting from dropping commands in MP
@@ -6229,6 +7582,10 @@ end
 function BurdJournals.UI.MainPanel:sendAbsorbSkill(skillName, xp, skipDissolutionCheck)
     local journalId = self.journal:getID()
     local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
 
     -- Calculate skill book multiplier on the client (where the state is known)
     local skillBookMultiplier, hasBoost = BurdJournals.getSkillBookMultiplier(self.player, skillName)
@@ -6252,7 +7609,10 @@ function BurdJournals.UI.MainPanel:sendAbsorbSkill(skillName, xp, skipDissolutio
     if isClient() and not isServer() then
         BurdJournals.debugPrint("[BurdJournals] Client: Sending to server with multiplier=" .. tostring(skillBookMultiplier))
         sendClientCommand(self.player, "BurdJournals", "absorbSkill", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             skillName = skillName,
             skillBookMultiplier = skillBookMultiplier  -- Send the multiplier to the server
         })
@@ -6265,6 +7625,10 @@ end
 function BurdJournals.UI.MainPanel:sendAbsorbTrait(traitId, skipDissolutionCheck)
     local journalId = self.journal:getID()
     local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
 
     -- For debug-spawned journals in MP, use the debug command to add trait
     if journalData and journalData.isDebugSpawned and isClient() and not isServer() then
@@ -6282,7 +7646,10 @@ function BurdJournals.UI.MainPanel:sendAbsorbTrait(traitId, skipDissolutionCheck
 
     if isClient() and not isServer() then
         sendClientCommand(self.player, "BurdJournals", "absorbTrait", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             traitId = traitId
         })
     else
@@ -6293,62 +7660,83 @@ end
 function BurdJournals.UI.MainPanel:sendClaimSkill(skillName, recordedXP, skipDissolutionCheck)
     local journalId = self.journal:getID()
     local journalData = BurdJournals.getJournalData(self.journal)
-    if not isSkillVisibleForJournal(journalData, skillName) then
-        self:showFeedback(getText("UI_BurdJournals_CantClaimSkill") or "That skill cannot be claimed right now", {r=0.9, g=0.5, b=0.3})
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
+    if not BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
+        self:showFeedback(getText("UI_BurdJournals_CantClaimSkill") or "That skill cannot be claimed right now", "warn")
         return
     end
     local claimSessionId = nil
     if BurdJournals.getXPRecoveryMode and BurdJournals.getXPRecoveryMode() == 2
         and BurdJournals.getDiminishingTrackingMode and BurdJournals.getDiminishingTrackingMode() == 2 then
-        claimSessionId = getClaimSessionIdForPanel(self, true)
+        claimSessionId = BurdJournals.getClaimSessionIdForPanel(self, true)
+    end
+    local claimBaselineXP = nil
+    if journalData
+        and journalData.isPlayerCreated == true
+        and BurdJournals.resolveJournalRecordingModeForPlayer
+        and BurdJournals.resolveJournalRecordingModeForPlayer(journalData, self.player)
+        and BurdJournals.getSkillBaseline then
+        claimBaselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline(self.player, skillName)) or 0)
     end
 
     if not self.pendingClaims then self.pendingClaims = {skills = {}, traits = {}} end
     self.pendingClaims.skills[skillName] = true
 
+    local debugLoggingEnabled = BurdJournals.shouldDebugLog and BurdJournals.shouldDebugLog() or false
+
     -- Get current player state for debug logging
-    local perk = BurdJournals.getPerkByName(skillName)
+    local perk = nil
     local playerLevelBefore = 0
     local playerXPBefore = 0
-    if perk then
+    if debugLoggingEnabled then
+        perk = BurdJournals.getPerkByName(skillName)
+    end
+    if perk and debugLoggingEnabled then
         playerLevelBefore = self.player:getPerkLevel(perk)
         playerXPBefore = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
     end
     
     -- Get recorded level from journal
     local recordedLevel = 0
-    if journalData and isSkillVisibleForJournal(journalData, skillName) and journalData.skills and journalData.skills[skillName] then
+    if journalData and BurdJournals.isSkillVisibleForJournal(journalData, skillName) and journalData.skills and journalData.skills[skillName] then
         recordedLevel = journalData.skills[skillName].level or 0
         -- Fallback: calculate level from XP if not stored
         if recordedLevel == 0 and recordedXP and recordedXP > 0 and BurdJournals.getSkillLevelFromXP then
-            local xpForLevelCalc = getXPWithBaselineForDisplay(skillName, recordedXP, journalData, self.player)
+            local xpForLevelCalc = BurdJournals.getXPWithBaselineForDisplay(skillName, recordedXP, journalData, self.player)
             recordedLevel = BurdJournals.getSkillLevelFromXP(xpForLevelCalc, skillName)
         end
     end
     
     -- Debug logging: what we expect vs current state
-    BurdJournals.debugPrint("================================================================================")
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Skill: " .. tostring(skillName))
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   JOURNAL EXPECTS: Level " .. tostring(recordedLevel) .. ", XP " .. tostring(recordedXP))
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   PLAYER BEFORE:   Level " .. tostring(playerLevelBefore) .. ", XP " .. tostring(playerXPBefore))
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   isDebugSpawned: " .. tostring(journalData and journalData.isDebugSpawned))
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   isPlayerJournal: " .. tostring(journalData and journalData.isPlayerCreated))
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   skipDissolutionCheck: " .. tostring(skipDissolutionCheck))
-    BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   claimSessionId: " .. tostring(claimSessionId))
-    BurdJournals.debugPrint("================================================================================")
+    if debugLoggingEnabled then
+        BurdJournals.debugPrint("================================================================================")
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Skill: " .. tostring(skillName))
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   JOURNAL EXPECTS: Level " .. tostring(recordedLevel) .. ", XP " .. tostring(recordedXP))
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   PLAYER BEFORE:   Level " .. tostring(playerLevelBefore) .. ", XP " .. tostring(playerXPBefore))
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   isDebugSpawned: " .. tostring(journalData and journalData.isDebugSpawned))
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   isPlayerJournal: " .. tostring(journalData and journalData.isPlayerCreated))
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   skipDissolutionCheck: " .. tostring(skipDissolutionCheck))
+        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   claimSessionId: " .. tostring(claimSessionId))
+        BurdJournals.debugPrint("================================================================================")
+    end
 
     -- For debug-spawned journals in MP, use the debug command to SET to target XP
     -- (normal claim flow fails because server can't find client-spawned items)
     -- IMPORTANT: Send the actual recorded XP, not just the level, for exact XP restoration
     if journalData and journalData.isDebugSpawned and isClient() and not isServer() then
-        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Using debugSetSkillXP path (debug-spawned journal)")
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Using debugSetSkillXP path (debug-spawned journal)")
+        end
         local claimMultiplier = 1.0
         if BurdJournals.consumeJournalClaimRead
             and BurdJournals.getXPRecoveryMode and BurdJournals.getXPRecoveryMode() == 2 then
             claimMultiplier = BurdJournals.consumeJournalClaimRead(journalData, skillName, claimSessionId)
         end
         local effectiveRecordedXP = math.max(0, math.floor((tonumber(recordedXP) or 0) * claimMultiplier))
-        local claimTargetXP, baselineXP = getClaimTargetXPForPlayer(journalData, self.player, skillName, effectiveRecordedXP)
+        local claimTargetXP, baselineXP = BurdJournals.getClaimTargetXPForPlayer(journalData, self.player, skillName, effectiveRecordedXP)
         local effectiveRecordedLevel = recordedLevel
         if BurdJournals.getSkillLevelFromXP then
             effectiveRecordedLevel = BurdJournals.getSkillLevelFromXP(claimTargetXP, skillName) or recordedLevel
@@ -6357,7 +7745,9 @@ function BurdJournals.UI.MainPanel:sendClaimSkill(skillName, recordedXP, skipDis
         if BurdJournals.normalizeJournalData then
             journalSnapshot = BurdJournals.normalizeJournalData(journalData) or journalData
         end
-        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   Sending effectiveXP=" .. tostring(effectiveRecordedXP) .. ", targetXP=" .. tostring(claimTargetXP) .. ", baselineXP=" .. tostring(baselineXP) .. ", effectiveLevel=" .. tostring(effectiveRecordedLevel) .. ", claimMultiplier=" .. tostring(claimMultiplier))
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG]   Sending effectiveXP=" .. tostring(effectiveRecordedXP) .. ", targetXP=" .. tostring(claimTargetXP) .. ", baselineXP=" .. tostring(baselineXP) .. ", effectiveLevel=" .. tostring(effectiveRecordedLevel) .. ", claimMultiplier=" .. tostring(claimMultiplier))
+        end
         sendClientCommand(self.player, "BurdJournals", "debugSetSkillXP", {
             skillName = skillName,
             targetXP = claimTargetXP,
@@ -6385,14 +7775,22 @@ function BurdJournals.UI.MainPanel:sendClaimSkill(skillName, recordedXP, skipDis
     end
 
     if isClient() and not isServer() then
-        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Using claimSkill server command path")
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Using claimSkill server command path")
+        end
         sendClientCommand(self.player, "BurdJournals", "claimSkill", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             skillName = skillName,
-            claimSessionId = claimSessionId
+            claimSessionId = claimSessionId,
+            baselineXP = claimBaselineXP
         })
     else
-        BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Using local applySkillXPSetMode path (SP/host)")
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals CLAIM DEBUG] Using local applySkillXPSetMode path (SP/host)")
+        end
         self:applySkillXPSetMode(skillName, recordedXP, skipDissolutionCheck, claimSessionId)
     end
 end
@@ -6401,6 +7799,10 @@ function BurdJournals.UI.MainPanel:sendClaimTrait(traitId, skipDissolutionCheck)
     local journalId = self.journal:getID()
     local numericJournalId = tonumber(journalId) or 0
     local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
 
     -- Debug logging
     BurdJournals.debugPrint("[BurdJournals] sendClaimTrait called for trait: " .. tostring(traitId))
@@ -6444,7 +7846,10 @@ function BurdJournals.UI.MainPanel:sendClaimTrait(traitId, skipDissolutionCheck)
     BurdJournals.debugPrint("[BurdJournals] Using normal claimTrait flow")
     if isClient() and not isServer() then
         sendClientCommand(self.player, "BurdJournals", "claimTrait", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             traitId = traitId
         })
     else
@@ -6454,18 +7859,34 @@ end
 
 function BurdJournals.UI.MainPanel:sendAbsorbRecipe(recipeName, skipRefresh)
     local journalId = self.journal:getID()
+    local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
 
     if isClient() and not isServer() then
         sendClientCommand(self.player, "BurdJournals", "absorbRecipe", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             recipeName = recipeName
         })
     else
-        self:applyRecipeDirectly(recipeName)
+        local recipeAlreadyKnown = BurdJournals.playerKnowsRecipe(self.player, recipeName)
+        local recipeApplied = false
+        if recipeAlreadyKnown then
+            local displayName = BurdJournals.getRecipeDisplayName(recipeName) or recipeName
+            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName), "muted")
+            recipeApplied = true
+        else
+            recipeApplied = self:applyRecipeDirectly(recipeName)
+        end
 
         -- Use per-character claims for SP/host path to match server behavior
         local journalData = self.journal:getModData().BurdJournals
-        if journalData then
+        if recipeApplied and journalData then
             BurdJournals.markRecipeClaimedByCharacter(journalData, self.player, recipeName)
             if self.journal.transmitModData then
                 self.journal:transmitModData()
@@ -6481,6 +7902,11 @@ end
 
 function BurdJournals.UI.MainPanel:sendClaimRecipe(recipeName, skipDissolutionCheck)
     local journalId = self.journal:getID()
+    local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
 
     if not self.pendingClaims then self.pendingClaims = {skills = {}, traits = {}, recipes = {}} end
     if not self.pendingClaims.recipes then self.pendingClaims.recipes = {} end
@@ -6488,15 +7914,26 @@ function BurdJournals.UI.MainPanel:sendClaimRecipe(recipeName, skipDissolutionCh
 
     if isClient() and not isServer() then
         sendClientCommand(self.player, "BurdJournals", "claimRecipe", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             recipeName = recipeName
         })
     else
-        self:applyRecipeDirectly(recipeName)
+        local recipeAlreadyKnown = BurdJournals.playerKnowsRecipe(self.player, recipeName)
+        local recipeApplied = false
+        if recipeAlreadyKnown then
+            local displayName = BurdJournals.getRecipeDisplayName(recipeName) or recipeName
+            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName), "muted")
+            recipeApplied = true
+        else
+            recipeApplied = self:applyRecipeDirectly(recipeName)
+        end
 
         -- Use per-character claims for SP/host path to match server behavior
         local journalData = self.journal:getModData().BurdJournals
-        if journalData then
+        if recipeApplied and journalData then
             BurdJournals.markRecipeClaimedByCharacter(journalData, self.player, recipeName)
             if self.journal.transmitModData then
                 self.journal:transmitModData()
@@ -6517,37 +7954,42 @@ function BurdJournals.UI.MainPanel:applyRecipeDirectly(recipeName)
     local displayName = BurdJournals.getRecipeDisplayName(recipeName) or recipeName
 
     if BurdJournals.playerKnowsRecipe(self.player, recipeName) then
-        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName), {r=0.7, g=0.7, b=0.5})
+        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_AlreadyKnowRecipe") or "Already know: %s", displayName), "muted")
         return false
     end
 
     local learned = BurdJournals.learnRecipeWithVerification(self.player, recipeName, "[BurdJournals Client]")
 
     if learned then
-        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_LearnedRecipe") or "Learned: %s", displayName), {r=0.5, g=0.9, b=0.95})
+        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_LearnedRecipe") or "Learned: %s", displayName), "success")
         BurdJournals.Client.showHaloMessage(self.player, "+" .. displayName, BurdJournals.Client.HaloColors.RECIPE_GAIN)
         return true
     else
-        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_RecipeNotAvailable") or "Recipe not available: %s", displayName), {r=0.9, g=0.7, b=0.5})
+        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_RecipeNotAvailable") or "Recipe not available: %s", displayName), "warn")
         return false
     end
 end
 
 function BurdJournals.UI.MainPanel:applySkillXPSetMode(skillName, recordedXP, skipDissolutionCheck, claimSessionId)
-    BurdJournals.debugPrint("================================================================================")
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG] applySkillXPSetMode called")
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   skillName: " .. tostring(skillName))
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   recordedXP: " .. tostring(recordedXP) .. " (type: " .. type(recordedXP) .. ")")
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   skipDissolutionCheck: " .. tostring(skipDissolutionCheck))
+    local debugLoggingEnabled = BurdJournals.shouldDebugLog and BurdJournals.shouldDebugLog() or false
+    if debugLoggingEnabled then
+        BurdJournals.debugPrint("================================================================================")
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG] applySkillXPSetMode called")
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   skillName: " .. tostring(skillName))
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   recordedXP: " .. tostring(recordedXP) .. " (type: " .. type(recordedXP) .. ")")
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   skipDissolutionCheck: " .. tostring(skipDissolutionCheck))
+    end
 
     self:refreshPlayer()
 
     local perk = BurdJournals.getPerkByName(skillName)
     if not perk then
-        print("[BurdJournals BATCH DEBUG]   ERROR: perk is nil for " .. tostring(skillName))
+        bsjWriteLogLine("[BurdJournals BATCH DEBUG]   ERROR: perk is nil for " .. tostring(skillName))
         return
     end
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   perk found: " .. tostring(perk))
+    if debugLoggingEnabled then
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   perk found: " .. tostring(perk))
+    end
 
     -- Use per-character claims for SP/host path to match server behavior
     local journalData = self.journal:getModData().BurdJournals
@@ -6556,35 +7998,67 @@ function BurdJournals.UI.MainPanel:applySkillXPSetMode(skillName, recordedXP, sk
         claimMultiplier = BurdJournals.consumeJournalClaimRead(journalData, skillName, claimSessionId)
     end
     local effectiveRecordedXP = math.max(0, math.floor((tonumber(recordedXP) or 0) * claimMultiplier))
-    local claimTargetXP, baselineXP = getClaimTargetXPForPlayer(journalData, self.player, skillName, effectiveRecordedXP)
+    local claimTargetXP, baselineXP = BurdJournals.getClaimTargetXPForPlayer(journalData, self.player, skillName, effectiveRecordedXP)
 
     local playerXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   playerXP (current): " .. tostring(playerXP))
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   claimMultiplier: " .. tostring(claimMultiplier))
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   effectiveRecordedXP: " .. tostring(effectiveRecordedXP))
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   baselineXP: " .. tostring(baselineXP))
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   claimTargetXP: " .. tostring(claimTargetXP))
-    BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Comparison: claimTargetXP (" .. tostring(claimTargetXP) .. ") > playerXP (" .. tostring(playerXP) .. ") = " .. tostring(claimTargetXP > playerXP))
+    if debugLoggingEnabled then
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   playerXP (current): " .. tostring(playerXP))
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   claimMultiplier: " .. tostring(claimMultiplier))
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   effectiveRecordedXP: " .. tostring(effectiveRecordedXP))
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   baselineXP: " .. tostring(baselineXP))
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   claimTargetXP: " .. tostring(claimTargetXP))
+        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Comparison: claimTargetXP (" .. tostring(claimTargetXP) .. ") > playerXP (" .. tostring(playerXP) .. ") = " .. tostring(claimTargetXP > playerXP))
+    end
     
     if claimTargetXP > playerXP then
 
         local xpDiff = claimTargetXP - playerXP
-        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   XP to add: " .. tostring(xpDiff))
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   XP to add: " .. tostring(xpDiff))
+        end
+        local useAddMode = claimTargetXP < (playerXP + effectiveRecordedXP)
 
-        local xpObj = self.player:getXp()
-        local beforeXP = xpObj:getXP(perk)
-        
-        if sendAddXp then
-            BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Using sendAddXp")
-            sendAddXp(self.player, perk, xpDiff, true)
+        local applied, applyVia, actualGain, afterXP = false, "none", 0, playerXP
+        if BurdJournals.applySkillXPCompat then
+            local compatTargetXP = useAddMode and xpDiff or claimTargetXP
+            local compatMode = useAddMode and "add" or "set"
+            applied, applyVia, actualGain, afterXP = BurdJournals.applySkillXPCompat(self.player, perk, skillName, compatTargetXP, compatMode)
         else
-            BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Using direct AddXP")
-            -- Use proper AddXP signature with checkLevelUp=true
-            xpObj:AddXP(perk, xpDiff, false, false, false, true)
+            local xpObj = self.player:getXp()
+            local beforeXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or xpObj:getXP(perk)
+            if useAddMode then
+                if BurdJournals.applyXPDeltaCompat then
+                    BurdJournals.applyXPDeltaCompat(self.player, perk, xpDiff)
+                else
+                    xpObj:AddXP(perk, xpDiff)
+                end
+            elseif BurdJournals.setSkillTotalXPCompat then
+                BurdJournals.setSkillTotalXPCompat(self.player, perk, claimTargetXP, skillName)
+            elseif BurdJournals.applyXPDeltaCompat then
+                BurdJournals.applyXPDeltaCompat(self.player, perk, xpDiff)
+            else
+                xpObj:AddXP(perk, xpDiff)
+            end
+            afterXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or xpObj:getXP(perk)
+            actualGain = math.max(0, afterXP - beforeXP)
+            applied = (useAddMode and actualGain > 0)
+                or afterXP >= (claimTargetXP - 0.001)
+                or actualGain > 0
+            applyVia = useAddMode and "legacyAdd" or "legacy"
         end
 
-        local afterXP = xpObj:getXP(perk)
-        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   XP before: " .. tostring(beforeXP) .. ", after: " .. tostring(afterXP) .. ", gained: " .. tostring(afterXP - beforeXP))
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   Applied via: " .. tostring(applyVia))
+            BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   XP after: " .. tostring(afterXP) .. ", gained: " .. tostring(actualGain))
+        end
+
+        if not applied then
+            self:showFeedback(BurdJournals.safeGetText("UI_BurdJournals_JournalClaimFailed", "Could not apply this journal reward"), "error")
+            if not skipDissolutionCheck then
+                self:refreshJournalData()
+            end
+            return
+        end
 
         if journalData then
             BurdJournals.markSkillClaimedByCharacter(journalData, self.player, skillName)
@@ -6594,9 +8068,11 @@ function BurdJournals.UI.MainPanel:applySkillXPSetMode(skillName, recordedXP, sk
         end
 
         local displayName = BurdJournals.getPerkDisplayName(skillName)
-        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_SetSkillToLevel") or "Set %s to recorded level", displayName), {r=0.5, g=0.8, b=0.9})
+        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_SetSkillToLevel") or "Set %s to recorded level", displayName), "success")
     else
-        BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   SKIPPING XP add - already at or above level (or recordedXP is nil/0)")
+        if debugLoggingEnabled then
+            BurdJournals.debugPrint("[BurdJournals BATCH DEBUG]   SKIPPING XP add - already at or above level (or recordedXP is nil/0)")
+        end
         -- Still mark as claimed even if already at level (allows dissolution)
         if journalData then
             BurdJournals.markSkillClaimedByCharacter(journalData, self.player, skillName)
@@ -6604,12 +8080,14 @@ function BurdJournals.UI.MainPanel:applySkillXPSetMode(skillName, recordedXP, sk
                 self.journal:transmitModData()
             end
         end
-        self:showFeedback(getText("UI_BurdJournals_AlreadyAtLevel") or "Already at or above this level", {r=0.7, g=0.7, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyAtLevel") or "Already at or above this level", "muted")
     end
     if journalData and BurdJournals.captureJournalDRState then
         BurdJournals.captureJournalDRState(self.journal, "applySkillXPSetMode", self.player)
     end
-    BurdJournals.debugPrint("================================================================================")
+    if debugLoggingEnabled then
+        BurdJournals.debugPrint("================================================================================")
+    end
 
     -- Skip refresh/dissolution during batch operations - will be done at end of batch
     if not skipDissolutionCheck then
@@ -6619,57 +8097,75 @@ function BurdJournals.UI.MainPanel:applySkillXPSetMode(skillName, recordedXP, sk
 end
 
 function BurdJournals.UI.MainPanel:absorbSkill(skillName, xp)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
 
     if self.learningState.active and not self.learningState.isAbsorbAll then
         if self:addToQueue("skill", skillName, xp) then
-            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", BurdJournals.getPerkDisplayName(skillName) or skillName), {r=0.7, g=0.8, b=0.9})
+            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", BurdJournals.getPerkDisplayName(skillName) or skillName), "info")
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningSkill(skillName, xp) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 function BurdJournals.UI.MainPanel:absorbTrait(traitId)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
 
     if BurdJournals.playerHasTrait(self.player, traitId) then
-        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", {r=0.7, g=0.5, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", "muted")
         return
     end
 
     if self.learningState.active and not self.learningState.isAbsorbAll then
         if self:addToQueue("trait", traitId) then
             local traitName = safeGetTraitName(traitId)
-            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", traitName), {r=0.9, g=0.8, b=0.6})
+            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", traitName), "info")
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningTrait(traitId) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 function BurdJournals.UI.MainPanel:absorbRecipe(recipeName)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
 
     if self.learningState.active and not self.learningState.isAbsorbAll then
         if self:addToQueue("recipe", recipeName) then
             local displayName = BurdJournals.getRecipeDisplayName(recipeName)
-            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", displayName), {r=0.5, g=0.85, b=0.9})
+            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", displayName), "info")
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningRecipe(recipeName) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
@@ -6677,7 +8173,7 @@ function BurdJournals.UI.MainPanel:eraseSkillEntry(skillName)
     if not self.journal or not skillName then return end
 
     if not BurdJournals.hasEraser(self.player) then
-        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", "warn")
         return
     end
 
@@ -6699,7 +8195,7 @@ function BurdJournals.UI.MainPanel:eraseTraitEntry(traitId)
     if not self.journal or not traitId then return end
 
     if not BurdJournals.hasEraser(self.player) then
-        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", "warn")
         return
     end
 
@@ -6721,7 +8217,7 @@ function BurdJournals.UI.MainPanel:eraseRecipeEntry(recipeName)
     if not self.journal or not recipeName then return end
 
     if not BurdJournals.hasEraser(self.player) then
-        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", "warn")
         return
     end
 
@@ -6743,7 +8239,7 @@ function BurdJournals.UI.MainPanel:eraseStatEntry(statId)
     if not self.journal or not statId then return end
 
     if not BurdJournals.hasEraser(self.player) then
-        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", {r=0.9, g=0.5, b=0.5})
+        self:showFeedback(getText("UI_BurdJournals_NeedEraser") or "Need eraser", "warn")
         return
     end
 
@@ -6796,7 +8292,12 @@ function BurdJournals.UI.MainPanel:eraseEntryDirectly(entryType, entryName)
             end
         end
     elseif entryType == "stat" then
-        displayName = getText("UI_BurdJournals_Stat_" .. entryName) or entryName
+        local statDef = BurdJournals.getStatById and BurdJournals.getStatById(entryName) or nil
+        if statDef then
+            displayName = BurdJournals.safeGetText(statDef.nameKey, statDef.nameFallback or entryName)
+        else
+            displayName = entryName
+        end
     end
 
     local erased = false
@@ -6841,7 +8342,7 @@ function BurdJournals.UI.MainPanel:eraseEntryDirectly(entryType, entryName)
             self.journal:transmitModData()
         end
 
-        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_EntryErased") or "Erased: %s", displayName), {r=0.9, g=0.6, b=0.6})
+        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_EntryErased") or "Erased: %s", displayName), "success")
 
         if self.mode == "view" then
             self:refreshCurrentList()
@@ -6919,7 +8420,7 @@ function BurdJournals.UI.MainPanel:removeFromQueue(name)
     return false
 end
 
-function BurdJournals.UI.MainPanel:addToRecordQueue(recordType, name, xp, level)
+function BurdJournals.UI.MainPanel:addToRecordQueue(recordType, name, xp, level, baselineXP)
     if not self.recordingState then return false end
     if not self.recordingState.queue then
         self.recordingState.queue = {}
@@ -6940,6 +8441,7 @@ function BurdJournals.UI.MainPanel:addToRecordQueue(recordType, name, xp, level)
         name = name,
         xp = xp,
         level = level,
+        baselineXP = baselineXP,
         value = xp
     })
 
@@ -7028,7 +8530,10 @@ function BurdJournals.UI.MainPanel:applySkillXPDirectly(skillName, xp, skipDisso
     local perk = BurdJournals.getPerkByName(skillName)
     if perk and xp and xp > 0 then
         local journalMultiplier = BurdJournals.getSandboxOption("JournalXPMultiplier") or 1.0
-        local skillBookMultiplier = BurdJournals.getSkillBookMultiplier(self.player, skillName)
+        local skillBookMultiplier = 1.0
+        if BurdJournals.shouldApplySkillBookMultiplierForJournal(self.journal) then
+            skillBookMultiplier = BurdJournals.getSkillBookMultiplier(self.player, skillName)
+        end
         local xpToApply = xp * journalMultiplier * skillBookMultiplier
 
         local isPassiveSkill = (skillName == "Fitness" or skillName == "Strength")
@@ -7036,27 +8541,26 @@ function BurdJournals.UI.MainPanel:applySkillXPDirectly(skillName, xp, skipDisso
             xpToApply = xpToApply * 5
         end
 
-        -- AddXP adds the specified amount directly for all skills
-        local xpObj = self.player:getXp()
-        local beforeXP = xpObj:getXP(perk)
-
-        -- Use AddXP with useMultipliers=false since we already applied journal/skillbook multipliers
-        -- Signature: AddXP(perk, amount, addToKnownRecipes, useMultipliers, isPassive, checkLevelUp)
-        -- Setting useMultipliers=false bypasses PZ's sandbox XP multipliers to give exact amount
-        if sendAddXp then
-            -- MP client path - use sendAddXp but we'll handle server-side properly
-            sendAddXp(self.player, perk, xpToApply, false)
+        local applied, applyVia, actualGain = false, "none", 0
+        if BurdJournals.applySkillXPCompat then
+            applied, applyVia, actualGain = BurdJournals.applySkillXPCompat(self.player, perk, skillName, xpToApply, "add")
         else
-            -- SP/host path - directly add XP with no game multipliers
-            xpObj:AddXP(perk, xpToApply, true, false, false, false)
+            local xpObj = self.player:getXp()
+            local beforeXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or xpObj:getXP(perk)
+            if BurdJournals.applyXPDeltaCompat then
+                BurdJournals.applyXPDeltaCompat(self.player, perk, xpToApply)
+            else
+                xpObj:AddXP(perk, xpToApply)
+            end
+            local afterXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or xpObj:getXP(perk)
+            actualGain = math.max(0, afterXP - beforeXP)
+            applied = actualGain > 0
+            applyVia = "legacy"
         end
-
-        local afterXP = xpObj:getXP(perk)
-        local actualGain = afterXP - beforeXP
 
         -- Use per-character claims for SP/host path to match server behavior
         local journalData = self.journal:getModData().BurdJournals
-        if journalData then
+        if applied and journalData then
             BurdJournals.markSkillClaimedByCharacter(journalData, self.player, skillName)
             if self.journal.transmitModData then
                 self.journal:transmitModData()
@@ -7064,9 +8568,12 @@ function BurdJournals.UI.MainPanel:applySkillXPDirectly(skillName, xp, skipDisso
         end
 
         if actualGain > 0 then
-            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_GainedXP") or "+%s %s", BurdJournals.formatXP(actualGain), BurdJournals.getPerkDisplayName(skillName)), {r=0.5, g=0.8, b=0.5})
+            self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_GainedXP") or "+%s %s", BurdJournals.formatXP(actualGain), BurdJournals.getPerkDisplayName(skillName)), "success")
+        elseif applied then
+            self:showFeedback(getText("UI_BurdJournals_SkillMaxed") or "Skill already maxed!", "muted")
         else
-            self:showFeedback(getText("UI_BurdJournals_SkillMaxed") or "Skill already maxed!", {r=0.7, g=0.5, b=0.3})
+            BurdJournals.debugPrint("[BurdJournals] applySkillXPDirectly failed via " .. tostring(applyVia))
+            self:showFeedback(BurdJournals.safeGetText("UI_BurdJournals_JournalClaimFailed", "Could not apply this journal reward"), "error")
         end
 
         -- Skip refresh/dissolution during batch operations
@@ -7082,7 +8589,7 @@ function BurdJournals.UI.MainPanel:applyTraitDirectly(traitId, skipDissolutionCh
     local player = self.player
 
     if not player then
-        self:showFeedback(getText("UI_BurdJournals_NoPlayer") or "No player!", {r=0.8, g=0.3, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_NoPlayer") or "No player!", "error")
         return
     end
 
@@ -7097,7 +8604,7 @@ function BurdJournals.UI.MainPanel:applyTraitDirectly(traitId, skipDissolutionCh
                 self.journal:transmitModData()
             end
         end
-        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", {r=0.7, g=0.5, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", "muted")
         -- Skip refresh/dissolution during batch operations
         if not skipDissolutionCheck then
             self:refreshAbsorptionList()
@@ -7123,9 +8630,9 @@ function BurdJournals.UI.MainPanel:applyTraitDirectly(traitId, skipDissolutionCh
             end
         end
         local traitName = safeGetTraitName(traitId)
-        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_GainedTrait") or "Gained trait: %s", traitName), {r=0.9, g=0.75, b=0.5})
+        self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_GainedTrait") or "Gained trait: %s", traitName), "success")
     else
-        self:showFeedback(getText("UI_BurdJournals_FailedToAddTrait") or "Failed to add trait!", {r=0.8, g=0.3, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_FailedToAddTrait") or "Failed to add trait!", "error")
     end
 
     -- Skip refresh/dissolution during batch operations
@@ -7136,9 +8643,28 @@ function BurdJournals.UI.MainPanel:applyTraitDirectly(traitId, skipDissolutionCh
 end
 
 function BurdJournals.UI.MainPanel:showFeedback(text, color)
+    local resolvedColor = color
+    if type(color) == "string" and self.mode == "absorb" then
+        local pal = self.palette or getRewardPalette(self.rewardTheme)
+        local feedbackKeyMap = {
+            info = "feedbackInfo",
+            warn = "feedbackWarn",
+            success = "feedbackSuccess",
+            muted = "feedbackMuted",
+            error = "feedbackError",
+        }
+        local paletteKey = feedbackKeyMap[color]
+        local themed = paletteKey and paletteColor(pal, paletteKey) or nil
+        if themed then
+            resolvedColor = {r=themed.r, g=themed.g, b=themed.b}
+        end
+    end
+    if type(resolvedColor) ~= "table" then
+        resolvedColor = {r=0.7, g=0.9, b=0.7}
+    end
     if self.feedbackLabel then
         self.feedbackLabel:setName(text)
-        self.feedbackLabel:setColor(color.r, color.g, color.b)
+        self.feedbackLabel:setColor(resolvedColor.r, resolvedColor.g, resolvedColor.b)
         self.feedbackLabel:setVisible(true)
         self.feedbackTicks = 120
     end
@@ -7186,8 +8712,20 @@ function BurdJournals.UI.MainPanel:checkDissolution(forceAutoDissolve)
         -- In MP, route dissolution through server to avoid desync
         -- Server response will trigger the Say message via handleJournalDissolved
         if isClient() and not isServer() and BurdJournals.Client and BurdJournals.Client.sendToServer then
+            local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+            local lookupArgs = BurdJournals.buildJournalCommandPayload
+                and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+                or {
+                    journalId = self.journal and self.journal.getID and self.journal:getID() or nil,
+                    journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+                    journalFingerprint = nil,
+                    journalData = nil,
+                }
             BurdJournals.Client.sendToServer("dissolveJournal", {
-                journalId = self.journal:getID()
+                journalId = lookupArgs.journalId,
+                journalUUID = lookupArgs.journalUUID,
+                journalFingerprint = lookupArgs.journalFingerprint,
+                journalData = lookupArgs.journalData,
             })
         else
             -- SP/host: Remove directly and show message
@@ -7225,7 +8763,6 @@ function BurdJournals.UI.MainPanel:update()
             if newJournal then
                 BurdJournals.debugPrint("[BurdJournals] update: Found pending new journal! Updating reference.")
                 self.journal = newJournal
-                self.pendingNewJournalId = nil
 
                 self:refreshJournalData()
             end
@@ -7409,6 +8946,10 @@ function BurdJournals.UI.MainPanel:tryReturnBorrowedJournal()
         return
     end
 
+    if not (ISInventoryTransferUtil and ISInventoryTransferUtil.newInventoryTransferAction) then
+        return
+    end
+
     local action = ISInventoryTransferUtil.newInventoryTransferAction(
         self.player,
         self.journal,
@@ -7584,6 +9125,43 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
         BurdJournals.UI.MainPanel.instance:onClose()
     end
 
+    closePlayerInventoryPanelsForController(player)
+
+    local journalData = BurdJournals.getJournalData(journal)
+    if mode ~= "log"
+        and journal
+        and BurdJournals.isHiddenCursedJournal
+        and BurdJournals.isHiddenCursedJournal(journal)
+        and sendClientCommand
+    then
+        local lookupArgs = BurdJournals.buildJournalCommandPayload
+            and BurdJournals.buildJournalCommandPayload(journal, journalData, true)
+            or {
+                journalId = journal.getID and journal:getID() or nil,
+                journalUUID = journalData and journalData.uuid or nil,
+                journalFingerprint = nil,
+                journalData = journalData,
+                itemFullType = journal.getFullType and journal:getFullType() or nil,
+            }
+        if lookupArgs and (lookupArgs.journalId or lookupArgs.journalUUID or lookupArgs.journalFingerprint) then
+            sendClientCommand(player, "BurdJournals", "openCursedJournal", {
+                journalId = lookupArgs.journalId,
+                journalUUID = lookupArgs.journalUUID,
+                journalFingerprint = lookupArgs.journalFingerprint,
+                journalData = lookupArgs.journalData,
+                itemFullType = lookupArgs.itemFullType,
+                confirm = true,
+            })
+            return nil
+        end
+    end
+    if mode == "view"
+        and BurdJournals.isUnwrappedYuletideJournal
+        and BurdJournals.isUnwrappedYuletideJournal(journal)
+    then
+        mode = "absorb"
+    end
+
     local baseWidth = 410
     local btnPadding = 20
     local btnSpacing = 12
@@ -7618,12 +9196,14 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
     local btn2W = math.max(minBtnWidth, getTextManager():MeasureStringX(UIFont.Small, btn2Text) + btnPadding)
     local btn3W = math.max(minBtnWidth, getTextManager():MeasureStringX(UIFont.Small, btn3Text) + btnPadding)
 
-    -- Check if dissolve button will be shown (worn/bloody journals in absorb mode)
-    local journalData = BurdJournals.getJournalData(journal)
+    -- Check if dissolve button will be shown for loot-style one-shot journals.
     local hasBloodyOrigin = BurdJournals.hasBloodyOrigin(journal)
     local isBloody = BurdJournals.isBloody(journal)
     local isWorn = BurdJournals.isWorn and BurdJournals.isWorn(journal) or false
-    local showDissolveBtn = mode ~= "log" and (isWorn or isBloody or hasBloodyOrigin)
+    local isYuletide = BurdJournals.getYuletideState
+        and BurdJournals.getYuletideState(journal) == BurdJournals.YULETIDE_STATE_UNWRAPPED
+        or false
+    local showDissolveBtn = mode ~= "log" and (isWorn or isBloody or hasBloodyOrigin or isYuletide)
 
     local btn4Text = getText("UI_BurdJournals_BtnDissolve") or "Dissolve"
     local btn4W = math.max(minBtnWidth, getTextManager():MeasureStringX(UIFont.Small, btn4Text) + btnPadding)
@@ -7657,10 +9237,10 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
         local allowedSkills = BurdJournals.getAllowedSkills()
         if allowedSkills then
             for _, skillName in ipairs(allowedSkills) do
-                if isSkillRecordableInPlayerJournal(skillName) then
+                if BurdJournals.isSkillRecordableInPlayerJournal(skillName) then
                     local perk = BurdJournals.getPerkByName(skillName)
                     if perk then
-                        local currentXP = player:getXp():getXP(perk)
+                        local currentXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                         local currentLevel = player:getPerkLevel(perk)
                         if currentXP > 0 or currentLevel > 0 then
                             skillCount = skillCount + 1
@@ -7691,7 +9271,7 @@ function BurdJournals.UI.MainPanel.show(player, journal, mode, returnContainer)
         -- View/absorb mode - count from journal data
         if journalData and journalData.skills then
             for skillName, _ in pairs(journalData.skills) do
-                if isSkillVisibleForJournal(journalData, skillName) then
+                if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                     skillCount = skillCount + 1
                 end
             end
@@ -7921,9 +9501,12 @@ function BurdJournals.UI.MainPanel:createLogUI()
     self.closeBottomBtn.backgroundColor = {r=0.15, g=0.13, b=0.12, a=0.8}
     self.closeBottomBtn.textColor = {r=0.9, g=0.85, b=0.8, a=1}
     self:addChild(self.closeBottomBtn)
+    self._recordButtonLayout = {
+        closeX = self.closeBottomBtn:getX(),
+    }
 
     -- Legacy baseline debug buttons removed - use BSJ Debug Center (Baseline tab) instead
-    
+    self:updateRecordActionAvailability()
     self:populateRecordList()
     self:rebuildJoypadRows()
 end
@@ -7940,9 +9523,11 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
     else
         journalData = BurdJournals.getJournalData(self.journal) or {}
     end
+    self:updateRecordActionAvailability()
+    local hasWritingTool = self:hasRecordWritingTool()
 
-    local useBaselineForJournal, autoRepairedMode = resolveJournalRecordingModeForPlayer(journalData, self.player)
-    if shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
+    local useBaselineForJournal, autoRepairedMode = BurdJournals.resolveJournalRecordingModeForPlayer(journalData, self.player)
+    if BurdJournals.shouldForceBaselineRecordingMode(journalData, self.player, autoRepairedMode) then
         useBaselineForJournal = true
     end
     if autoRepairedMode then
@@ -7950,7 +9535,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
     end
 
     -- Only enforce baseline capture when this journal is recording in baseline mode.
-    local baselineReady, normalizedUseBaseline = ensureBaselineReadyForRecording(self, useBaselineForJournal, "populateRecordList")
+    local baselineReady, normalizedUseBaseline = BurdJournals.ensureBaselineReadyForRecording(self, useBaselineForJournal, "populateRecordList")
     useBaselineForJournal = normalizedUseBaseline
     if not baselineReady then
         self.skillList:addItem("initializing", {
@@ -7976,10 +9561,10 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
         local useBaseline = useBaselineForJournal
 
         for _, skillName in ipairs(allowedSkills) do
-            if isSkillRecordableInPlayerJournal(skillName) then
+            if BurdJournals.isSkillRecordableInPlayerJournal(skillName) then
                 local perk = BurdJournals.getPerkByName(skillName)
                 if perk then
-                    local currentXP = self.player:getXp():getXP(perk)
+                    local currentXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
                     local currentLevel = self.player:getPerkLevel(perk)
 
                     if currentXP > 0 or currentLevel > 0 then
@@ -7991,7 +9576,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                             matchCount = matchCount + 1
                             local recordedData = recordedSkills[skillName]
                             local recordedXP = recordedData and recordedData.xp or 0
-                            local _, recordedRawXP, recordedVhsExcludedXP = getSkillVhsBreakdown(recordedData, recordedXP)
+                            local _, recordedRawXP, recordedVhsExcludedXP = BurdJournals.getSkillVhsBreakdown(recordedData, recordedXP)
                             local recordedLevel = recordedData and recordedData.level or 0
 
                             local baselineXP = 0
@@ -8000,29 +9585,26 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                             end
 
                             local earnedXP = math.max(0, currentXP - baselineXP)
+                            local displayLevel = currentLevel
+                            if useBaseline then
+                                displayLevel = BurdJournals.getEarnedOnlyDisplayLevel(skillName, earnedXP, currentLevel)
+                            end
                             local needsBaselineRepair = useBaseline
-                                and isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
-                            local canRecord = earnedXP > recordedXP or needsBaselineRepair
+                                and BurdJournals.isLikelyAbsoluteSkillEntryForBaseline(journalData, self.player, skillName, recordedXP, currentXP, baselineXP)
+                            local canRecord = hasWritingTool and (earnedXP > recordedXP or needsBaselineRepair)
 
-                            -- For passive skills (Fitness/Strength), use level-based check since XP can be tricky
                             local isPassiveSkill = (skillName == "Fitness" or skillName == "Strength")
                             local baselineLevel = BurdJournals.getSkillBaselineLevel(self.player, skillName) or 0
                             local isAtBaseline = false
                             if useBaseline and baselineXP > 0 then
-                                if isPassiveSkill then
-                                    -- Passive skills: at baseline if still at or below their baseline level
-                                    isAtBaseline = currentLevel <= baselineLevel
-                                else
-                                    -- Regular skills: at baseline if no earned XP
-                                    isAtBaseline = earnedXP == 0
-                                end
+                                isAtBaseline = earnedXP <= 0
                             end
 
-                            local skillTooltip = buildSkillVhsTooltip({
+                            local skillTooltip = BurdJournals.buildSkillVhsTooltip({
                                 xp = recordedXP,
                                 rawXP = recordedRawXP,
                                 vhsExcludedXP = recordedVhsExcludedXP
-                            }, nil, nil)
+                            }, nil, nil, baselineXP)
 
                             self.skillList:addItem(skillName, {
                                 isSkill = true,
@@ -8031,6 +9613,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                                 xp = earnedXP,
                                 currentXP = currentXP,
                                 level = currentLevel,
+                                displayLevel = displayLevel,
                                 recordedXP = recordedXP,
                                 recordedRawXP = recordedRawXP,
                                 recordedVhsExcludedXP = recordedVhsExcludedXP,
@@ -8093,7 +9676,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                     traitTexture = traitTexture,
                     isRecorded = isRecorded,
                     isStartingTrait = isStartingTrait,
-                    canRecord = not isRecorded and not isStartingTrait,
+                    canRecord = hasWritingTool and not isRecorded and not isStartingTrait,
                     isPositive = isPositive,
                     modSource = modSource,
                 })
@@ -8146,7 +9729,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                             recordedValue = recordedValue,
                             recordedFormatted = recordedFormatted,
                             isRecorded = recordedValue ~= nil,
-                            canRecord = canUpdate,
+                            canRecord = hasWritingTool and canUpdate,
                             isText = stat.isText,
                         })
                     end
@@ -8188,7 +9771,7 @@ function BurdJournals.UI.MainPanel:populateRecordList(overrideData)
                         displayName = displayName,
                         magazineSource = magazineSource,
                         isRecorded = isRecorded,
-                        canRecord = not isRecorded,
+                        canRecord = hasWritingTool and not isRecorded,
                         modSource = modSource,
                     })
                 end
@@ -8287,28 +9870,19 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
         local isRecordingThis = recordingState and recordingState.active and not recordingState.isRecordAll
                                and recordingState.skillName == data.skillName
 
-        local baselineXP = data.baselineXP or 0
-        local baselineLevel = data.baselineLevel or 0
         local earnedXP = data.earnedXP or data.xp
-        -- For passive skills (Fitness/Strength), use level-based check
-        local isPassiveSkill = data.isPassiveSkill or (data.skillName == "Fitness" or data.skillName == "Strength")
-        local isStartingSkill = data.isAtBaseline
-        if not isStartingSkill and baselineXP > 0 then
-            if isPassiveSkill then
-                -- Passive skills: at baseline if level <= their baseline level
-                isStartingSkill = (data.level or 0) <= baselineLevel
-            else
-                isStartingSkill = earnedXP == 0
-            end
-        end
 
         local displayName = data.displayName or data.skillName or "Unknown Skill"
-        self:drawText(displayName .. " (Lv." .. data.level .. ")", textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
+        local displayLevel = data.displayLevel
+        if displayLevel == nil then
+            displayLevel = BurdJournals.getEarnedOnlyDisplayLevel(data.skillName, earnedXP, data.level)
+        end
+        self:drawText(displayName .. " (Lv." .. tostring(displayLevel or 0) .. ")", textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
 
         if isRecordingThis then
 
             local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100))
+            local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100)))
             self:drawText(progressText, textX, cardY + 24, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             local barX = textX + 100
@@ -8318,60 +9892,6 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
             self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
             self:drawRect(barX, barY, barW * recordingState.progress, barH, 0.9, 0.3, 0.7, 0.4)
             self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.4, 0.8, 0.5)
-        elseif isStartingSkill then
-
-            local squaresX = textX
-            local squaresY = cardY + 26
-            local squareSize = 10
-            local squareSpacing = 2
-            
-            -- Use stored level from game (data.level) as the authoritative level
-            -- Then calculate progress within that level based on XP
-            local currentLevel = data.level or 0
-            local currentXP = data.currentXP or 0
-            
-            -- Calculate progress within the current level
-            local progress = 0
-            if currentLevel < 10 and currentLevel > 0 then
-                local xpForCurrentLevel = getXPForLevel(data.skillName, currentLevel)
-                local xpForNextLevel = getXPForLevel(data.skillName, currentLevel + 1)
-                local xpInThisLevel = currentXP - xpForCurrentLevel
-                local xpRangeForLevel = xpForNextLevel - xpForCurrentLevel
-                if xpRangeForLevel > 0 then
-                    progress = math.min(1, math.max(0, xpInThisLevel / xpRangeForLevel))
-                end
-            end
-            
-            -- Draw squares showing current level, progress, and baseline indication
-            for i = 1, 10 do
-                local sqX = squaresX + (i - 1) * (squareSize + squareSpacing)
-                if i <= currentLevel then
-                    -- Completed level squares (dimmed brown - at baseline)
-                    self:drawRect(sqX, squaresY, squareSize, squareSize, 0.7, 0.35, 0.28, 0.22)
-                elseif i == currentLevel + 1 and progress > 0 then
-                    -- Progress square - show partial fill from bottom
-                    self:drawRect(sqX, squaresY, squareSize, squareSize, 0.5, 0.1, 0.1, 0.1)
-                    local fillHeight = squareSize * progress
-                    self:drawRect(sqX, squaresY + squareSize - fillHeight, squareSize, fillHeight, 0.6, 0.3, 0.24, 0.18)
-                elseif i <= baselineLevel then
-                    -- Baseline above current (even more dimmed - shows what's restricted)
-                    self:drawRect(sqX, squaresY, squareSize, squareSize, 0.3, 0.2, 0.18, 0.15)
-                else
-                    -- Empty squares
-                    self:drawRect(sqX, squaresY, squareSize, squareSize, 0.5, 0.1, 0.1, 0.1)
-                end
-                self:drawRectBorder(sqX, squaresY, squareSize, squareSize, 0.3, 0.3, 0.3, 0.3)
-            end
-
-            local squaresWidth = 10 * squareSize + 9 * squareSpacing
-            -- Show current level vs baseline level in text
-            local baselineText
-            if baselineLevel > 0 and baselineLevel > currentLevel then
-                baselineText = BurdJournals.formatText("Lv.%d (Baseline: %d)", currentLevel, baselineLevel)
-            else
-                baselineText = BurdJournals.formatText(getText("UI_BurdJournals_StartingXP"), BurdJournals.formatXP(baselineXP))
-            end
-            self:drawText(baselineText, squaresX + squaresWidth + 8, squaresY, 0.5, 0.4, 0.35, 1, UIFont.Small)
         else
 
             local squaresX = textX
@@ -8379,78 +9899,55 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
             local squareSize = 10
             local squareSpacing = 2
 
-            -- Use the game's reported level as authoritative, calculate progress from XP
-            local totalLevel = data.level or 0
-            local totalProgress = 0
-            
-            -- Calculate progress within the current level using XP
-            local currentXP = data.currentXP or 0
-            if totalLevel < 10 and totalLevel >= 0 then
-                local xpForCurrentLevel = getXPForLevel(data.skillName, totalLevel)
-                local xpForNextLevel = getXPForLevel(data.skillName, totalLevel + 1)
-                local xpInThisLevel = currentXP - xpForCurrentLevel
-                local xpRangeForLevel = xpForNextLevel - xpForCurrentLevel
-                if xpRangeForLevel > 0 and xpInThisLevel > 0 then
-                    totalProgress = math.min(1, math.max(0, xpInThisLevel / xpRangeForLevel))
-                end
+            local filledColor, emptyColor, progressColor
+            if data.isRecorded and not data.canRecord then
+                filledColor = {r=0.25, g=0.4, b=0.3}
+                emptyColor = {r=0.1, g=0.1, b=0.1}
+                progressColor = {r=0.2, g=0.3, b=0.25}
+            else
+                filledColor = {r=0.3, g=0.65, b=0.55}
+                emptyColor = {r=0.12, g=0.12, b=0.12}
+                progressColor = {r=0.2, g=0.4, b=0.35}
             end
 
-            if baselineXP > 0 then
-                -- Has baseline - use the enhanced function to show baseline vs earned distinction
-                local calcBaselineLevel, baselineProgress = calculateLevelProgress(data.skillName, baselineXP)
-                
-                -- For passive skills, use stored baseline level but keep progress
-                if isPassiveSkill then
-                    local storedBaseline = baselineLevel or 5
-                    if storedBaseline > calcBaselineLevel then
-                        calcBaselineLevel = storedBaseline
-                        baselineProgress = 0
-                    end
-                end
-
-                local baselineColor, earnedColor, emptyColor, progressColor
-                if data.isRecorded and not data.canRecord then
-                    -- Already recorded, greyed out
-                    baselineColor = {r=0.2, g=0.22, b=0.2}
-                    earnedColor = {r=0.25, g=0.4, b=0.3}
-                    emptyColor = {r=0.1, g=0.1, b=0.1}
-                    progressColor = {r=0.2, g=0.3, b=0.25}
-                else
-                    -- Recordable - baseline dimmed, earned bright
-                    baselineColor = {r=0.35, g=0.28, b=0.22}  -- Brownish/dimmed for baseline
-                    earnedColor = {r=0.3, g=0.65, b=0.55}     -- Bright teal for earned
-                    emptyColor = {r=0.12, g=0.12, b=0.12}
-                    progressColor = {r=0.2, g=0.4, b=0.35}
-                end
-
-                drawLevelSquaresWithBaseline(self, squaresX, squaresY,
-                    calcBaselineLevel, baselineProgress,
-                    totalLevel, totalProgress,
-                    squareSize, squareSpacing,
-                    baselineColor, earnedColor, emptyColor, progressColor
+            if (tonumber(data.baselineXP) or 0) > 0 then
+                local totalLevel, totalProgress = BurdJournals.calculateLevelProgressWithOverride(
+                    data.skillName,
+                    tonumber(data.currentXP) or tonumber(data.baselineXP) or 0,
+                    data.level
+                )
+                local baselineLevel, baselineProgress = BurdJournals.calculateLevelProgress(
+                    data.skillName,
+                    tonumber(data.baselineXP) or 0
+                )
+                BurdJournals.drawLevelSquaresWithBaseline(
+                    self,
+                    squaresX,
+                    squaresY,
+                    baselineLevel,
+                    baselineProgress,
+                    totalLevel,
+                    totalProgress,
+                    squareSize,
+                    squareSpacing,
+                    getBaselineSquareColor(filledColor, emptyColor),
+                    filledColor,
+                    emptyColor,
+                    progressColor
                 )
             else
-                -- No baseline - use standard drawing
-                local filledColor, emptyColor, progressColor
-                if data.isRecorded and not data.canRecord then
-                    filledColor = {r=0.25, g=0.4, b=0.3}
-                    emptyColor = {r=0.1, g=0.1, b=0.1}
-                    progressColor = {r=0.2, g=0.3, b=0.25}
-                else
-                    filledColor = {r=0.3, g=0.65, b=0.55}
-                    emptyColor = {r=0.12, g=0.12, b=0.12}
-                    progressColor = {r=0.2, g=0.4, b=0.35}
-                end
-
-                drawLevelSquares(self, squaresX, squaresY, totalLevel, totalProgress, squareSize, squareSpacing,
-                    filledColor, emptyColor, progressColor
-                )
+                BurdJournals.drawEarnedOnlySkillSquares(self, squaresX, squaresY, data.skillName, earnedXP, squareSize, squareSpacing, {
+                    filledColor = filledColor,
+                    emptyColor = emptyColor,
+                    progressColor = progressColor,
+                })
             end
 
             local squaresWidth = 10 * squareSize + 9 * squareSpacing
             local xpText
             local xpColor
-            local recordedSummary = formatXPWithVhsBreakdown(
+            local baselineXP = math.max(0, tonumber(data.baselineXP) or 0)
+            local recordedSummary = BurdJournals.formatXPWithVhsBreakdown(
                 data.recordedXP or 0,
                 data.recordedRawXP or data.recordedXP or 0,
                 data.recordedVhsExcludedXP or 0
@@ -8458,14 +9955,16 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
             if data.isRecorded and not data.canRecord then
 
-                xpText = "Recorded: " .. recordedSummary
+                xpText = BurdJournals.formatText(getText("UI_BurdJournals_RecordedValue"), recordedSummary)
                 xpColor = {r=0.4, g=0.5, b=0.45}
             elseif data.isRecorded and data.canRecord then
 
                 if baselineXP > 0 then
-                    xpText = BurdJournals.formatText(getText("UI_BurdJournals_XPWithBaseline"),
-                        BurdJournals.formatXP(earnedXP), BurdJournals.formatXP(baselineXP))
-                    xpText = xpText .. " (was " .. recordedSummary .. ")"
+                    xpText = BurdJournals.formatText(
+                        getText("UI_BurdJournals_XPWithBaseline") or "%s XP (+%s starting)",
+                        BurdJournals.formatXP(earnedXP),
+                        BurdJournals.formatXP(baselineXP)
+                    ) .. " (was " .. recordedSummary .. ")"
                 else
                     xpText = BurdJournals.formatXP(earnedXP) .. " XP (was " .. recordedSummary .. ")"
                 end
@@ -8473,8 +9972,11 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
             else
 
                 if baselineXP > 0 then
-                    xpText = BurdJournals.formatText(getText("UI_BurdJournals_XPWithBaseline"),
-                        BurdJournals.formatXP(earnedXP), BurdJournals.formatXP(baselineXP))
+                    xpText = BurdJournals.formatText(
+                        getText("UI_BurdJournals_XPWithBaseline") or "%s XP (+%s starting)",
+                        BurdJournals.formatXP(earnedXP),
+                        BurdJournals.formatXP(baselineXP)
+                    )
                 else
                     xpText = BurdJournals.formatXP(earnedXP) .. " XP"
                 end
@@ -8562,7 +10064,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         if isRecordingThis then
             local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100))
+            local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100)))
             self:drawText(progressText, traitTextX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             local barX = traitTextX + 100
@@ -8640,7 +10142,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         if isRecordingThis then
             local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100))
+            local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100)))
             self:drawText(progressText, textX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             local barX = textX + 100
@@ -8736,7 +10238,7 @@ function BurdJournals.UI.MainPanel.doDrawRecordItem(self, y, item, alt)
 
         if isRecordingThis then
             local progressFormat = getText("UI_BurdJournals_RecordingProgress") or "Recording... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100))
+            local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(recordingState.progress * 100)))
             self:drawText(progressText, recipeTextX, cardY + 22, 0.3, 0.8, 0.5, 1, UIFont.Small)
 
             local barX = recipeTextX + 100
@@ -8874,7 +10376,7 @@ function BurdJournals.UI.MainPanel:createViewUI()
 
     if journalData and journalData.skills then
         for skillName, skillData in pairs(journalData.skills) do
-            if isSkillVisibleForJournal(journalData, skillName) then
+            if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                 totalSkillCount = totalSkillCount + 1
 
                 local perk = BurdJournals.getPerkByName(skillName)
@@ -8882,8 +10384,8 @@ function BurdJournals.UI.MainPanel:createViewUI()
                 if perk then
                     playerXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName) or self.player:getXp():getXP(perk)
                 end
-                local preview = getClaimPreviewForSkill(journalData, self.player, skillName, skillData.xp or 0, 0, getClaimSessionIdForPanel(self, false))
-                local claimTargetXP = getClaimTargetXPForPlayer(journalData, self.player, skillName, preview.effectiveXP)
+                local preview = BurdJournals.getClaimPreviewForSkill(journalData, self.player, skillName, skillData.xp or 0, 0, BurdJournals.getClaimSessionIdForPanel(self, false))
+                local claimTargetXP = BurdJournals.getClaimTargetXPForPlayer(journalData, self.player, skillName, preview.effectiveXP)
                 if playerXP < claimTargetXP then
                     skillCount = skillCount + 1
                     totalXP = totalXP + (claimTargetXP - playerXP)
@@ -9092,7 +10594,7 @@ function BurdJournals.UI.MainPanel:populateViewList()
             local hasSkills = false
             local matchCount = 0
             for skillName, skillData in pairs(journalData.skills) do
-                if isSkillVisibleForJournal(journalData, skillName) then
+                if BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
                     hasSkills = true
                     local displayName = BurdJournals.getPerkDisplayName(skillName)
                     local modSource = BurdJournals.getSkillModId(skillName)
@@ -9108,15 +10610,13 @@ function BurdJournals.UI.MainPanel:populateViewList()
                     end
 
                         local recordedXP = skillData.xp or 0
-                        local _, recordedRawXP, recordedVhsExcludedXP = getSkillVhsBreakdown(skillData, recordedXP)
-                        local preview = getClaimPreviewForSkill(journalData, self.player, skillName, recordedXP, 0, getClaimSessionIdForPanel(self, false))
+                        local _, recordedRawXP, recordedVhsExcludedXP = BurdJournals.getSkillVhsBreakdown(skillData, recordedXP)
+                        local preview = BurdJournals.getClaimPreviewForSkill(journalData, self.player, skillName, recordedXP, 0, BurdJournals.getClaimSessionIdForPanel(self, false))
                         local effectiveClaimXP = preview.effectiveXP
-                        local claimTargetXP = getClaimTargetXPForPlayer(journalData, self.player, skillName, effectiveClaimXP)
+                        local claimTargetXP = BurdJournals.getClaimTargetXPForPlayer(journalData, self.player, skillName, effectiveClaimXP)
                         local recordedLevel = skillData.level or 0
-                        if preview.level and preview.level > 0 then
-                            recordedLevel = preview.level
-                        elseif recordedLevel == 0 and recordedXP > 0 and BurdJournals.getSkillLevelFromXP then
-                            local xpForLevelCalc = getXPWithBaselineForDisplay(skillName, recordedXP, journalData, self.player)
+                        if recordedLevel == 0 and recordedXP > 0 and BurdJournals.getSkillLevelFromXP then
+                            local xpForLevelCalc = BurdJournals.getXPWithBaselineForDisplay(skillName, recordedXP, journalData, self.player)
                             recordedLevel = BurdJournals.getSkillLevelFromXP(xpForLevelCalc, skillName)
                         end
 
@@ -9147,7 +10647,7 @@ function BurdJournals.UI.MainPanel:populateViewList()
                         -- For player journals, can claim if player's level is less than recorded
                         -- This allows re-claiming if a previous claim failed or gave insufficient XP
                         local canClaim = not alreadyAtLevel and not isPending and not isClaimed
-                        local skillTooltip = buildSkillVhsTooltip({
+                        local skillTooltip = BurdJournals.buildSkillVhsTooltip({
                             xp = recordedXP,
                             rawXP = recordedRawXP,
                             vhsExcludedXP = recordedVhsExcludedXP
@@ -9165,6 +10665,7 @@ function BurdJournals.UI.MainPanel:populateViewList()
                             claimPercent = preview.percent,
                         claimReadCount = preview.readCount,
                         level = recordedLevel,
+                        displayLevel = displayLevel,
                         playerXP = playerXP,
                         playerLevel = playerLevel,
                         canClaim = canClaim,
@@ -9342,13 +10843,18 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
     local isErasingThis = erasingState and erasingState.active
                           and erasingState.entryType == "skill" and erasingState.entryName == data.skillName
     local displayName = data.displayName or data.skillName or "Unknown Skill"
-    self:drawText(displayName, textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
+    local displayLevel = data.displayLevel
+    if displayLevel == nil then
+        local earnedXP = data.effectiveXP or data.xp or 0
+        displayLevel = BurdJournals.getEarnedOnlyDisplayLevel(data.skillName, earnedXP, data.level)
+    end
+    self:drawText(displayName .. " (Lv." .. tostring(displayLevel or 0) .. ")", textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
     local queuePosition = mainPanel:getQueuePosition(data.skillName)
     local isQueued = queuePosition ~= nil
 
     if isErasingThis then
         local progressFormat = getText("UI_BurdJournals_ErasingProgress") or "Erasing... %d%%"
-        local progressText = BurdJournals.formatText(progressFormat, math.floor((erasingState.progress or 0) * 100))
+        local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor((erasingState.progress or 0) * 100)))
         self:drawText(progressText, textX, cardY + 24, 0.9, 0.5, 0.5, 1, UIFont.Small)
         local barX, barY, barW, barH = textX + 90, cardY + 27, cardW - 120 - padding, 10
         self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
@@ -9356,7 +10862,7 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
         self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.6, 0.3, 0.3)
     elseif isLearningThis then
         local progressFormat = getText("UI_BurdJournals_ReadingProgress") or "Reading... %d%%"
-        local progressText = BurdJournals.formatText(progressFormat, math.floor(learningState.progress * 100))
+        local progressText = BurdJournals.normalizeProgressPercentLabel(BurdJournals.formatText(progressFormat, math.floor(learningState.progress * 100)))
         self:drawText(progressText, textX, cardY + 24, 0.3, 0.7, 0.9, 1, UIFont.Small)
         local barX, barY, barW, barH = textX + 90, cardY + 27, cardW - 120 - padding, 10
         self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
@@ -9365,17 +10871,17 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
     elseif isQueued then
         local squaresX, squaresY, squareSize, squareSpacing = textX, cardY + 26, 10, 2
         local displayXP = data.effectiveXP or data.xp or 0
-        -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-        -- Use stored level as override for accurate display (important for passive skills)
-        local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, displayXP, viewJournalData, mainPanel.player)
-        local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-        drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-            {r=0.4, g=0.5, b=0.6}, {r=0.12, g=0.12, b=0.12}, {r=0.25, g=0.3, b=0.4})
+        BurdJournals.drawEarnedOnlySkillSquares(self, squaresX, squaresY, data.skillName, displayXP, squareSize, squareSpacing, {
+            filledColor = {r=0.4, g=0.5, b=0.6},
+            emptyColor = {r=0.12, g=0.12, b=0.12},
+            progressColor = {r=0.25, g=0.3, b=0.4}
+        })
         local squaresWidth = 10 * squareSize + 9 * squareSpacing
         local queuedText = BurdJournals.formatText(getText("UI_BurdJournals_QueuedNumber") or "Queued #%d", queuePosition)
         local sourceXP = math.max(0, tonumber(data.xp) or displayXP)
-        local _, rawSourceXP, vhsExcludedXP = getSkillVhsBreakdown(data, sourceXP)
-        local xpText = queuedText .. "  " .. BurdJournals.formatXP(displayXP) .. " XP"
+        local _, rawSourceXP, vhsExcludedXP = BurdJournals.getSkillVhsBreakdown(data, sourceXP)
+        local xpText = queuedText .. "  "
+        xpText = xpText .. BurdJournals.formatXP(displayXP) .. " XP"
         if data.claimPercent and data.claimPercent < 100 and sourceXP > 0 then
             local reducedXP = math.max(0, sourceXP - displayXP)
             xpText = queuedText .. "  " .. BurdJournals.formatXP(displayXP) .. "/" .. BurdJournals.formatXP(sourceXP) .. " XP (" .. tostring(data.claimPercent) .. "%, -" .. BurdJournals.formatXP(reducedXP) .. ")"
@@ -9383,22 +10889,24 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
                 xpText = xpText .. " | VHS -" .. BurdJournals.formatXP(vhsExcludedXP)
             end
         else
-            xpText = queuedText .. "  " .. formatXPWithVhsBreakdown(displayXP, rawSourceXP, vhsExcludedXP)
+            xpText = queuedText .. "  " .. BurdJournals.formatXPWithVhsBreakdown(displayXP, rawSourceXP, vhsExcludedXP)
         end
         self:drawText(xpText, squaresX + squaresWidth + 8, squaresY, 0.6, 0.75, 0.9, 1, UIFont.Small)
     elseif data.canClaim then
         local squaresX, squaresY, squareSize, squareSpacing = textX, cardY + 26, 10, 2
         local displayXP = data.effectiveXP or data.xp or 0
-        -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-        -- Use stored level as override for accurate display (important for passive skills)
-        local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, displayXP, viewJournalData, mainPanel.player)
-        local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-        drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-            {r=0.3, g=0.55, b=0.65}, {r=0.12, g=0.12, b=0.12}, {r=0.2, g=0.35, b=0.4})
+        BurdJournals.drawEarnedOnlySkillSquares(self, squaresX, squaresY, data.skillName, displayXP, squareSize, squareSpacing, {
+            filledColor = {r=0.3, g=0.55, b=0.65},
+            emptyColor = {r=0.12, g=0.12, b=0.12},
+            progressColor = {r=0.2, g=0.35, b=0.4}
+        })
         local squaresWidth = 10 * squareSize + 9 * squareSpacing
         local sourceXP = math.max(0, tonumber(data.xp) or displayXP)
-        local _, rawSourceXP, vhsExcludedXP = getSkillVhsBreakdown(data, sourceXP)
-        local xpText = formatXPWithVhsBreakdown(displayXP, rawSourceXP, vhsExcludedXP)
+        local _, rawSourceXP, vhsExcludedXP = BurdJournals.getSkillVhsBreakdown(data, sourceXP)
+        local xpText = BurdJournals.formatXP(displayXP) .. " XP"
+        if vhsExcludedXP > 0 and rawSourceXP > sourceXP then
+            xpText = BurdJournals.formatXPWithVhsBreakdown(displayXP, rawSourceXP, vhsExcludedXP)
+        end
         if data.claimPercent and data.claimPercent < 100 and sourceXP > 0 then
             local reducedXP = math.max(0, sourceXP - displayXP)
             xpText = BurdJournals.formatXP(displayXP) .. "/" .. BurdJournals.formatXP(sourceXP) .. " XP (" .. tostring(data.claimPercent) .. "%, -" .. BurdJournals.formatXP(reducedXP) .. ")"
@@ -9410,12 +10918,11 @@ local function doDrawViewSkillItem(self, mainPanel, data, textX, textColor, card
     else
         local squaresX, squaresY, squareSize, squareSpacing = textX, cardY + 26, 10, 2
         local displayXP = data.effectiveXP or data.xp or 0
-        -- For passive skills (Fitness/Strength), add baseline XP for accurate level display
-        -- Use stored level as override for accurate display (important for passive skills)
-        local xpForDisplay = getXPWithBaselineForDisplay(data.skillName, displayXP, viewJournalData, mainPanel.player)
-        local level, progress = calculateLevelProgressWithOverride(data.skillName, xpForDisplay, data.level)
-        drawLevelSquares(self, squaresX, squaresY, level, progress, squareSize, squareSpacing,
-            {r=0.25, g=0.3, b=0.3}, {r=0.1, g=0.1, b=0.1}, {r=0.18, g=0.22, b=0.22})
+        BurdJournals.drawEarnedOnlySkillSquares(self, squaresX, squaresY, data.skillName, displayXP, squareSize, squareSpacing, {
+            filledColor = {r=0.25, g=0.3, b=0.3},
+            emptyColor = {r=0.1, g=0.1, b=0.1},
+            progressColor = {r=0.18, g=0.22, b=0.22}
+        })
         local squaresWidth = 10 * squareSize + 9 * squareSpacing
         -- Show appropriate status: "Already at this level" if they have sufficient XP
         local statusText = data.alreadyAtLevel 
@@ -9487,15 +10994,10 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
 
     local data = item.item or {}
     local x = 0
-
     local scrollBarWidth = 13
     local w = self:getWidth() - scrollBarWidth
     local h = self.itemheight
     local padding = 12
-
-    local cardBg = {r=0.12, g=0.16, b=0.20}
-    local cardBorder = {r=0.25, g=0.38, b=0.45}
-    local accentColor = {r=0.3, g=0.55, b=0.65}
 
     if data.isHeader then
         self:drawRect(x, y + 2, w, h - 4, 0.4, 0.12, 0.18, 0.22)
@@ -9518,25 +11020,21 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
     local cardY = y + cardMargin
     local cardW = w - cardMargin * 2
     local cardH = h - cardMargin * 2
-
     local canInteract = (data.isSkill and data.canClaim) or (data.isTrait and not data.alreadyKnown and not data.isClaimed and not data.isPending)
+    local bgColor = {r=0.12, g=0.16, b=0.20}
+    local borderColor = {r=0.25, g=0.38, b=0.45}
+    local accent = {r=0.3, g=0.55, b=0.65}
 
-    local bgColor = cardBg
-    local borderColor = cardBorder
-    local accent = accentColor
     if data.isTrait then
         if data.isPositive == true then
-
             bgColor = {r=0.08, g=0.20, b=0.10}
             borderColor = {r=0.2, g=0.5, b=0.25}
             accent = {r=0.3, g=0.8, b=0.35}
         elseif data.isPositive == false then
-
             bgColor = {r=0.22, g=0.08, b=0.08}
             borderColor = {r=0.5, g=0.2, b=0.2}
             accent = {r=0.8, g=0.3, b=0.3}
         end
-
     end
 
     if not canInteract then
@@ -9552,6 +11050,7 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
     else
         self:drawRect(cardX, cardY, 4, cardH, 0.5, 0.3, 0.3, 0.3)
     end
+
     mainPanel:drawSelectedRowOutline(self, item, cardX, cardY, cardW, cardH)
 
     local textX = cardX + padding + 4
@@ -9559,433 +11058,12 @@ function BurdJournals.UI.MainPanel.doDrawViewItem(self, y, item, alt)
 
     if data.isSkill then
         doDrawViewSkillItem(self, mainPanel, data, textX, textColor, cardX, cardY, cardW, cardH, padding)
-    end
-
-    if data.isTrait then
-        local learningState = mainPanel.learningState
-        local isLearningThis = learningState and learningState.active and not learningState.isAbsorbAll
-                              and learningState.traitId == data.traitId
-
-        local erasingState = mainPanel.erasingState
-        local isErasingThis = erasingState and erasingState.active
-                              and erasingState.entryType == "trait" and erasingState.entryName == data.traitId
-
-        local traitName = data.traitName or data.traitId or getText("UI_BurdJournals_UnknownTrait") or "Unknown Trait"
-        local traitTextX = textX
-
-        if data.traitTexture then
-            local iconSize = 24
-            local iconX = textX
-            local iconY = cardY + (cardH - iconSize) / 2
-            local iconAlpha = data.alreadyKnown and 0.4 or 1.0
-            self:drawTextureScaledAspect(data.traitTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
-            traitTextX = textX + iconSize + 6
-        end
-
-        local queuePosition = mainPanel:getQueuePosition(data.traitId)
-        local isQueued = queuePosition ~= nil
-
-        local traitColor
-        if data.alreadyKnown then
-            traitColor = {r=0.5, g=0.5, b=0.5}
-        elseif data.isPositive == true then
-            traitColor = {r=0.5, g=0.9, b=0.5}
-        elseif data.isPositive == false then
-            traitColor = {r=0.9, g=0.5, b=0.5}
-        else
-            traitColor = {r=0.8, g=0.9, b=1.0}
-        end
-        self:drawText(traitName, traitTextX, cardY + 6, traitColor.r, traitColor.g, traitColor.b, 1, UIFont.Small)
-
-        if isErasingThis then
-
-            local progressFormat = getText("UI_BurdJournals_ErasingProgress") or "Erasing... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor((erasingState.progress or 0) * 100))
-            self:drawText(progressText, traitTextX, cardY + 22, 0.9, 0.5, 0.5, 1, UIFont.Small)
-
-            local barX = traitTextX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-
-            self:drawRect(barX, barY, barW * (erasingState.progress or 0), barH, 0.9, 0.7, 0.3, 0.3)
-
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.6, 0.3, 0.3)
-        elseif isLearningThis then
-            local progressText = BurdJournals.formatText("Learning... %d%%", math.floor(learningState.progress * 100))
-            self:drawText(progressText, traitTextX, cardY + 22, 0.3, 0.7, 0.9, 1, UIFont.Small)
-
-            local barX = traitTextX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-
-            self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.25, 0.5, 0.7)
-
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.35, 0.6, 0.8)
-        elseif isQueued then
-            local queuedText = BurdJournals.formatText(getText("UI_BurdJournals_QueuedNumber") or "Queued #%d", queuePosition)
-            self:drawText(queuedText, traitTextX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
-        elseif data.alreadyKnown then
-            self:drawText(getText("UI_BurdJournals_StatusAlreadyKnown") or "Already known", traitTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
-        elseif data.isClaimed then
-            -- Trait was claimed from this journal by this character
-            self:drawText(getText("UI_BurdJournals_StatusAlreadyClaimed") or "Already claimed", traitTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
-        else
-            self:drawText(getText("UI_BurdJournals_RecordedTrait") or "Recorded trait", traitTextX, cardY + 22, 0.5, 0.7, 0.8, 1, UIFont.Small)
-        end
-
-        local btnW = 55
-        local btnH = 24
-        local btnGap = 4
-        local hasEraser = BurdJournals.hasEraser(mainPanel.player)
-
-        local rightmostBtnX = cardX + cardW - btnW - 10
-        local btnY = cardY + (cardH - btnH) / 2
-
-        -- Check if trait can be claimed (not already known, not already claimed, not pending)
-        local canClaimTrait = not data.alreadyKnown and not data.isClaimed and not data.isPending
-        local showClaimBtn = canClaimTrait and not isLearningThis
-
-        local eraseBtnX = showClaimBtn and (rightmostBtnX - btnW - btnGap) or rightmostBtnX
-
-        -- Check if this trait is in erase queue
-        local eraseQueuePos = mainPanel:getEraseQueuePosition(data.traitId)
-        local isEraseQueued = eraseQueuePos ~= nil
-
-        if hasEraser and not isErasingThis then
-            if isEraseQueued then
-                -- Show queued state with position number
-                self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.25, 0.25)
-                self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.6, 0.6, 0.35, 0.35)
-                local queueText = "#" .. eraseQueuePos
-                local queueTextW = getTextManager():MeasureStringX(UIFont.Small, queueText)
-                self:drawText(queueText, eraseBtnX + (btnW - queueTextW) / 2, btnY + 4, 0.9, 0.7, 0.5, 1, UIFont.Small)
-            else
-                self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
-                self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
-                local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-                mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
-            end
-        end
-
-        if showClaimBtn then
-            local mainBtnX = rightmostBtnX
-            local isInBatch = isInCurrentAbsorbBatch(learningState, "trait", data.traitId)
-
-            if isQueued then
-
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.35, 0.5)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.6)
-                local btnText = "#" .. queuePosition
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 0.85, 0.7, 1, UIFont.Small)
-            elseif isInBatch then
-                -- Item is part of current batch being claimed
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.5, 0.45, 0.45)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.65, 0.55, 0.6)
-                local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.85, 1, UIFont.Small)
-            elseif learningState and learningState.active and not learningState.isAbsorbAll then
-
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.35, 0.4, 0.5)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.55, 0.65)
-                local btnText = getText("UI_BurdJournals_BtnQueue")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 1, 0.95, 0.9, 1, UIFont.Small)
-            else
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.35, 0.45, 0.55)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.5, 0.6, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnClaim")
-                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=1, g=1, b=1, a=1}, "A")
-            end
-        end
-    end
-
-    if data.isRecipe then
-        local learningState = mainPanel.learningState
-        local isLearningThis = learningState and learningState.active and not learningState.isAbsorbAll
-                              and learningState.recipeName == data.recipeName
-
-        local erasingState = mainPanel.erasingState
-        local isErasingThis = erasingState and erasingState.active
-                              and erasingState.entryType == "recipe" and erasingState.entryName == data.recipeName
-
-        local recipeName = data.displayName or data.recipeName or "Unknown Recipe"
-        local recipeTextX = textX
-
-        local magazineTexture = getMagazineTexture(data.magazineSource)
-
-        if magazineTexture then
-            local iconSize = 24
-            local iconX = textX
-            local iconY = cardY + (cardH - iconSize) / 2
-            local iconAlpha = (data.alreadyKnown or data.isClaimed) and 0.4 or 1.0
-            self:drawTextureScaledAspect(magazineTexture, iconX, iconY, iconSize, iconSize, iconAlpha, 1, 1, 1)
-            recipeTextX = textX + iconSize + 6
-        end
-
-        local queuePosition = mainPanel:getQueuePosition(data.recipeName)
-        local isQueued = queuePosition ~= nil
-
-        local recipeColor
-        if data.alreadyKnown or data.isClaimed then
-            recipeColor = {r=0.5, g=0.5, b=0.5}
-        else
-            recipeColor = {r=0.5, g=0.9, b=0.95}
-        end
-        self:drawText(recipeName, recipeTextX, cardY + 6, recipeColor.r, recipeColor.g, recipeColor.b, 1, UIFont.Small)
-
-        if isErasingThis then
-
-            local progressFormat = getText("UI_BurdJournals_ErasingProgress") or "Erasing... %d%%"
-            local progressText = BurdJournals.formatText(progressFormat, math.floor((erasingState.progress or 0) * 100))
-            self:drawText(progressText, recipeTextX, cardY + 22, 0.9, 0.5, 0.5, 1, UIFont.Small)
-
-            local barX = recipeTextX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-
-            self:drawRect(barX, barY, barW * (erasingState.progress or 0), barH, 0.9, 0.7, 0.3, 0.3)
-
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.6, 0.3, 0.3)
-        elseif isLearningThis then
-            local progressText = BurdJournals.formatText("Learning... %d%%", math.floor(learningState.progress * 100))
-            self:drawText(progressText, recipeTextX, cardY + 22, 0.3, 0.8, 0.85, 1, UIFont.Small)
-
-            local barX = recipeTextX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-
-            self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.25, 0.65, 0.75)
-
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.35, 0.75, 0.85)
-        elseif isQueued then
-            local queuedText = BurdJournals.formatText(getText("UI_BurdJournals_QueuedNumber") or "Queued #%d", queuePosition)
-            self:drawText(queuedText, recipeTextX, cardY + 22, 0.5, 0.8, 0.9, 1, UIFont.Small)
-        elseif data.alreadyKnown then
-            self:drawText(getText("UI_BurdJournals_RecipeAlreadyKnown") or "Already known", recipeTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
-        elseif data.isClaimed then
-            -- Recipe was claimed from this journal by this character
-            self:drawText(getText("UI_BurdJournals_StatusAlreadyClaimed") or "Already claimed", recipeTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
-        else
-
-            local sourceText = getText("UI_BurdJournals_RecordedRecipe") or "Recorded recipe"
-            if data.magazineSource then
-                local magazineName = BurdJournals.getMagazineDisplayName(data.magazineSource)
-                sourceText = BurdJournals.formatText(getText("UI_BurdJournals_RecipeFromMagazine") or "From: %s", magazineName)
-            end
-            self:drawText(sourceText, recipeTextX, cardY + 22, 0.4, 0.65, 0.7, 1, UIFont.Small)
-        end
-
-        local btnW = 55
-        local btnH = 24
-        local btnGap = 4
-        local hasEraser = BurdJournals.hasEraser(mainPanel.player)
-
-        local rightmostBtnX = cardX + cardW - btnW - 10
-        local btnY = cardY + (cardH - btnH) / 2
-
-        -- Check if recipe can be claimed (not already known, not already claimed, not pending)
-        local canClaimRecipe = not data.alreadyKnown and not data.isClaimed and not data.isPending
-        local showClaimBtn = canClaimRecipe and not isLearningThis
-
-        local eraseBtnX = showClaimBtn and (rightmostBtnX - btnW - btnGap) or rightmostBtnX
-
-        -- Check if this recipe is in erase queue
-        local eraseQueuePos = mainPanel:getEraseQueuePosition(data.recipeName)
-        local isEraseQueued = eraseQueuePos ~= nil
-
-        if hasEraser and not isErasingThis then
-            if isEraseQueued then
-                -- Show queued state with position number
-                self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.25, 0.25)
-                self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.6, 0.6, 0.35, 0.35)
-                local queueText = "#" .. eraseQueuePos
-                local queueTextW = getTextManager():MeasureStringX(UIFont.Small, queueText)
-                self:drawText(queueText, eraseBtnX + (btnW - queueTextW) / 2, btnY + 4, 0.9, 0.7, 0.5, 1, UIFont.Small)
-            else
-                self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
-                self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
-                local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-                mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
-            end
-        end
-
-        if showClaimBtn then
-            local mainBtnX = rightmostBtnX
-            local isInBatch = isInCurrentAbsorbBatch(learningState, "recipe", data.recipeName)
-
-            if isQueued then
-
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.3, 0.5, 0.55)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.4, 0.6, 0.7)
-                local btnText = "#" .. queuePosition
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.95, 1, 1, UIFont.Small)
-            elseif isInBatch then
-                -- Item is part of current batch being claimed
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.45, 0.55, 0.5)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.55, 0.7, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.95, 1, 0.95, 1, UIFont.Small)
-            elseif learningState and learningState.active and not learningState.isAbsorbAll then
-
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.25, 0.45, 0.55)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.35, 0.6, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnQueue")
-                local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
-                self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
-            else
-
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.2, 0.45, 0.55)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.3, 0.6, 0.7)
-                local btnText = getText("UI_BurdJournals_BtnClaim")
-                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=0.9, g=1, b=1, a=1}, "A")
-            end
-        end
-    end
-
-    if data.isStat then
-        local learningState = mainPanel.learningState
-        -- Check if currently learning this stat
-        local isLearningThis = learningState and learningState.active and not learningState.isAbsorbAll
-                              and learningState.statId == data.statId
-
-        local queuePosition = mainPanel:getQueuePosition(data.statId)
-        local isQueued = queuePosition ~= nil
-
-        local statName = data.statName or data.statId or "Unknown Stat"
-        self:drawText(statName, textX, cardY + 6, textColor.r, textColor.g, textColor.b, 1, UIFont.Small)
-
-        if isLearningThis then
-            -- Show progress bar while learning
-            local progressText = BurdJournals.formatText(getText("UI_BurdJournals_AbsorbingProgress") or "Absorbing... %d%%", math.floor(learningState.progress * 100))
-            self:drawText(progressText, textX, cardY + 22, 0.3, 0.8, 0.7, 1, UIFont.Small)
-
-            local barX = textX + 100
-            local barY = cardY + 25
-            local barW = cardW - barX - 20
-            local barH = 10
-
-            self:drawRect(barX, barY, barW, barH, 0.6, 0.1, 0.1, 0.1)
-            self:drawRect(barX, barY, barW * learningState.progress, barH, 0.9, 0.2, 0.7, 0.6)
-            self:drawRectBorder(barX, barY, barW, barH, 0.7, 0.4, 0.8, 0.7)
-        elseif isQueued then
-            -- Show queued status
-            local queuedText = BurdJournals.formatText(getText("UI_BurdJournals_QueuedPosition") or "Queued #%d", queuePosition)
-            self:drawText(queuedText, textX, cardY + 22, 0.6, 0.75, 0.9, 1, UIFont.Small)
-        elseif data.claimReason == "already_claimed" then
-            -- Already claimed this stat
-            local claimedText = getText("UI_BurdJournals_StatusAlreadyClaimed") or "Already claimed"
-            self:drawText(claimedText, textX, cardY + 22, 0.5, 0.5, 0.5, 1, UIFont.Small)
-        elseif data.claimReason == "not_absorbable" or not data.isAbsorbable then
-            -- Stat cannot be absorbed (like hours survived in production)
-            local recordedText = BurdJournals.formatText(getText("UI_BurdJournals_RecordedValue") or "Recorded: %s", data.recordedFormatted or "?")
-            self:drawText(recordedText, textX, cardY + 22, 0.5, 0.5, 0.5, 1, UIFont.Small)
-        else
-            local currentValue = tonumber(data.currentValue) or 0
-            local recordedValue = tonumber(data.recordedValue) or 0
-            if currentValue < recordedValue then
-                local notReachedText = BurdJournals.formatText(
-                    getText("UI_BurdJournals_RecordedNotReached") or "Recorded: %s | Current: %s (not there yet)",
-                    data.recordedFormatted or "?",
-                    data.currentFormatted or "?"
-                )
-                self:drawText(notReachedText, textX, cardY + 22, 0.55, 0.55, 0.55, 1, UIFont.Small)
-            elseif currentValue == recordedValue then
-                local atPointText = BurdJournals.formatText(
-                    getText("UI_BurdJournals_RecordedAtPoint") or "Recorded: %s | Current: %s (at this point)",
-                    data.recordedFormatted or "?",
-                    data.currentFormatted or "?"
-                )
-                self:drawText(atPointText, textX, cardY + 22, 0.75, 0.72, 0.55, 1, UIFont.Small)
-            else
-                local surpassedText = BurdJournals.formatText(
-                    getText("UI_BurdJournals_RecordedSurpassed") or "Recorded: %s | Current: %s (surpassed)",
-                    data.recordedFormatted or "?",
-                    data.currentFormatted or "?"
-                )
-                self:drawText(surpassedText, textX, cardY + 22, 0.4, 0.6, 0.4, 1, UIFont.Small)
-            end
-        end
-
-        -- Check if there's an erasing state for this stat
-        local erasingState = mainPanel.erasingState
-        local isErasingThis = erasingState and erasingState.active
-                              and erasingState.entryType == "stat" and erasingState.entryName == data.statId
-
-        local hasEraser = BurdJournals.hasEraser(mainPanel.player)
-        local btnW = 55
-        local btnH = 22
-        local btnGap = 4
-        local rightmostBtnX = cardX + cardW - btnW - padding
-        local btnY = cardY + (cardH - btnH) / 2
-        local showClaimBtn = data.canClaim and not isLearningThis
-        local eraseBtnX = showClaimBtn and (rightmostBtnX - btnW - btnGap) or rightmostBtnX
-
-        -- Check if this stat is in erase queue
-        local eraseQueuePos = mainPanel:getEraseQueuePosition(data.statId)
-        local isEraseQueued = eraseQueuePos ~= nil
-
-        -- Draw erase button
-        if hasEraser and not isErasingThis then
-            if isEraseQueued then
-                -- Show queued state with position number
-                self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.25, 0.25)
-                self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.6, 0.6, 0.35, 0.35)
-                local queueText = "#" .. eraseQueuePos
-                local queueTextW = getTextManager():MeasureStringX(UIFont.Small, queueText)
-                self:drawText(queueText, eraseBtnX + (btnW - queueTextW) / 2, btnY + 4, 0.9, 0.7, 0.5, 1, UIFont.Small)
-            else
-                self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.7, 0.5, 0.15, 0.15)
-                self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.8, 0.7, 0.25, 0.25)
-                local eraseText = getText("UI_BurdJournals_BtnErase") or "Erase"
-                mainPanel:drawPillLabelWithPrompt(self, eraseBtnX, btnY, btnW, btnH, eraseText, {r=1, g=0.9, b=0.9, a=1}, "X")
-            end
-        end
-
-        -- Draw CLAIM button if this stat can be absorbed and not currently learning
-        if showClaimBtn then
-            local mainBtnX = rightmostBtnX
-
-            if isQueued then
-                -- Show "Queued" button style
-                self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.5, 0.55)
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.5, 0.6, 0.65)
-                local queueText = BurdJournals.formatText("#%d", queuePosition)
-                local queueTextW = getTextManager():MeasureStringX(UIFont.Small, queueText)
-                self:drawText(queueText, mainBtnX + (btnW - queueTextW) / 2, btnY + 4, 0.8, 0.9, 1, 1, UIFont.Small)
-            else
-                -- Button background
-                local mx = self:getMouseX()
-                local my = self:getMouseY()
-                local isHover = mx >= mainBtnX and mx <= mainBtnX + btnW and my >= y + cardMargin + (cardH - btnH) / 2 and my <= y + cardMargin + (cardH - btnH) / 2 + btnH
-
-                if isHover then
-                    self:drawRect(mainBtnX, btnY, btnW, btnH, 0.9, 0.3, 0.6, 0.4)
-                else
-                    self:drawRect(mainBtnX, btnY, btnW, btnH, 0.7, 0.25, 0.45, 0.35)
-                end
-                self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 1, 0.4, 0.7, 0.55)
-
-                local btnText = getText("UI_BurdJournals_Absorb") or "CLAIM"
-                mainPanel:drawPillLabelWithPrompt(self, mainBtnX, btnY, btnW, btnH, btnText, {r=0.9, g=1, b=1, a=1}, "A")
-            end
-        end
-
+    elseif data.isTrait then
+        BurdJournals.doDrawViewTraitItem(self, mainPanel, data, textX, cardX, cardY, cardW, cardH)
+    elseif data.isRecipe then
+        BurdJournals.doDrawViewRecipeItem(self, mainPanel, data, textX, cardX, cardY, cardW, cardH)
+    elseif data.isStat then
+        BurdJournals.doDrawViewStatItem(self, mainPanel, data, textX, textColor, cardX, cardY, cardW, cardH, padding, y, cardMargin)
     end
 
     return y + h
@@ -9993,7 +11071,7 @@ end
 
 function BurdJournals.UI.MainPanel:onClaimAll()
     if not self:startLearningAll() then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
@@ -10006,13 +11084,19 @@ function BurdJournals.UI.MainPanel:onClaimTab()
         return
     end
     if not self:startLearningTab(self.currentTab or "skills") then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 function BurdJournals.UI.MainPanel:claimSkill(skillName, recordedXP)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
     local journalData = BurdJournals.getJournalData(self.journal)
-    if not isSkillVisibleForJournal(journalData, skillName) then
+    if not BurdJournals.isSkillVisibleForJournal(journalData, skillName) then
         self:showFeedback(getText("UI_BurdJournals_CantClaimSkill") or "That skill cannot be claimed right now", {r=0.9, g=0.5, b=0.3})
         return
     end
@@ -10021,20 +11105,26 @@ function BurdJournals.UI.MainPanel:claimSkill(skillName, recordedXP)
         if self:addToQueue("skill", skillName, recordedXP) then
             self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", BurdJournals.getPerkDisplayName(skillName) or skillName), {r=0.7, g=0.8, b=0.9})
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningSkill(skillName, recordedXP) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 function BurdJournals.UI.MainPanel:claimTrait(traitId)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
 
     if BurdJournals.playerHasTrait(self.player, traitId) then
-        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", {r=0.7, g=0.5, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_TraitAlreadyKnownFeedback") or "Trait already known!", "muted")
         return
     end
 
@@ -10043,17 +11133,23 @@ function BurdJournals.UI.MainPanel:claimTrait(traitId)
             local traitName = safeGetTraitName(traitId)
             self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", traitName), {r=0.7, g=0.8, b=0.9})
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningTrait(traitId) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 function BurdJournals.UI.MainPanel:claimForgetTrait(traitId)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
     if not traitId then return end
     if not (BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(self.player, traitId)) then
         self:showFeedback(getText("UI_BurdJournals_NoForgetableTraits") or "No removable traits available", {r=0.9, g=0.7, b=0.3})
@@ -10065,23 +11161,31 @@ function BurdJournals.UI.MainPanel:claimForgetTrait(traitId)
             local traitName = safeGetTraitName(traitId)
             self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", traitName), {r=0.7, g=0.8, b=0.9})
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningForgetTrait(traitId) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 function BurdJournals.UI.MainPanel:sendClaimForgetSlot(traitId)
     if not self.journal or not self.player or not traitId then return end
     local journalId = self.journal:getID()
+    local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = journalId, journalUUID = journalUUID, journalFingerprint = nil }
 
     if isClient() and not isServer() then
         sendClientCommand(self.player, "BurdJournals", "claimForgetSlot", {
-            journalId = journalId,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             traitId = traitId,
         })
         return
@@ -10124,25 +11228,37 @@ function BurdJournals.UI.MainPanel:sendClaimForgetSlot(traitId)
 end
 
 function BurdJournals.UI.MainPanel:claimRecipe(recipeName)
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
 
     if self.learningState.active and not self.learningState.isAbsorbAll then
         if self:addToQueue("recipe", recipeName) then
             local displayName = BurdJournals.getRecipeDisplayName(recipeName) or recipeName
             self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", displayName), {r=0.5, g=0.85, b=0.9})
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     if not self:startLearningRecipe(recipeName) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
 -- Claim a stat (zombie kills, hours survived) from a journal - starts timed action
 function BurdJournals.UI.MainPanel:claimStat(statId, recordedValue)
     if not self.journal or not self.player then return end
+    if not self:hasLimitedLootClaimAvailable() then
+        return
+    end
+    if self:shouldBlockLimitedLootQueue() then
+        return
+    end
 
     local modData = self.journal:getModData()
     local journalData = modData and modData.BurdJournals
@@ -10170,14 +11286,14 @@ function BurdJournals.UI.MainPanel:claimStat(statId, recordedValue)
             local statName = BurdJournals.getStatDisplayName(statId) or statId
             self:showFeedback(BurdJournals.formatText(getText("UI_BurdJournals_Queued") or "Queued: %s", statName), {r=0.7, g=0.8, b=0.9})
         else
-            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", {r=0.9, g=0.7, b=0.3})
+            self:showFeedback(getText("UI_BurdJournals_AlreadyQueued") or "Already queued", "warn")
         end
         return
     end
 
     -- Start the timed learning action
     if not self:startLearningStat(statId, valueToApply) then
-        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", {r=0.9, g=0.7, b=0.3})
+        self:showFeedback(getText("UI_BurdJournals_AlreadyReading") or "Already reading...", "warn")
     end
 end
 
@@ -10186,11 +11302,19 @@ function BurdJournals.UI.MainPanel:sendClaimStat(statId, value)
     if not self.journal or not self.player then return end
 
     local statName = BurdJournals.getStatDisplayName(statId)
+    local journalData = BurdJournals.getJournalData(self.journal)
+    local journalUUID = journalData and journalData.uuid or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or { journalId = self.journal:getID(), journalUUID = journalUUID, journalFingerprint = nil }
 
     -- In multiplayer, route through the server
     if isClient() and not isServer() then
         sendClientCommand(self.player, "BurdJournals", "claimStat", {
-            journalId = self.journal:getID(),
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
             statId = statId,
             value = value,
         })

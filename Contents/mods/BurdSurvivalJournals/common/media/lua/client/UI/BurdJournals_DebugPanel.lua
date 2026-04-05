@@ -65,6 +65,8 @@ function BurdJournals.UI.DebugPanel:new(x, y, player)
     o.statusMessage = nil
     o.statusColor = {r=1, g=1, b=1}
     o.statusTime = 0
+    o.sharedTargetUsername = player and player.getUsername and player:getUsername() or nil
+    o.suppressTargetSync = false
     
     return o
 end
@@ -147,7 +149,8 @@ function BurdJournals.UI.DebugPanel.isAdminPlayer(player)
         return true
     end
     local accessLevel = player.getAccessLevel and player:getAccessLevel() or nil
-    return type(accessLevel) == "string" and string.lower(accessLevel) == "admin"
+    local normalized = tostring(accessLevel or ""):lower()
+    return accessLevel ~= nil and normalized ~= "" and normalized ~= "none"
 end
 
 function BurdJournals.UI.DebugPanel:canTargetOtherPlayers()
@@ -155,6 +158,273 @@ function BurdJournals.UI.DebugPanel:canTargetOtherPlayers()
         return false
     end
     return BurdJournals.UI.DebugPanel.isAdminPlayer(self.player)
+end
+
+local function getDebugTargetPlayerName(player)
+    if player and player.getUsername then
+        local username = player:getUsername()
+        if type(username) == "string" and username ~= "" then
+            return username
+        end
+    end
+    return "You"
+end
+
+local function collectDebugTargetablePlayers(panelSelf)
+    local players = {}
+    local seenNames = {}
+
+    local function addPlayer(playerObj)
+        if not playerObj then
+            return
+        end
+        local username = getDebugTargetPlayerName(playerObj)
+        if username == "" or seenNames[username] then
+            return
+        end
+        seenNames[username] = true
+        players[#players + 1] = playerObj
+    end
+
+    addPlayer(panelSelf.player)
+
+    if panelSelf:canTargetOtherPlayers() then
+        local onlinePlayers = getOnlinePlayers and getOnlinePlayers()
+        if onlinePlayers then
+            for i = 0, onlinePlayers:size() - 1 do
+                addPlayer(onlinePlayers:get(i))
+            end
+        end
+    end
+
+    return players
+end
+
+local function findDebugPlayerByName(panelSelf, username)
+    local wanted = tostring(username or "")
+    if wanted == "" then
+        return panelSelf.player
+    end
+
+    local targetablePlayers = collectDebugTargetablePlayers(panelSelf)
+    for _, playerObj in ipairs(targetablePlayers) do
+        if getDebugTargetPlayerName(playerObj) == wanted then
+            return playerObj
+        end
+    end
+
+    return panelSelf.player
+end
+
+local function setComboSelectedCompat(combo, index)
+    if not combo then
+        return
+    end
+    if combo.setSelected then
+        combo:setSelected(index)
+    else
+        combo.selected = index
+    end
+end
+
+local function applyDebugXPCompat(targetPlayer, perk, amount, options)
+    if BurdJournals.applyXPDeltaCompat then
+        local ok = BurdJournals.applyXPDeltaCompat(targetPlayer, perk, amount)
+        return ok == true
+    end
+
+    local xpAmount = tonumber(amount) or 0
+    if not targetPlayer or not perk or xpAmount == 0 then
+        return xpAmount == 0
+    end
+
+    local xpObj = targetPlayer.getXp and targetPlayer:getXp() or nil
+    if not (xpObj and xpObj.AddXP) then
+        return false
+    end
+
+    local safePcallFn = BurdJournals.safePcall or pcall
+    local ok = safePcallFn(function()
+        xpObj:AddXP(perk, xpAmount)
+    end)
+    return ok == true
+end
+
+function BurdJournals.UI.DebugPanel:getSharedTargetPlayer()
+    return findDebugPlayerByName(self, self.sharedTargetUsername)
+end
+
+function BurdJournals.UI.DebugPanel:updateSharedTargetSummary()
+    if not self.sharedTargetHintLabel then
+        return
+    end
+
+    local targetPlayer = self:getSharedTargetPlayer()
+    local targetName = getDebugTargetPlayerName(targetPlayer)
+    local hintText
+    if self:canTargetOtherPlayers() then
+        hintText = BurdJournals.formatText(getText("UI_BurdJournals_DebugViewingSharedTarget"), targetName)
+    else
+        hintText = getText("UI_BurdJournals_DebugViewingSharedSelf")
+    end
+    self.sharedTargetHintLabel:setName(hintText)
+end
+
+function BurdJournals.UI.DebugPanel:populateSharedTargetCombo()
+    if not self.sharedTargetCombo then
+        return
+    end
+
+    local combo = self.sharedTargetCombo
+    local selectedPlayer = self:getSharedTargetPlayer()
+    local selectedName = getDebugTargetPlayerName(selectedPlayer)
+
+    combo:clear()
+    local targetablePlayers = collectDebugTargetablePlayers(self)
+    for _, playerObj in ipairs(targetablePlayers) do
+        combo:addOptionWithData(getDebugTargetPlayerName(playerObj), playerObj)
+    end
+
+    if combo.select then
+        combo:select(selectedName)
+    else
+        combo.selected = 1
+    end
+
+    self:updateSharedTargetSummary()
+end
+
+function BurdJournals.UI.DebugPanel:syncTargetCombos()
+    local previousSuppress = self.suppressTargetSync
+    self.suppressTargetSync = true
+
+    if self.populateSharedTargetCombo then
+        self:populateSharedTargetCombo()
+    end
+    if self.populateCharacterPlayerList then
+        self:populateCharacterPlayerList()
+    end
+    if self.populateBaselinePlayerList then
+        self:populateBaselinePlayerList()
+    end
+    if self.populateSnapshotPlayerList then
+        self:populateSnapshotPlayerList()
+    end
+
+    self.suppressTargetSync = previousSuppress
+end
+
+function BurdJournals.UI.DebugPanel:applySharedTargetPlayer(targetPlayer, options)
+    options = options or {}
+    local resolvedPlayer = targetPlayer or self.player
+
+    if resolvedPlayer ~= self.player and not self:canTargetOtherPlayers() then
+        self:syncTargetCombos()
+        self:setStatus(getText("UI_BurdJournals_AdminOnly") or "This command requires admin access.", {r=1, g=0.6, b=0.3})
+        return false
+    end
+
+    local baselinePanel = self.baselinePanel
+    local previousBaselineTarget = baselinePanel and (baselinePanel.targetPlayer or self.player) or nil
+
+    local function revertSelections()
+        self:syncTargetCombos()
+        if self.updateJournalTargetSummary then
+            self:updateJournalTargetSummary()
+        end
+        BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
+    end
+
+    local function applySelection()
+        self.sharedTargetUsername = getDebugTargetPlayerName(resolvedPlayer)
+
+        if self.charPanel then
+            self.charPanel.targetPlayer = resolvedPlayer
+        end
+        if self.baselinePanel then
+            self.baselinePanel.targetPlayer = resolvedPlayer
+        end
+        if self.snapshotPanel then
+            self.snapshotPanel.targetPlayer = resolvedPlayer
+        end
+
+        self:syncTargetCombos()
+
+        if self.refreshCharacterData then
+            self:refreshCharacterData()
+        end
+        if self.refreshBaselineData then
+            self:refreshBaselineData()
+        end
+        if self.refreshSnapshotPanelData then
+            self:refreshSnapshotPanelData()
+        end
+        if self.updateJournalTargetSummary then
+            self:updateJournalTargetSummary()
+        end
+        BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
+
+        local statusText = options.statusText
+            or BurdJournals.formatText(getText("UI_BurdJournals_DebugViewingPlayer"), getDebugTargetPlayerName(resolvedPlayer))
+        self:setStatus(statusText, {r=0.5, g=0.8, b=1})
+    end
+
+    if baselinePanel
+        and previousBaselineTarget
+        and previousBaselineTarget ~= resolvedPlayer
+        and self:hasUnsavedBaselineDraft()
+    then
+        self:confirmDiscardBaselineDraft(
+            getText("UI_BurdJournals_BaselineDraftActionChangeTarget") or "change selected player",
+            applySelection,
+            revertSelections
+        )
+        return false
+    end
+
+    applySelection()
+    return true
+end
+
+local function closePlayerInventoryPanelsForController(player)
+    if not player then
+        return
+    end
+
+    local playerNum = player.getPlayerNum and player:getPlayerNum() or 0
+    local joypadActive = false
+    if BurdJournals and BurdJournals.isJoypadActiveForPlayer then
+        joypadActive = BurdJournals.isJoypadActiveForPlayer(playerNum)
+    elseif getJoypadData then
+        local joypadData = getJoypadData(playerNum)
+        if joypadData and (not joypadData.isConnected or joypadData:isConnected()) and joypadData.id ~= -1 then
+            joypadActive = true
+        end
+    end
+
+    if not joypadActive then
+        return
+    end
+
+    local function closePanel(panel)
+        if not panel then
+            return
+        end
+        if panel.close then
+            panel:close()
+            return
+        end
+        if panel.setVisible then
+            panel:setVisible(false)
+        end
+    end
+
+    if getPlayerInventory then
+        closePanel(getPlayerInventory(playerNum))
+    end
+    if getPlayerLoot then
+        closePanel(getPlayerLoot(playerNum))
+    end
 end
 
 -- ============================================================================
@@ -261,17 +531,46 @@ function BurdJournals.UI.DebugPanel:createChildren()
     self.closeBtn.backgroundColor = {r=0.5, g=0.15, b=0.15, a=0.8}
     self.titleBar:addChild(self.closeBtn)
     
+    -- Shared player target strip for admin-friendly inspection.
+    local targetStripY = 34
+    local targetLabel = ISLabel:new(padding, targetStripY + 4, labelHeight, "Viewing Player:", 0.86, 0.9, 1, 1, UIFont.Small, true)
+    targetLabel:initialise()
+    targetLabel:instantiate()
+    self:addChild(targetLabel)
+
+    self.sharedTargetCombo = ISComboBox:new(padding + 95, targetStripY, 210, 22, self, BurdJournals.UI.DebugPanel.onSharedTargetPlayerChange)
+    self.sharedTargetCombo:initialise()
+    self.sharedTargetCombo:instantiate()
+    self.sharedTargetCombo.font = UIFont.Small
+    self:addChild(self.sharedTargetCombo)
+
+    local refreshPlayersBtn = ISButton:new(padding + 310, targetStripY, 88, 22, "Refresh Players", self, BurdJournals.UI.DebugPanel.onSharedTargetRefresh)
+    refreshPlayersBtn:initialise()
+    refreshPlayersBtn:instantiate()
+    refreshPlayersBtn.font = UIFont.Small
+    refreshPlayersBtn.textColor = {r=1, g=1, b=1, a=1}
+    refreshPlayersBtn.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
+    refreshPlayersBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
+    self:addChild(refreshPlayersBtn)
+
+    self.sharedTargetHintLabel = ISLabel:new(padding + 405, targetStripY + 4, labelHeight, "", 0.62, 0.74, 0.88, 1, UIFont.Small, true)
+    self.sharedTargetHintLabel:initialise()
+    self.sharedTargetHintLabel:instantiate()
+    self:addChild(self.sharedTargetHintLabel)
+
+    self:populateSharedTargetCombo()
+
     -- Tab bar (custom buttons instead of ISTabPanel)
-    local tabY = 35
+    local tabY = 60
     local tabBtnWidth = 80
     local tabBtnHeight = 25
     local tabs = {
         {id = "spawn", label = "Spawn"},
-        {id = "character", label = "Character"},
-        {id = "baseline", label = "Baseline"},
-        {id = "snapshots", label = getText("UI_BurdJournals_DebugTabSnapshots") or "Snapshots"},
-        {id = "journal", label = "Journal"},
-        {id = "diagnostics", label = "Diagnostics"},
+        {id = "character", label = "Player"},
+        {id = "baseline", label = "Starting Data"},
+        {id = "snapshots", label = getText("UI_BurdJournals_DebugTabSnapshots") or "Saved Snapshots"},
+        {id = "journal", label = "Journal Editor"},
+        {id = "diagnostics", label = "Advanced"},
     }
     local tabX = 5
     local availableW = math.max(420, self.width - 10)
@@ -350,6 +649,7 @@ function BurdJournals.UI.DebugPanel:resetBaselineDraftState()
     panel.baselineDraftDirty = false
     panel.baselineDraftSkills = {}
     panel.baselineDraftTraits = {}
+    panel.baselineDraftRecipes = {}
     if self.updateBaselineDraftButtons then
         self:updateBaselineDraftButtons()
     end
@@ -473,6 +773,49 @@ function BurdJournals.UI.DebugPanel:showTab(tabId, skipBaselineDraftConfirm)
             self:refreshSnapshotPanelData()
         end
     end
+
+    if self.updateSharedTargetSummary then
+        self:updateSharedTargetSummary()
+    end
+    if self.updateJournalTargetSummary then
+        self:updateJournalTargetSummary()
+    end
+    BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
+end
+
+function BurdJournals.UI.DebugPanel:onSharedTargetPlayerChange(combo)
+    if self.suppressTargetSync then
+        return
+    end
+
+    local selected = combo:getSelectedIndex()
+    local data = combo.options[selected + 1]
+    local selectedPlayer = data and data.data or self.player
+    self:applySharedTargetPlayer(selectedPlayer, {
+        statusText = BurdJournals.formatText(getText("UI_BurdJournals_DebugViewingPlayer"), getDebugTargetPlayerName(selectedPlayer)),
+    })
+end
+
+function BurdJournals.UI.DebugPanel:onSharedTargetRefresh()
+    self:syncTargetCombos()
+    if self.refreshCharacterData then
+        self:refreshCharacterData()
+    end
+    if self.refreshBaselineData and not self:hasUnsavedBaselineDraft() then
+        self:refreshBaselineData()
+    end
+    if self.refreshSnapshotPanelData then
+        self:refreshSnapshotPanelData()
+    end
+    if self.updateJournalTargetSummary then
+        self:updateJournalTargetSummary()
+    end
+    BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
+    if self:hasUnsavedBaselineDraft() then
+        self:setStatus("Player lists refreshed. Starting Data draft kept.", {r=0.5, g=0.8, b=1})
+    else
+        self:setStatus("Player lists refreshed", {r=0.5, g=0.8, b=1})
+    end
 end
 
 local function normalizeDebugSearchText(value)
@@ -530,6 +873,1141 @@ local function debugSearchMatches(query, ...)
     end
 
     return false
+end
+
+local debugTraitTextureCache = {}
+local debugRecipeTextureCache = nil
+local debugItemTextureCache = {}
+
+local function resolveDebugTexture(...)
+    if not getTexture then
+        return nil
+    end
+    for i = 1, select("#", ...) do
+        local candidate = select(i, ...)
+        if candidate and tostring(candidate) ~= "" then
+            local texture = getTexture(tostring(candidate))
+            if texture then
+                return texture
+            end
+        end
+    end
+    return nil
+end
+
+local function resolveDebugTraitTexture(rawTexture)
+    if not rawTexture then
+        return nil
+    end
+    if type(rawTexture) ~= "string" then
+        return rawTexture
+    end
+    return resolveDebugTexture(
+        rawTexture,
+        "media/ui/" .. rawTexture,
+        "media/ui/" .. rawTexture .. ".png",
+        "media/ui/Traits/" .. rawTexture,
+        "media/ui/Traits/" .. rawTexture .. ".png"
+    )
+end
+
+local function getDebugTraitTexture(traitId)
+    if not traitId then
+        return nil
+    end
+    local cacheKey = string.lower(tostring(traitId))
+    if debugTraitTextureCache[cacheKey] ~= nil then
+        return debugTraitTextureCache[cacheKey] or nil
+    end
+
+    local normalizedId = string.gsub(cacheKey, "%s+", "")
+    local texture = nil
+
+    local function captureTexture(def)
+        if not def then
+            return nil
+        end
+        local rawTexture = nil
+        if def.getTexture then
+            rawTexture = def:getTexture()
+        elseif def.texture ~= nil then
+            rawTexture = def.texture
+        end
+        return resolveDebugTraitTexture(rawTexture)
+    end
+
+    if CharacterTraitDefinition and CharacterTraitDefinition.getTraits then
+        local allTraits = CharacterTraitDefinition.getTraits()
+        if allTraits and allTraits.size and allTraits.get then
+            for i = 0, allTraits:size() - 1 do
+                local def = allTraits:get(i)
+                if def then
+                    local label = def.getLabel and tostring(def:getLabel() or "") or ""
+                    local rawType = def.getType and def:getType() or nil
+                    local typeName = ""
+                    if rawType and rawType.getName then
+                        typeName = tostring(rawType:getName() or "")
+                    elseif rawType then
+                        typeName = tostring(rawType or "")
+                    end
+                    local compareId = string.lower(typeName)
+                    local compareLabel = string.lower(label)
+                    local compareIdCompact = string.gsub(compareId, "%s+", "")
+                    local compareLabelCompact = string.gsub(compareLabel, "%s+", "")
+                    if compareId == cacheKey
+                        or compareLabel == cacheKey
+                        or compareIdCompact == normalizedId
+                        or compareLabelCompact == normalizedId
+                    then
+                        texture = captureTexture(def)
+                        if texture then
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if not texture and TraitFactory and TraitFactory.getTrait then
+        local traitObj = TraitFactory.getTrait(traitId)
+            or TraitFactory.getTrait(string.gsub(tostring(traitId), "^base:", ""))
+        if traitObj then
+            texture = captureTexture(traitObj)
+        end
+    end
+
+    debugTraitTextureCache[cacheKey] = texture or false
+    return texture
+end
+
+local function getDebugMagazineTexture(magazineSource)
+    if not magazineSource or not getScriptManager then
+        return nil
+    end
+    local scriptMgr = getScriptManager()
+    if not scriptMgr or not scriptMgr.getItem then
+        return nil
+    end
+    local script = scriptMgr:getItem(magazineSource)
+    if not script or not script.getIcon then
+        return nil
+    end
+    local iconName = script:getIcon()
+    if not iconName or iconName == "" then
+        return nil
+    end
+    return resolveDebugTexture(
+        "Item_" .. iconName,
+        "media/textures/Item_" .. iconName .. ".png",
+        "media/ui/" .. iconName,
+        "media/ui/" .. iconName .. ".png"
+    )
+end
+
+local function getDebugRecipeTexture()
+    if debugRecipeTextureCache ~= nil then
+        return debugRecipeTextureCache or nil
+    end
+    debugRecipeTextureCache = resolveDebugTexture(
+        "media/ui/inventoryPanes/craft.png",
+        "media/ui/Icon_RecipeGroup_Open_48x48.png",
+        "media/ui/Icon_RecipeGroup_Closed_48x48.png",
+        "media/ui/craftingMenus/BuildProperty_Book_16.png",
+        "media/ui/craftingMenus/BuildProperty_Book.png"
+    ) or false
+    return debugRecipeTextureCache ~= false and debugRecipeTextureCache or nil
+end
+
+local function getDebugItemTexture(iconName)
+    if not iconName then
+        return nil
+    end
+
+    local cacheKey = tostring(iconName)
+    if debugItemTextureCache[cacheKey] ~= nil then
+        return debugItemTextureCache[cacheKey] or nil
+    end
+
+    local texture = resolveDebugTexture(
+        "Item_" .. cacheKey,
+        "media/textures/Item_" .. cacheKey .. ".png"
+    )
+    debugItemTextureCache[cacheKey] = texture or false
+    return texture
+end
+
+local function getDebugJournalTypeIconName(journalType)
+    local jType = string.lower(tostring(journalType or ""))
+    if jType == "blank" then
+        return "BlankJournalClean"
+    elseif jType == "filled" then
+        return "FilledJournalClean"
+    elseif jType == "worn" then
+        return "FilledJournalWorn"
+    elseif jType == "bloody" then
+        return "FilledJournalBloody"
+    elseif jType == "cursed" then
+        return "CursedJournal"
+    elseif jType == "yuletide" then
+        return (BurdJournals.getYuletideWrappedIconName and BurdJournals.getYuletideWrappedIconName(nil))
+            or "YuletideJournalWrapped_1"
+    end
+    return nil
+end
+
+local function getDebugJournalTypeTexture(journalType)
+    return getDebugItemTexture(getDebugJournalTypeIconName(journalType))
+end
+
+local function getDebugYuletideTextureForState(stateValue, wrappedVariant)
+    local wrappedState = BurdJournals.YULETIDE_STATE_WRAPPED or "wrapped"
+    local unwrappedState = BurdJournals.YULETIDE_STATE_UNWRAPPED or "unwrapped"
+    local state = tostring(stateValue or wrappedState)
+    if state == unwrappedState then
+        return getDebugItemTexture("YuletideJournalUnwrapped")
+    end
+
+    local variant = wrappedVariant
+    if BurdJournals.normalizeYuletideWrappedVariant then
+        variant = BurdJournals.normalizeYuletideWrappedVariant(variant)
+    else
+        variant = tostring(variant or "1")
+    end
+    return getDebugItemTexture("YuletideJournalWrapped_" .. tostring(variant))
+end
+
+local function getSelectedComboOptionData(combo)
+    if not combo or not combo.selected or combo.selected < 1 then
+        return nil
+    end
+    return combo:getOptionData(combo.selected) or combo.options[combo.selected]
+end
+
+local function getSelectedYuletideWrappedVariant(panel)
+    local variant = getSelectedComboOptionData(panel and panel.yuletideWrappedVariantCombo)
+    if BurdJournals.normalizeYuletideWrappedVariant then
+        return BurdJournals.normalizeYuletideWrappedVariant(variant)
+    end
+    return tostring(variant or "1")
+end
+
+local function drawDebugListIcon(listbox, texture, x, y, h, alpha, sizeOverride)
+    if not (listbox and texture) then
+        return 0
+    end
+    local rowHeight = tonumber(h) or 24
+    local iconSize = math.max(10, math.min(rowHeight - 6, tonumber(sizeOverride) or 14))
+    local iconY = y + (rowHeight - iconSize) / 2
+    listbox:drawTextureScaledAspect(texture, x, iconY, iconSize, iconSize, alpha or 1, 1, 1, 1)
+    return iconSize
+end
+
+local function drawDebugIconComboPopupItem(popup, y, item, alt)
+    local combo = popup and popup.parentCombo or nil
+    if not combo then
+        return y
+    end
+    if combo:hasFilterText() then
+        if not item.text:lower():contains(combo:getFilterText():lower()) then
+            return y
+        end
+    end
+    if item.height == 0 then
+        item.height = popup.itemheight
+    end
+    if y + popup:getYScroll() + item.height < 0 or y + popup:getYScroll() >= popup.height then
+        return y + item.height
+    end
+
+    local highlight = (popup:isMouseOver() and not popup:isMouseOverScrollBar()) and popup.mouseoverselected or popup.selected
+    if combo.joypadFocused then
+        highlight = popup.selected
+    end
+    if highlight == item.index then
+        local selectColor = combo.backgroundColorMouseOver
+        popup:drawRect(0, y, popup:getWidth(), item.height - 1, selectColor.a, selectColor.r, selectColor.g, selectColor.b)
+        local mouseOver = popup:isMouseOver() and not popup:isMouseOverScrollBar()
+        if combo.joypadFocused then
+            mouseOver = true
+        end
+        if mouseOver then
+            local textWid = getTextManager():MeasureStringX(popup.font, item.text)
+            local scrollBarWid = popup:isVScrollBarVisible() and 13 or 0
+            if 10 + textWid > popup.width - scrollBarWid then
+                popup.tooWide = item
+                popup.tooWideY = y
+            end
+        end
+    end
+
+    local textX = 10
+    local iconTexture = combo.getDebugOptionTexture and combo:getDebugOptionTexture(item.index) or nil
+    if iconTexture then
+        local iconSize = math.max(12, math.min(item.height - 6, combo.debugOptionIconSize or 14))
+        local iconY = y + math.floor((item.height - iconSize) / 2)
+        popup:drawTextureScaledAspect(iconTexture, textX, iconY, iconSize, iconSize, 1, 1, 1, 1)
+        textX = textX + iconSize + 6
+    end
+
+    local itemPadY = popup.itemPadY or (item.height - popup.fontHgt) / 2
+    popup:drawText(item.text, textX, y + itemPadY, combo.textColor.r, combo.textColor.g, combo.textColor.b, combo.textColor.a, popup.font)
+    return y + item.height
+end
+
+local function renderDebugIconCombo(combo)
+    if not combo.disabled then
+        combo.fade:setFadeIn(combo.joypadFocused or combo:isMouseOver())
+        combo.fade:update()
+    end
+
+    combo:drawRect(0, 0, combo.width, combo.height, combo.backgroundColor.a, combo.backgroundColor.r, combo.backgroundColor.g, combo.backgroundColor.b)
+
+    if combo.expanded then
+    elseif not combo.joypadFocused then
+        combo:drawRect(
+            0,
+            0,
+            combo.width,
+            combo.height,
+            combo.backgroundColorMouseOver.a * 0.5 * combo.fade:fraction(),
+            combo.backgroundColorMouseOver.r,
+            combo.backgroundColorMouseOver.g,
+            combo.backgroundColorMouseOver.b
+        )
+    else
+        combo:drawRect(0, 0, combo.width, combo.height, combo.backgroundColorMouseOver.a, combo.backgroundColorMouseOver.r, combo.backgroundColorMouseOver.g, combo.backgroundColorMouseOver.b)
+    end
+
+    local alpha = math.min(combo.borderColor.a + 0.2 * combo.fade:fraction(), 1.0)
+    if not combo.disabled then
+        combo:drawRectBorder(0, 0, combo.width, combo.height, alpha, combo.borderColor.r, combo.borderColor.g, combo.borderColor.b)
+    else
+        combo:drawRectBorder(0, 0, combo.width, combo.height, alpha, 0.5, 0.5, 0.5)
+    end
+
+    local fontHgt = getTextManager():getFontHeight(combo.font)
+    local textY = (combo.height - fontHgt) / 2
+    local optionText = nil
+    local iconTexture = nil
+    if not (combo:isEditable() and combo.editor and combo.editor:isReallyVisible()) then
+        if combo.options[combo.selected] then
+            optionText = combo:getOptionText(combo.selected)
+            iconTexture = combo.getDebugOptionTexture and combo:getDebugOptionTexture(combo.selected) or nil
+        elseif combo.noSelectionText then
+            optionText = combo.noSelectionText
+        end
+    end
+
+    if optionText then
+        local textX = 10
+        if iconTexture then
+            local iconSize = math.max(12, math.min(combo.height - 6, combo.debugOptionIconSize or 14))
+            local iconY = math.floor((combo.height - iconSize) / 2)
+            combo:drawTextureScaledAspect(iconTexture, textX, iconY, iconSize, iconSize, combo.disabled and 0.6 or 1, 1, 1, 1)
+            textX = textX + iconSize + 6
+        end
+
+        local availableWidth = math.max(0, combo.width - combo.image:getWidthOrig() - 6 - textX)
+        local stencilX, stencilY, stencilW, stencilH = combo:clampStencilRectToParent(textX, 0, availableWidth, combo.height)
+        if not combo.disabled then
+            combo:drawText(optionText, textX, textY, combo.textColor.r, combo.textColor.g, combo.textColor.b, combo.textColor.a, combo.font)
+        else
+            combo:drawText(optionText, textX, textY, 0.6, 0.6, 0.6, 1, combo.font)
+        end
+        combo:clearStencilRect()
+        if combo.doRepaintStencil then
+            combo:repaintStencilRect(stencilX, stencilY, stencilW, stencilH)
+        end
+    end
+
+    if combo:isMouseOver() and not combo.expanded and combo:getOptionTooltip(combo.selected) then
+        local tooltipText = combo:getOptionTooltip(combo.selected)
+        if not combo.tooltipUI then
+            combo.tooltipUI = ISToolTip:new()
+            combo.tooltipUI:setOwner(combo)
+            combo.tooltipUI:setVisible(false)
+            combo.tooltipUI:setAlwaysOnTop(true)
+        end
+        if not combo.tooltipUI:getIsVisible() then
+            if string.contains(tooltipText, "\n") then
+                combo.tooltipUI.maxLineWidth = 1000
+            else
+                combo.tooltipUI.maxLineWidth = 300
+            end
+            combo.tooltipUI:addToUIManager()
+            combo.tooltipUI:setVisible(true)
+        end
+        combo.tooltipUI.description = tooltipText
+        combo.tooltipUI:setX(combo:getMouseX() + 23)
+        combo.tooltipUI:setY(combo:getMouseY() + 23)
+    else
+        if combo.tooltipUI and combo.tooltipUI:getIsVisible() then
+            combo.tooltipUI:setVisible(false)
+            combo.tooltipUI:removeFromUIManager()
+        end
+    end
+
+    if not combo.disabled then
+        combo:drawTexture(combo.image, combo.width - combo.image:getWidthOrig() - 3, (combo.baseHeight / 2) - (combo.image:getHeight() / 2), 1, 1, 1, 1)
+    else
+        combo:drawTexture(combo.image, combo.width - combo.image:getWidthOrig() - 3, (combo.baseHeight / 2) - (combo.image:getHeight() / 2), 1, 0.5, 0.5, 0.5)
+    end
+end
+
+local function installDebugIconCombo(combo, iconResolver)
+    if not combo or type(iconResolver) ~= "function" then
+        return
+    end
+
+    combo.debugOptionIconSize = 14
+    combo.getDebugOptionTexture = function(selfRef, optionIndex)
+        if not optionIndex or optionIndex < 1 then
+            return nil
+        end
+        local optionText = selfRef.getOptionText and selfRef:getOptionText(optionIndex) or nil
+        local optionData = selfRef.getOptionData and selfRef:getOptionData(optionIndex) or nil
+        return iconResolver(selfRef, optionIndex, optionText, optionData)
+    end
+
+    local popup = ISComboBoxPopup:new(0, 0, 100, 50)
+    popup:initialise()
+    popup:instantiate()
+    popup:setFont(combo.font, 4)
+    popup:setAlwaysOnTop(true)
+    popup.drawBorder = true
+    popup:setCapture(true)
+    popup.doDrawItem = drawDebugIconComboPopupItem
+    combo.popup = popup
+    combo.render = function(selfRef)
+        renderDebugIconCombo(selfRef)
+    end
+end
+
+local function createDebugButton(parent, x, y, w, h, title, owner, callback, internal, borderColor, backgroundColor, tooltip)
+    local btn = ISButton:new(x, y, w, h, title, owner, callback)
+    btn:initialise()
+    btn:instantiate()
+    btn.font = UIFont.Small
+    btn.textColor = {r=1, g=1, b=1, a=1}
+    btn.borderColor = borderColor or {r=0.4, g=0.5, b=0.6, a=1}
+    btn.backgroundColor = backgroundColor or {r=0.2, g=0.25, b=0.3, a=1}
+    if internal then
+        btn.internal = internal
+    end
+    if tooltip and btn.setTooltip then
+        btn:setTooltip(tooltip)
+    end
+    parent:addChild(btn)
+    return btn
+end
+
+local function attachDebugButtonIconCompat(button, texture)
+    if not (button and texture and button.drawTextureScaledAspect) then
+        return button
+    end
+
+    button.debugIconTexture = texture
+    button.render = function(selfRef)
+        local iconTexture = selfRef.debugIconTexture
+        if not iconTexture then
+            ISButton.render(selfRef)
+            return
+        end
+
+        local savedTitle = selfRef.title
+        selfRef.title = ""
+        ISButton.render(selfRef)
+        selfRef.title = savedTitle
+
+        local iconSize = math.max(12, math.min((selfRef.height or 22) - 6, 16))
+        local iconX = 6
+        local iconY = math.floor(((selfRef.height or 22) - iconSize) / 2)
+        local alpha = (selfRef.enable == false) and 0.6 or 1
+        selfRef:drawTextureScaledAspect(iconTexture, iconX, iconY, iconSize, iconSize, alpha, 1, 1, 1)
+
+        local titleText = tostring(savedTitle or "")
+        if titleText ~= "" then
+            local font = selfRef.font or UIFont.Small
+            local textColor = selfRef.textColor or { r = 1, g = 1, b = 1, a = 1 }
+            local textAlpha = (selfRef.enable == false) and 0.6 or (textColor.a or 1)
+            local fontHgt = getTextManager and getTextManager():getFontHeight(font) or 14
+            local textY = math.floor(((selfRef.height or 22) - fontHgt) / 2)
+            local textLeft = iconX + iconSize + 6
+            local textWidth = math.max(0, (selfRef.width or 0) - textLeft - 4)
+            selfRef:drawTextCentre(titleText, textLeft + (textWidth / 2), textY, textColor.r or 1, textColor.g or 1, textColor.b or 1, textAlpha, font)
+        end
+    end
+
+    return button
+end
+
+local function createDebugSectionPanel(parent, x, y, w, h)
+    local panel = ISPanel:new(x, y, w, h)
+    panel:initialise()
+    panel:instantiate()
+    panel.backgroundColor = {r=0.09, g=0.09, b=0.11, a=0}
+    panel.borderColor = {r=0.2, g=0.24, b=0.3, a=0}
+    parent:addChild(panel)
+    return panel
+end
+
+BurdJournals.UI = BurdJournals.UI or {}
+BurdJournals.UI.DebugPanel = BurdJournals.UI.DebugPanel or {}
+BurdJournals.UI.DebugPanel.createDebugButton = createDebugButton
+BurdJournals.UI.DebugPanel.createDebugSectionPanel = createDebugSectionPanel
+
+function BurdJournals.UI.DebugPanel.shouldAllowTraitReconciliation(panel)
+    local charPanel = panel and panel.charPanel or nil
+    local tickBox = charPanel and charPanel.traitReconcileTick or nil
+    return tickBox and tickBox.selected and tickBox.selected[1] == true or false
+end
+
+function BurdJournals.UI.DebugPanel.buildDebugTraitAddOptions(panel, baseOpts)
+    local opts = {}
+    if type(baseOpts) == "table" then
+        for key, value in pairs(baseOpts) do
+            opts[key] = value
+        end
+    end
+
+    if not BurdJournals.UI.DebugPanel.shouldAllowTraitReconciliation(panel) then
+        opts.skipTraitReconciliation = true
+    end
+
+    return opts
+end
+
+local function measureDebugTextWidth(font, text, fallback)
+    if getTextManager and getTextManager().MeasureStringX then
+        return getTextManager():MeasureStringX(font or UIFont.Small, tostring(text or ""))
+    end
+    return tonumber(fallback) or (#tostring(text or "") * 6)
+end
+
+local function normalizeDebugSourceId(sourceId)
+    if BurdJournals and BurdJournals.normalizeFilterSourceId then
+        return BurdJournals.normalizeFilterSourceId(sourceId)
+    end
+    local normalized = string.lower(tostring(sourceId or "modded"))
+    normalized = normalized:gsub("[^%w]+", "")
+    if normalized == "" then
+        normalized = "modded"
+    end
+    return normalized
+end
+
+local function getDebugRowSourceMeta(row)
+    local source = type(row) == "table" and row.source or nil
+    local sourceId = type(row) == "table" and row.sourceId or nil
+
+    if type(row) == "table" then
+        if source == nil then
+            if row.isVanilla ~= nil then
+                source = row.isVanilla and "Vanilla" or "Modded"
+            elseif row.isModded ~= nil then
+                source = row.isModded and "Modded" or "Vanilla"
+            end
+        end
+        if sourceId == nil then
+            if row.isVanilla ~= nil then
+                sourceId = row.isVanilla and "vanilla" or "modded"
+            elseif row.isModded ~= nil then
+                sourceId = row.isModded and "modded" or "vanilla"
+            elseif source then
+                sourceId = source
+            end
+        end
+    end
+
+    local normalizedId = normalizeDebugSourceId(sourceId or source or "modded")
+    local label = tostring(source or "Modded")
+    if normalizedId == "vanilla" then
+        label = "Vanilla"
+    elseif normalizedId == "modded" and (label == "" or label == "Unknown" or label == "Runtime") then
+        label = "Modded"
+    end
+    return label, normalizedId
+end
+
+local function debugRowMatchesSourceFilter(row, selectedSourceId)
+    local normalizedFilter = normalizeDebugSourceId(selectedSourceId or "all")
+    if normalizedFilter == "all" then
+        return true
+    end
+    local _, rowSourceId = getDebugRowSourceMeta(row)
+    if normalizedFilter == "modded" then
+        return rowSourceId ~= "vanilla"
+    end
+    return rowSourceId == normalizedFilter
+end
+
+local function getDebugListRowHeight(list, item, fallbackHeight)
+    local rowHeight = tonumber(item and item.height)
+    if rowHeight ~= nil and rowHeight >= 0 then
+        return rowHeight
+    end
+    return tonumber(list and list.itemheight) or tonumber(fallbackHeight) or 24
+end
+
+local function getDebugListRowAt(list, x, y)
+    if not (list and type(list.items) == "table") then
+        return -1
+    end
+
+    local clickY = tonumber(y)
+    if clickY == nil then
+        return -1
+    end
+
+    if list.rowAt then
+        local resolved = tonumber(list:rowAt(tonumber(x) or 0, clickY)) or -1
+        if resolved > 0 then
+            return resolved
+        end
+    end
+
+    local rowTop = 0
+    for index, itemData in ipairs(list.items) do
+        local rowHeight = tonumber(itemData and itemData.height) or getDebugListRowHeight(list, itemData, list.itemheight)
+        if rowHeight > 0 then
+            if clickY >= rowTop and clickY < (rowTop + rowHeight) then
+                return index
+            end
+            rowTop = rowTop + rowHeight
+        end
+    end
+
+    return -1
+end
+
+local function applyDebugRowFilter(list, matcher)
+    if not (list and type(list.items) == "table") then
+        return
+    end
+
+    local defaultHeight = tonumber(list.itemheight) or 0
+    local firstVisible = nil
+    for index, itemData in ipairs(list.items) do
+        local row = itemData and itemData.item or nil
+        local visible = true
+        if row then
+            visible = matcher == nil or matcher(row, itemData, index) ~= false
+            row.hidden = not visible
+        end
+        if itemData then
+            itemData.height = visible and defaultHeight or 0
+        end
+        if visible and not firstVisible then
+            firstVisible = index
+        end
+    end
+
+    local selected = tonumber(list.selected) or -1
+    if selected > 0 and list.items[selected] and (tonumber(list.items[selected].height) or 0) <= 0 then
+        list.selected = firstVisible or -1
+    end
+
+    if list.updateScrollBars then
+        list:updateScrollBars()
+    elseif list.updateScrollbars then
+        list:updateScrollbars()
+    end
+end
+
+local function collectDebugSourceFilterOptions(items)
+    local options = {
+        { label = "All", sourceId = "all" }
+    }
+    local vanillaCount = 0
+    local moddedCount = 0
+    local explicitSources = {}
+
+    for _, entry in ipairs(items or {}) do
+        local row = entry and entry.item or entry
+        if row and not row.isEmpty then
+            local label, sourceId = getDebugRowSourceMeta(row)
+            if sourceId == "vanilla" then
+                vanillaCount = vanillaCount + 1
+            else
+                moddedCount = moddedCount + 1
+                if sourceId ~= "modded" then
+                    local bucket = explicitSources[sourceId]
+                    if not bucket then
+                        bucket = { label = label, sourceId = sourceId, count = 0 }
+                        explicitSources[sourceId] = bucket
+                    end
+                    bucket.count = bucket.count + 1
+                end
+            end
+        end
+    end
+
+    if vanillaCount > 0 then
+        options[#options + 1] = { label = "Vanilla", sourceId = "vanilla", count = vanillaCount }
+    end
+    if moddedCount > 0 then
+        options[#options + 1] = { label = "Modded", sourceId = "modded", count = moddedCount }
+    end
+
+    local explicitList = {}
+    for _, bucket in pairs(explicitSources) do
+        explicitList[#explicitList + 1] = bucket
+    end
+    table.sort(explicitList, function(a, b)
+        return string.lower(tostring(a.label or "")) < string.lower(tostring(b.label or ""))
+    end)
+    for _, bucket in ipairs(explicitList) do
+        options[#options + 1] = bucket
+    end
+
+    return options
+end
+
+local function updateDebugSourceFilterButtonStyles(filterState)
+    for _, button in ipairs(filterState.buttons or {}) do
+        local selected = normalizeDebugSourceId(button.sourceId or "all") == normalizeDebugSourceId(filterState.selectedSourceId or "all")
+        button.backgroundColor = selected and {r=0.28, g=0.38, b=0.46, a=1} or {r=0.14, g=0.16, b=0.19, a=1}
+        button.borderColor = selected and {r=0.5, g=0.7, b=0.9, a=1} or {r=0.32, g=0.4, b=0.48, a=1}
+        button.textColor = selected and {r=1, g=1, b=1, a=1} or {r=0.82, g=0.86, b=0.92, a=1}
+    end
+end
+
+local function layoutDebugSourceFilterStrip(filterState)
+    if not (filterState and filterState.viewport) then
+        return
+    end
+    local viewportWidth = tonumber(filterState.viewport.width) or 0
+    local maxOffset = math.max(0, (tonumber(filterState.contentWidth) or 0) - viewportWidth)
+    filterState.scrollOffset = math.max(0, math.min(tonumber(filterState.scrollOffset) or 0, maxOffset))
+
+    local x = 0
+    for _, button in ipairs(filterState.buttons or {}) do
+        local btnWidth = tonumber(button.width) or 44
+        if button.setX then button:setX(x - filterState.scrollOffset) end
+        if button.setY then button:setY(1) end
+        if button.setVisible then
+            local visible = (x + btnWidth - filterState.scrollOffset) > 0 and (x - filterState.scrollOffset) < viewportWidth
+            button:setVisible(visible)
+        end
+        x = x + btnWidth + 4
+    end
+    filterState.contentWidth = math.max(0, x - 4)
+
+    local leftEnabled = filterState.scrollOffset > 0
+    local rightEnabled = filterState.scrollOffset < math.max(0, filterState.contentWidth - viewportWidth)
+    if filterState.leftButton then
+        filterState.leftButton.enable = leftEnabled
+        filterState.leftButton.textColor = leftEnabled and {r=1, g=1, b=1, a=1} or {r=0.55, g=0.55, b=0.55, a=1}
+    end
+    if filterState.rightButton then
+        filterState.rightButton.enable = rightEnabled
+        filterState.rightButton.textColor = rightEnabled and {r=1, g=1, b=1, a=1} or {r=0.55, g=0.55, b=0.55, a=1}
+    end
+    updateDebugSourceFilterButtonStyles(filterState)
+end
+
+local function onDebugSourceFilterChip(owner, button)
+    local filterState = button and button.filterState or nil
+    if not filterState then
+        return
+    end
+    filterState.selectedSourceId = button.sourceId or "all"
+    layoutDebugSourceFilterStrip(filterState)
+    if filterState.onChanged then
+        filterState.onChanged(filterState.ownerRef)
+    end
+end
+
+local function onDebugSourceFilterScroll(owner, button)
+    local filterState = button and button.filterState or nil
+    if not filterState then
+        return
+    end
+    local delta = tonumber(button and button.scrollDelta) or 0
+    filterState.scrollOffset = math.max(0, (tonumber(filterState.scrollOffset) or 0) + delta)
+    layoutDebugSourceFilterStrip(filterState)
+end
+
+local function createDebugSourceFilterStrip(parent, x, y, width, ownerRef, onChanged, tooltip)
+    local stripWidth = math.max(76, tonumber(width) or 0)
+    local container = ISPanel:new(x, y, stripWidth, 20)
+    container:initialise()
+    container:instantiate()
+    container.backgroundColor = {r=0, g=0, b=0, a=0}
+    container.borderColor = {r=0, g=0, b=0, a=0}
+    parent:addChild(container)
+
+    local viewport = ISPanel:new(22, 0, math.max(12, stripWidth - 44), 20)
+    viewport:initialise()
+    viewport:instantiate()
+    viewport.backgroundColor = {r=0, g=0, b=0, a=0}
+    viewport.borderColor = {r=0, g=0, b=0, a=0}
+    container:addChild(viewport)
+
+    local filterState = {
+        container = container,
+        viewport = viewport,
+        ownerRef = ownerRef,
+        onChanged = onChanged,
+        tooltip = tooltip or "Filter rows by content source.",
+        selectedSourceId = "all",
+        scrollOffset = 0,
+        buttons = {},
+        contentWidth = 0,
+    }
+
+    local leftButton = createDebugButton(container, 0, 0, 20, 20, "<", ownerRef, onDebugSourceFilterScroll, nil, {r=0.3, g=0.38, b=0.46, a=1}, {r=0.14, g=0.16, b=0.19, a=1}, tooltip or "Scroll source filters.")
+    leftButton.filterState = filterState
+    leftButton.scrollDelta = -84
+    filterState.leftButton = leftButton
+
+    local rightButton = createDebugButton(container, stripWidth - 20, 0, 20, 20, ">", ownerRef, onDebugSourceFilterScroll, nil, {r=0.3, g=0.38, b=0.46, a=1}, {r=0.14, g=0.16, b=0.19, a=1}, tooltip or "Scroll source filters.")
+    rightButton.filterState = filterState
+    rightButton.scrollDelta = 84
+    filterState.rightButton = rightButton
+
+    return filterState
+end
+
+local function refreshDebugSourceFilterStrip(filterState, items)
+    if not (filterState and filterState.viewport) then
+        return
+    end
+
+    for _, button in ipairs(filterState.buttons or {}) do
+        if button.setVisible then
+            button:setVisible(false)
+        end
+        if filterState.viewport.removeChild then
+            filterState.viewport:removeChild(button)
+        end
+    end
+    filterState.buttons = {}
+
+    local options = collectDebugSourceFilterOptions(items)
+    filterState.options = options
+
+    local selectedStillExists = false
+    for _, option in ipairs(options) do
+        if normalizeDebugSourceId(option.sourceId or "all") == normalizeDebugSourceId(filterState.selectedSourceId or "all") then
+            selectedStillExists = true
+            break
+        end
+    end
+    if not selectedStillExists then
+        filterState.selectedSourceId = "all"
+    end
+
+    local x = 0
+    for _, option in ipairs(options) do
+        local label = tostring(option.label or "All")
+        local btnWidth = math.max(42, math.min(140, measureDebugTextWidth(UIFont.Small, label, 48) + 16))
+        local button = createDebugButton(filterState.viewport, x, 1, btnWidth, 18, label, filterState.ownerRef, onDebugSourceFilterChip, nil, {r=0.32, g=0.4, b=0.48, a=1}, {r=0.14, g=0.16, b=0.19, a=1}, filterState.tooltip)
+        button.filterState = filterState
+        button.sourceId = option.sourceId or "all"
+        filterState.buttons[#filterState.buttons + 1] = button
+        x = x + btnWidth + 4
+    end
+    filterState.contentWidth = math.max(0, x - 4)
+    layoutDebugSourceFilterStrip(filterState)
+end
+
+local function createSectionSourceFilterStrip(parent, ownerRef, labelText, searchX, y, sectionPadding, onChanged, tooltip)
+    local filterX = sectionPadding + measureDebugTextWidth(UIFont.Small, labelText, 150) + 14
+    local filterWidth = math.max(0, tonumber(searchX or 0) - filterX - 8)
+    if filterWidth < 76 then
+        return nil
+    end
+    return createDebugSourceFilterStrip(parent, filterX, y, filterWidth, ownerRef, onChanged, tooltip)
+end
+
+local function setDebugSubTabState(tabState, activeId)
+    if type(tabState) ~= "table" then
+        return
+    end
+    tabState.current = activeId
+    for id, panel in pairs(tabState.panels or {}) do
+        if panel and panel.setVisible then
+            panel:setVisible(id == activeId)
+        end
+    end
+    for id, btn in pairs(tabState.buttons or {}) do
+        if btn then
+            if id == activeId then
+                btn.backgroundColor = {r=0.28, g=0.38, b=0.46, a=1}
+                btn.borderColor = {r=0.5, g=0.7, b=0.9, a=1}
+            else
+                btn.backgroundColor = {r=0.15, g=0.17, b=0.2, a=1}
+                btn.borderColor = {r=0.36, g=0.44, b=0.54, a=1}
+            end
+        end
+    end
+end
+
+local function trimDebugText(value, maxChars)
+    local text = tostring(value or "")
+    local limit = math.max(4, tonumber(maxChars) or 18)
+    if #text <= limit then
+        return text
+    end
+    return string.sub(text, 1, limit - 3) .. "..."
+end
+
+local function getDebugRecipeSourceText(row, maxChars)
+    local limit = tonumber(maxChars) or 22
+    if type(row) ~= "table" then
+        return "Runtime"
+    end
+    if row.magazineDisplayName and tostring(row.magazineDisplayName) ~= "" then
+        return BurdJournals.formatText("From: %s", trimDebugText(row.magazineDisplayName, limit))
+    end
+    local source = tostring(row.source or "Runtime")
+    if source == "" or source == "Unknown" then
+        source = "Runtime"
+    end
+    return trimDebugText(source, limit)
+end
+
+local function sortDebugRecipeRows(rows)
+    table.sort(rows, function(a, b)
+        local left = string.lower(tostring((a and a.displayName) or (a and a.name) or ""))
+        local right = string.lower(tostring((b and b.displayName) or (b and b.name) or ""))
+        if left == right then
+            return string.lower(tostring((a and a.name) or "")) < string.lower(tostring((b and b.name) or ""))
+        end
+        return left < right
+    end)
+end
+
+local function buildDebugKnownTraitSet(player)
+    local knownTraits = {}
+    if not player then
+        return knownTraits
+    end
+
+    local discoveredTraits = BurdJournals and BurdJournals.discoverGrantableTraits and BurdJournals.discoverGrantableTraits(true) or {}
+    for _, traitId in ipairs(discoveredTraits or {}) do
+        if BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(player, traitId) then
+            knownTraits[string.lower(tostring(traitId))] = true
+        end
+    end
+
+    return knownTraits
+end
+
+local function appendDebugDiscoveredRecipeNames(recipeNames, recipeCache)
+    if type(recipeNames) ~= "table" then
+        return
+    end
+
+    for recipeName, _ in pairs(recipeCache or {}) do
+        if recipeName and tostring(recipeName) ~= "" then
+            recipeNames[tostring(recipeName)] = true
+        end
+    end
+
+    local recipes = getAllRecipes and getAllRecipes() or nil
+    if recipes and recipes.size and recipes.get then
+        for i = 0, recipes:size() - 1 do
+            local recipe = recipes:get(i)
+            local recipeName = recipe and recipe.getName and recipe:getName() or nil
+            if recipeName and tostring(recipeName) ~= "" then
+                recipeNames[tostring(recipeName)] = true
+            end
+        end
+    end
+end
+
+local function buildDebugRecipeRows(player, includeTransferableCatalog, includeBaselineEntries)
+    local rows = {}
+    local recipeNames = {}
+    local knownRecipes = BurdJournals.getAuthoritativeKnownRecipeSet and BurdJournals.getAuthoritativeKnownRecipeSet(player) or {}
+    local baselineRecipes = includeBaselineEntries and BurdJournals.getRecipeBaseline and BurdJournals.getRecipeBaseline(player) or {}
+    local recipeCache = BurdJournals.buildMagazineRecipeCache and BurdJournals.buildMagazineRecipeCache() or {}
+
+    for recipeName, isKnown in pairs(knownRecipes or {}) do
+        if isKnown == true then
+            recipeNames[tostring(recipeName)] = true
+        end
+    end
+    if includeBaselineEntries then
+        for recipeName, isBaseline in pairs(baselineRecipes or {}) do
+            if isBaseline == true then
+                recipeNames[tostring(recipeName)] = true
+            end
+        end
+    end
+    if includeTransferableCatalog then
+        appendDebugDiscoveredRecipeNames(recipeNames, recipeCache)
+    end
+
+    for recipeName, _ in pairs(recipeNames) do
+        local magazineSource = recipeCache[recipeName]
+            or (BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(recipeName))
+            or nil
+        rows[#rows + 1] = {
+            name = recipeName,
+            displayName = BurdJournals.getRecipeDisplayName and BurdJournals.getRecipeDisplayName(recipeName) or tostring(recipeName),
+            source = BurdJournals.getRecipeModSource and BurdJournals.getRecipeModSource(recipeName, magazineSource) or "Unknown",
+            sourceId = BurdJournals.getRecipeModId and BurdJournals.getRecipeModId(recipeName, magazineSource) or nil,
+            magazineSource = magazineSource,
+            magazineDisplayName = magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(magazineSource) or nil,
+            isKnown = knownRecipes[recipeName] == true,
+            isBaseline = baselineRecipes[recipeName] == true,
+            hasMagazine = magazineSource ~= nil and tostring(magazineSource) ~= "",
+        }
+    end
+
+    sortDebugRecipeRows(rows)
+    return rows
+end
+
+local function buildDebugSpawnSkillRows()
+    local rows = {}
+    local seen = {}
+    local skillMetadata = BurdJournals and BurdJournals.discoverSkillMetadata and BurdJournals.discoverSkillMetadata() or nil
+
+    if type(skillMetadata) == "table" then
+        for perkId, skillData in pairs(skillMetadata) do
+            local skillName = tostring((skillData and skillData.id) or perkId or "")
+            if skillName ~= "" then
+                local lower = string.lower(skillName)
+                if not seen[lower] then
+                    seen[lower] = true
+                    local isPassive = (skillData and skillData.isPassive) == true
+                        or (BurdJournals and BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(skillName))
+                        or skillName == "Fitness"
+                        or skillName == "Strength"
+                    local isVanilla = true
+                    if skillData and skillData.isVanilla ~= nil then
+                        isVanilla = skillData.isVanilla == true
+                    end
+                    rows[#rows + 1] = {
+                        name = skillName,
+                        displayName = (skillData and skillData.displayName) or BurdJournals.UI.DebugPanel.getSkillDisplayName(skillName),
+                        category = (skillData and skillData.category) or (isPassive and "Passive" or "Other"),
+                        isPassive = isPassive,
+                        isVanilla = isVanilla,
+                        source = BurdJournals.getSkillModSource and BurdJournals.getSkillModSource(skillName) or (isVanilla and "Vanilla" or "Modded"),
+                        sourceId = BurdJournals.getSkillModId and BurdJournals.getSkillModId(skillName) or (isVanilla and "vanilla" or "modded"),
+                    }
+                end
+            end
+        end
+    end
+
+    if #rows == 0 then
+        for _, skillName in ipairs(BurdJournals.UI.DebugPanel.getAvailableSkills() or {}) do
+            local lower = string.lower(tostring(skillName))
+            if not seen[lower] then
+                seen[lower] = true
+                local isPassive = (BurdJournals and BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(skillName))
+                    or skillName == "Fitness"
+                    or skillName == "Strength"
+                rows[#rows + 1] = {
+                    name = skillName,
+                    displayName = BurdJournals.UI.DebugPanel.getSkillDisplayName(skillName),
+                    category = isPassive and "Passive" or "Other",
+                    isPassive = isPassive,
+                    isVanilla = true,
+                    source = BurdJournals.getSkillModSource and BurdJournals.getSkillModSource(skillName) or "Vanilla",
+                    sourceId = BurdJournals.getSkillModId and BurdJournals.getSkillModId(skillName) or "vanilla",
+                }
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        local leftCategory = string.lower(tostring((a and a.category) or "zzz"))
+        local rightCategory = string.lower(tostring((b and b.category) or "zzz"))
+        if leftCategory ~= rightCategory then
+            return leftCategory < rightCategory
+        end
+        local left = string.lower(tostring((a and a.displayName) or (a and a.name) or ""))
+        local right = string.lower(tostring((b and b.displayName) or (b and b.name) or ""))
+        if left == right then
+            return string.lower(tostring((a and a.name) or "")) < string.lower(tostring((b and b.name) or ""))
+        end
+        return left < right
+    end)
+
+    return rows
+end
+
+local function buildDebugSpawnTraitRows()
+    local rows = {}
+    local seenDisplayNames = {}
+    local traitMetadata = BurdJournals and BurdJournals.discoverTraitMetadata and BurdJournals.discoverTraitMetadata() or nil
+    local discoveredTraits = BurdJournals.UI.DebugPanel.getAvailableTraits() or {}
+    local grantableSet = {}
+    local traitCostLookup = BurdJournals.UI.DebugPanel.buildTraitCostLookup()
+
+    for _, traitId in ipairs(discoveredTraits) do
+        local normalized = string.lower(tostring(traitId or ""))
+        if normalized ~= "" then
+            grantableSet[normalized] = true
+        end
+    end
+
+    if type(traitMetadata) == "table" then
+        for traitId, traitData in pairs(traitMetadata) do
+            local traitName = tostring(traitId or "")
+            local lower = string.lower(traitName)
+            if traitName ~= "" and grantableSet[lower] then
+                local displayName = (traitData and traitData.displayName) or BurdJournals.UI.DebugPanel.getTraitDisplayName(traitName)
+                local displayLower = string.lower(displayName)
+                if not seenDisplayNames[displayLower] then
+                    seenDisplayNames[displayLower] = true
+                    local source = (traitData and traitData.source) or (BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitName) or "Vanilla")
+                    local sourceId = (traitData and traitData.sourceId) or (BurdJournals.getTraitModId and BurdJournals.getTraitModId(traitName) or source)
+                    rows[#rows + 1] = {
+                        id = traitName,
+                        displayName = displayName,
+                        isPositive = BurdJournals.UI.DebugPanel.resolveTraitIsPositive(traitName, traitData, traitCostLookup),
+                        isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(traitName) or false,
+                        source = source,
+                        sourceId = sourceId,
+                        traitTexture = getDebugTraitTexture(traitName),
+                    }
+                end
+            end
+        end
+    end
+
+    if #rows == 0 then
+        for _, traitId in ipairs(discoveredTraits) do
+            local traitName = tostring(traitId or "")
+            if traitName ~= "" then
+                local displayName = BurdJournals.UI.DebugPanel.getTraitDisplayName(traitName)
+                local displayLower = string.lower(displayName)
+                if not seenDisplayNames[displayLower] then
+                    seenDisplayNames[displayLower] = true
+                    local source = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitName) or "Vanilla"
+                    rows[#rows + 1] = {
+                        id = traitName,
+                        displayName = displayName,
+                        isPositive = BurdJournals.UI.DebugPanel.resolveTraitIsPositive(traitName, nil, traitCostLookup),
+                        isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(traitName) or false,
+                        source = source,
+                        sourceId = BurdJournals.getTraitModId and BurdJournals.getTraitModId(traitName) or source,
+                        traitTexture = getDebugTraitTexture(traitName),
+                    }
+                end
+            end
+        end
+    end
+
+    table.sort(rows, function(a, b)
+        local left = string.lower(tostring((a and a.displayName) or (a and a.id) or ""))
+        local right = string.lower(tostring((b and b.displayName) or (b and b.id) or ""))
+        if left == right then
+            return string.lower(tostring((a and a.id) or "")) < string.lower(tostring((b and b.id) or ""))
+        end
+        return left < right
+    end)
+
+    return rows
 end
 
 -- Clear trait discovery caches to force fresh lookup
@@ -686,6 +2164,610 @@ function BurdJournals.UI.DebugPanel.getTraitDisplayName(traitName)
     return traitName:gsub("(%l)(%u)", "%1 %2")
 end
 
+local function sortDebugDiscoveryRows(rows)
+    table.sort(rows, function(a, b)
+        local left = string.lower(tostring((a and a.displayName) or (a and a.name) or ""))
+        local right = string.lower(tostring((b and b.displayName) or (b and b.name) or ""))
+        if left == right then
+            return string.lower(tostring((a and a.name) or "")) < string.lower(tostring((b and b.name) or ""))
+        end
+        return left < right
+    end)
+end
+
+local function setDebugWidgetTooltipCompat(widget, text)
+    if not widget then
+        return
+    end
+    if widget.setTooltip then
+        widget:setTooltip(text or "")
+    else
+        widget.tooltip = text or ""
+    end
+end
+
+local function normalizeDebugLoreText(value)
+    if type(value) ~= "string" then
+        return nil
+    end
+    local text = value:gsub("^%s+", ""):gsub("%s+$", "")
+    if text == "" then
+        return nil
+    end
+    return text
+end
+
+local function getSpawnLoreMode(panel)
+    if not panel or not panel.loreModeCombo then
+        return "dynamic"
+    end
+    local selected = tonumber(panel.loreModeCombo.selected) or 0
+    if selected <= 0 then
+        return "dynamic"
+    end
+    local value = panel.loreModeCombo:getOptionData(selected)
+        or panel.loreModeCombo.options[selected]
+    return tostring(value or "dynamic")
+end
+
+local function buildLoreTagHelperRows()
+    return {
+        {
+            tag = getText("UI_BurdJournals_DebugLoreTagHelper_SectionTags") or "Dynamic Tags",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_SectionTagsDesc")
+                or "These tokens are replaced when the journal is first generated. Existing save items keep their old notes.",
+            isSection = true,
+        },
+        {
+            tag = "{{openerName}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_OpenerName")
+                or "Uses the first player who opens or unseals the journal. Best for direct mentions and regrets.",
+        },
+        {
+            tag = "{{authorName}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_AuthorName")
+                or "Uses the journal author's name when available. Best for signatures or remembered conversations.",
+        },
+        {
+            tag = "{{professionName}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_ProfessionName")
+                or "Uses the profession carried on the journal profile. Best for trade-specific observations.",
+        },
+        {
+            tag = "{{survivorName}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_SurvivorName")
+                or "Uses another survivor-style name. Good for stash partners, debtors, or people the writer mentions.",
+        },
+        {
+            tag = "{{skillName}} / {{skillNameA}} / {{skillNameB}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_SkillName")
+                or "Pulls from runtime-discovered skill names. Use the A/B suffixes when you want distinct skills in one note.",
+        },
+        {
+            tag = "{{traitName}} / {{traitNameA}} / {{traitNameB}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_TraitName")
+                or "Pulls from runtime-discovered trait names. Keep these in lore-sensitive spots instead of generic noun slots.",
+        },
+        {
+            tag = "{{recipeName}} / {{recipeNameA}} / {{recipeNameB}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_RecipeName")
+                or "Pulls from runtime-discovered journal recipes. Best for practical notes about magazines, plans, or workbenches.",
+        },
+        {
+            tag = "{{stashNoun}} / {{dangerNoun}} / {{supplyNoun}} / {{omenNoun}}",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_Pools")
+                or "Uses themed filler pools. These are good when you want variety without tying the note to journal contents.",
+        },
+        {
+            tag = getText("UI_BurdJournals_DebugLoreTagHelper_SectionTips") or "Best Practices",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_SectionTipsDesc")
+                or "Short, grounded notes read best. Keep them easy to parse in the journal UI.",
+            isSection = true,
+        },
+        {
+            tag = getText("UI_BurdJournals_DebugLoreTagHelper_TipSentencesLabel") or "1-3 sentences",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_TipSentences")
+                or "Keep notes to three sentences at most. One or two short sentences usually reads best.",
+            isTip = true,
+        },
+        {
+            tag = getText("UI_BurdJournals_DebugLoreTagHelper_TipDistinctLabel") or "Distinct inserts",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_TipDistinct")
+                or "Use {{skillNameA}} and {{skillNameB}} when you want different values, not accidental repeats.",
+            isTip = true,
+        },
+        {
+            tag = getText("UI_BurdJournals_DebugLoreTagHelper_TipToneLabel") or "Match the journal",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_TipTone")
+                or "Worn journals should feel grounded, bloody journals tense, Yuletide warm, and cursed notes accusatory or ominous.",
+            isTip = true,
+        },
+        {
+            tag = getText("UI_BurdJournals_DebugLoreTagHelper_TipDynamicLabel") or "New spawns only",
+            description = getText("UI_BurdJournals_DebugLoreTagHelper_TipDynamic")
+                or "The new Mad Lib note system only applies to journals spawned after this update. Existing save items stay untouched.",
+            isTip = true,
+        },
+    }
+end
+
+function BurdJournals.UI.DebugPanel.drawLoreTagHelperItem(self, y, item, alt)
+    local h = tonumber(self.itemheight) or 38
+    y = tonumber(y) or 0
+    if y ~= y then y = 0 end
+    if not item or not item.item then return y + h end
+
+    local data = item.item
+    local w = tonumber(self.width) or 520
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+
+    if item.index and self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.15, 0.2, 0.15, 0.4)
+    end
+
+    if data.isSection then
+        self:drawRect(0, y, w, h, 0.12, 0.18, 0.24, 0.35)
+        self:drawText(tostring(data.tag or ""), 8, y + 4, 0.88, 0.92, 1, 1, UIFont.Small)
+        self:drawText(tostring(data.description or ""), 8, y + 18, 0.7, 0.78, 0.86, 0.9, UIFont.Small)
+        return y + h
+    end
+
+    local labelColor = data.isTip and {0.7, 0.85, 1, 1} or {0.95, 0.95, 0.95, 1}
+    local detailColor = data.isTip and {0.68, 0.8, 0.95, 0.9} or {0.7, 0.76, 0.84, 0.92}
+    self:drawText(tostring(data.tag or ""), 8, y + 4, labelColor[1], labelColor[2], labelColor[3], labelColor[4], UIFont.Small)
+    self:drawText(tostring(data.description or ""), 8, y + 18, detailColor[1], detailColor[2], detailColor[3], detailColor[4], UIFont.Small)
+    if data.isTip then
+        self:drawTextRight(getText("UI_BurdJournals_DebugLoreTagHelper_BadgeTips") or "TIP", w - 8 - scrollOffset, y + 4, 0.62, 0.84, 1, 0.9, UIFont.Small)
+    end
+
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel:openLoreTagHelper()
+    if self.loreTagHelperPopup and self.loreTagHelperPopup.close then
+        self.loreTagHelperPopup:close()
+        self.loreTagHelperPopup = nil
+    end
+
+    local popupWidth = 640
+    local popupHeight = 470
+    local screenW = getCore():getScreenWidth()
+    local screenH = getCore():getScreenHeight()
+    local popupX = (screenW - popupWidth) / 2
+    local popupY = (screenH - popupHeight) / 2
+
+    local popup = ISPanel:new(popupX, popupY, popupWidth, popupHeight)
+    popup:initialise()
+    popup:instantiate()
+    popup.backgroundColor = {r=0.1, g=0.1, b=0.12, a=0.98}
+    popup.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
+    popup:setAlwaysOnTop(true)
+    popup:addToUIManager()
+    popup.parentPanel = self
+
+    local padding = 10
+    local y = padding
+
+    local titleLabel = ISLabel:new(
+        padding,
+        y,
+        20,
+        getText("UI_BurdJournals_DebugLoreTagHelper_Title") or "Dynamic Lore Tags",
+        1,
+        1,
+        1,
+        1,
+        UIFont.Medium,
+        true
+    )
+    titleLabel:initialise()
+    titleLabel:instantiate()
+    popup:addChild(titleLabel)
+
+    local closeBtn = ISButton:new(popupWidth - 30, 5, 22, 22, "X", self, function()
+        if popup and popup.close then
+            popup:close()
+        end
+    end)
+    closeBtn:initialise()
+    closeBtn:instantiate()
+    closeBtn.borderColor = {r=0.8, g=0.3, b=0.3, a=1}
+    closeBtn.backgroundColor = {r=0.2, g=0.1, b=0.1, a=1}
+    closeBtn.parent = popup
+    popup:addChild(closeBtn)
+
+    y = y + 26
+    local introLabel = ISLabel:new(
+        padding,
+        y,
+        18,
+        getText("UI_BurdJournals_DebugLoreTagHelper_Subtitle")
+            or "Use these tags in custom debug notes. They resolve when the spawned loot journal first generates its lore.",
+        0.75,
+        0.82,
+        0.9,
+        1,
+        UIFont.Small,
+        true
+    )
+    introLabel:initialise()
+    introLabel:instantiate()
+    popup:addChild(introLabel)
+
+    y = y + 24
+    popup.loreTagList = ISScrollingListBox:new(padding, y, popupWidth - padding * 2, popupHeight - y - padding)
+    popup.loreTagList:initialise()
+    popup.loreTagList:instantiate()
+    popup.loreTagList.itemheight = 40
+    popup.loreTagList.backgroundColor = {r=0.06, g=0.06, b=0.08, a=1}
+    popup.loreTagList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    popup.loreTagList.doDrawItem = BurdJournals.UI.DebugPanel.drawLoreTagHelperItem
+    popup:addChild(popup.loreTagList)
+
+    for _, row in ipairs(buildLoreTagHelperRows()) do
+        popup.loreTagList:addItem(row.tag, row)
+    end
+
+    popup.close = function(selfRef)
+        selfRef:setVisible(false)
+        selfRef:removeFromUIManager()
+    end
+    self.loreTagHelperPopup = popup
+end
+
+function BurdJournals.UI.DebugPanel:onLoreTagHelperClick()
+    self:openLoreTagHelper()
+end
+
+function BurdJournals.UI.DebugPanel.buildDiscoveryBrowserPayload(kind)
+    local rows = {}
+    local title = "Discovery Browser"
+    local discoveryMethod = "Unknown"
+    local discoveryTooltip = "Shows what the mod can currently discover in this runtime."
+    local emptyMessage = "No entries found."
+
+    if kind == "skills" then
+        title = "Available Skills"
+        discoveryMethod = "Hardcoded fallback"
+        discoveryTooltip = "Shows skills the mod can currently discover. Source method: hardcoded fallback list."
+        emptyMessage = "No skills found."
+
+        local skills = nil
+        if BurdJournals and BurdJournals.discoverAllSkills then
+            local result = BurdJournals.discoverAllSkills()
+            if result and type(result) == "table" and #result > 0 then
+                skills = result
+                discoveryMethod = "Dynamic via BurdJournals.discoverAllSkills()"
+                discoveryTooltip = "Shows skills the mod can currently discover. Source method: dynamic discovery via BurdJournals.discoverAllSkills()."
+            end
+        end
+
+        if not skills or #skills == 0 then
+            skills = {}
+            if PerkFactory and PerkFactory.PerkList then
+                local perkList = PerkFactory.PerkList
+                if perkList and perkList.size then
+                    for i = 0, perkList:size() - 1 do
+                        local perk = perkList:get(i)
+                        if perk then
+                            local parent = perk.getParent and perk:getParent() or nil
+                            local parentId = parent and parent.getId and parent:getId() or nil
+                            if parent and parentId ~= "None" then
+                                local perkName = (perk.getId and perk:getId()) or tostring(perk)
+                                if perkName then
+                                    table.insert(skills, perkName)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            if #skills > 0 then
+                discoveryMethod = "Runtime fallback via PerkFactory.PerkList"
+                discoveryTooltip = "Shows skills the mod can currently discover. Source method: runtime fallback via PerkFactory.PerkList."
+            else
+                skills = BurdJournals.UI.DebugPanel.getAvailableSkills()
+            end
+        end
+
+        for _, skillName in ipairs(skills or {}) do
+            rows[#rows + 1] = {
+                name = skillName,
+                displayName = BurdJournals.UI.DebugPanel.getSkillDisplayName(skillName),
+                source = BurdJournals.getSkillModSource and BurdJournals.getSkillModSource(skillName) or "Unknown",
+            }
+        end
+    elseif kind == "traits" then
+        title = "Available Traits"
+        discoveryMethod = "Hardcoded fallback"
+        discoveryTooltip = "Shows traits the mod can currently discover. Source method: hardcoded fallback list."
+        emptyMessage = "No traits found."
+
+        local traitMetadata = BurdJournals and BurdJournals.discoverTraitMetadata and BurdJournals.discoverTraitMetadata() or nil
+        local traits = {}
+        if BurdJournals and BurdJournals.discoverGrantableTraits then
+            local result = BurdJournals.discoverGrantableTraits(true)
+            if result and type(result) == "table" and #result > 0 then
+                traits = result
+            end
+        end
+
+        if traitMetadata and BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(traitMetadata) and #traits > 0 then
+            local grantableSet = {}
+            for _, traitId in ipairs(traits) do
+                grantableSet[string.lower(tostring(traitId))] = true
+            end
+
+            for traitId, traitData in pairs(traitMetadata) do
+                if grantableSet[string.lower(tostring(traitId))] then
+                    rows[#rows + 1] = {
+                        name = traitId,
+                        rawId = traitId,
+                        displayName = (traitData and traitData.displayName) or BurdJournals.UI.DebugPanel.getTraitDisplayName(traitId),
+                        source = (traitData and traitData.source) or (BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitId) or "Unknown"),
+                    }
+                end
+            end
+
+            if #rows > 0 then
+                discoveryMethod = "Dynamic via BurdJournals.discoverTraitMetadata() + discoverGrantableTraits(true)"
+                discoveryTooltip = "Shows traits the mod can currently discover. Source method: runtime discovery via BurdJournals.discoverTraitMetadata(), filtered through BurdJournals.discoverGrantableTraits(true)."
+            end
+        end
+
+        if #rows == 0 and #traits == 0 then
+            if TraitFactory and TraitFactory.getTraits then
+                local traitList = TraitFactory.getTraits()
+                if traitList and traitList.size then
+                    for i = 0, traitList:size() - 1 do
+                        local trait = traitList:get(i)
+                        local traitType = trait and trait.getType and trait:getType() or nil
+                        if traitType then
+                            rows[#rows + 1] = {
+                                name = tostring(traitType),
+                                rawId = tostring(traitType),
+                                displayName = BurdJournals.UI.DebugPanel.getTraitDisplayName(tostring(traitType)),
+                                source = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(tostring(traitType)) or "Unknown",
+                            }
+                        end
+                    end
+                end
+            end
+            if #rows > 0 then
+                discoveryMethod = "Runtime fallback via TraitFactory.getTraits()"
+                discoveryTooltip = "Shows traits the mod can currently discover. Source method: runtime fallback via TraitFactory.getTraits()."
+            else
+                traits = BurdJournals.UI.DebugPanel.getAvailableTraits()
+            end
+        end
+
+        if #rows == 0 then
+            for _, traitName in ipairs(traits or {}) do
+                rows[#rows + 1] = {
+                    name = traitName,
+                    rawId = traitName,
+                    displayName = BurdJournals.UI.DebugPanel.getTraitDisplayName(traitName),
+                    source = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitName) or "Unknown",
+                }
+            end
+        end
+    elseif kind == "recipes" then
+        title = "Available Recipes"
+        discoveryMethod = "Dynamic via runtime recipe catalog + BurdJournals.buildMagazineRecipeCache()"
+        discoveryTooltip = "Shows recipes the mod can currently discover from the live runtime recipe list, plus any journal-transfer mappings from the magazine recipe cache."
+        emptyMessage = "No recipes found in the current runtime recipe catalog."
+
+        local recipeCache = BurdJournals.buildMagazineRecipeCache and BurdJournals.buildMagazineRecipeCache() or {}
+        local recipeNames = {}
+        appendDebugDiscoveredRecipeNames(recipeNames, recipeCache)
+        for recipeName, _ in pairs(recipeNames) do
+            local magazineSource = recipeCache[recipeName]
+            rows[#rows + 1] = {
+                name = recipeName,
+                displayName = BurdJournals.getRecipeDisplayName and BurdJournals.getRecipeDisplayName(recipeName) or tostring(recipeName),
+                source = BurdJournals.getRecipeModSource and BurdJournals.getRecipeModSource(recipeName, magazineSource) or tostring(magazineSource or "Unknown"),
+                magazineSource = magazineSource,
+                magazineDisplayName = magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(magazineSource) or nil,
+            }
+        end
+    end
+
+    sortDebugDiscoveryRows(rows)
+
+    return {
+        kind = kind,
+        title = title,
+        discoveryMethod = discoveryMethod,
+        discoveryTooltip = discoveryTooltip,
+        emptyMessage = emptyMessage,
+        rows = rows,
+    }
+end
+
+function BurdJournals.UI.DebugPanel.populateDiscoveryBrowserList(popup)
+    if not popup or not popup.discoveryList then
+        return
+    end
+
+    local searchText = popup.discoverySearchEntry and popup.discoverySearchEntry:getText() or ""
+    popup.discoveryList:clear()
+
+    local added = 0
+    for _, row in ipairs(popup.discoveryRows or {}) do
+        local matches = searchText == ""
+        if not matches then
+            matches = debugSearchMatches(searchText, row.displayName, row.name, row.source, row.magazineSource)
+        end
+        if matches then
+            popup.discoveryList:addItem(row.displayName, row)
+            added = added + 1
+        end
+    end
+
+    if added == 0 then
+        popup.discoveryList:addItem(popup.discoveryEmptyMessage or "No entries found.", {
+            isEmpty = true,
+            text = popup.discoveryEmptyMessage or "No entries found.",
+        })
+    end
+end
+
+function BurdJournals.UI.DebugPanel.drawDiscoveryBrowserItem(self, y, item, alt)
+    local h = tonumber(self.itemheight) or 32
+    y = tonumber(y) or 0
+    if y ~= y then y = 0 end
+    if not item or not item.item then return y + h end
+
+    local data = item.item
+    local w = tonumber(self.width) or 500
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+
+    if item.index and self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.15, 0.2, 0.15, 0.4)
+    end
+
+    if data.isEmpty then
+        self:drawText(tostring(data.text or "No entries found."), 8, y + 8, 0.8, 0.8, 0.8, 0.8, UIFont.Small)
+        return y + h
+    end
+
+    local displayName = tostring(data.displayName or data.name or "Unknown")
+    local detail = "ID: " .. tostring(data.rawId or data.name or "?")
+    if data.source then
+        detail = detail .. " | Source: " .. tostring(data.source)
+    end
+    if data.magazineSource then
+        detail = detail .. " | Magazine: " .. tostring(data.magazineSource)
+    end
+
+    local textX = 8
+    if data.rawId then
+        local traitTexture = getDebugTraitTexture(data.rawId)
+        local traitSize = drawDebugListIcon(self, traitTexture, textX, y, h, 0.95, 14)
+        if traitSize > 0 then
+            textX = textX + traitSize + 6
+        end
+    end
+    if data.magazineSource or (data.name and BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(data.name)) then
+        local recipeSize = drawDebugListIcon(self, getDebugRecipeTexture(), textX, y, h, 0.95, 14)
+        if recipeSize > 0 then
+            textX = textX + recipeSize + 4
+        end
+        local magazineTexture = getDebugMagazineTexture(data.magazineSource or (BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(data.name)))
+        local magazineSize = drawDebugListIcon(self, magazineTexture, textX, y, h, 0.9, 14)
+        if magazineSize > 0 then
+            textX = textX + magazineSize + 6
+        end
+    end
+
+    self:drawText(displayName, textX, y + 3, 0.95, 0.95, 0.95, 1, UIFont.Small)
+    self:drawText(detail, textX, y + 16, 0.65, 0.72, 0.8, 0.9, UIFont.Small)
+
+    local badgeText = tostring(data.source or "")
+    if badgeText ~= "" then
+        self:drawTextRight(badgeText, w - 8 - scrollOffset, y + 3, 0.7, 0.85, 1, 0.85, UIFont.Small)
+    end
+
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel:openDiscoveryBrowser(kind)
+    if self.discoveryPopup and self.discoveryPopup.close then
+        self.discoveryPopup:close()
+        self.discoveryPopup = nil
+    end
+
+    local payload = BurdJournals.UI.DebugPanel.buildDiscoveryBrowserPayload(kind)
+    if not payload then
+        self:setStatus("Discovery browser unavailable", {r=1, g=0.6, b=0.3})
+        return
+    end
+
+    local popupWidth = 620
+    local popupHeight = 460
+    local screenW = getCore():getScreenWidth()
+    local screenH = getCore():getScreenHeight()
+    local popupX = (screenW - popupWidth) / 2
+    local popupY = (screenH - popupHeight) / 2
+
+    local popup = ISPanel:new(popupX, popupY, popupWidth, popupHeight)
+    popup:initialise()
+    popup:instantiate()
+    popup.backgroundColor = {r=0.1, g=0.1, b=0.12, a=0.98}
+    popup.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
+    popup:setAlwaysOnTop(true)
+    popup:addToUIManager()
+    popup.parentPanel = self
+    popup.discoveryRows = payload.rows or {}
+    popup.discoveryEmptyMessage = payload.emptyMessage
+
+    local padding = 10
+    local y = padding
+
+    local titleLabel = ISLabel:new(padding, y, 22, payload.title or "Discovery Browser", 0.9, 0.8, 0.6, 1, UIFont.Medium, true)
+    titleLabel:initialise()
+    titleLabel:instantiate()
+    popup:addChild(titleLabel)
+
+    local closeBtn = ISButton:new(popupWidth - 30, 5, 22, 22, "X", self, function()
+        if popup and popup.close then
+            popup:close()
+        end
+    end)
+    closeBtn:initialise()
+    closeBtn:instantiate()
+    closeBtn.font = UIFont.Small
+    closeBtn.textColor = {r=1, g=0.5, b=0.5, a=1}
+    closeBtn.borderColor = {r=0.5, g=0.3, b=0.3, a=1}
+    closeBtn.backgroundColor = {r=0.3, g=0.1, b=0.1, a=0.8}
+    closeBtn.parent = popup
+    popup:addChild(closeBtn)
+    y = y + 28
+
+    local sourceLabel = ISLabel:new(padding, y, 18, "Discovery: " .. tostring(payload.discoveryMethod or "Unknown"), 0.7, 0.82, 1, 1, UIFont.Small, true)
+    sourceLabel:initialise()
+    sourceLabel:instantiate()
+    setDebugWidgetTooltipCompat(sourceLabel, payload.discoveryTooltip or "")
+    popup:addChild(sourceLabel)
+    y = y + 22
+
+    local searchLabel = ISLabel:new(padding, y, 18, "Search:", 0.7, 0.7, 0.7, 1, UIFont.Small, true)
+    searchLabel:initialise()
+    searchLabel:instantiate()
+    popup:addChild(searchLabel)
+
+    popup.discoverySearchEntry = ISTextEntryBox:new("", padding + 50, y - 2, popupWidth - padding * 2 - 50, 20)
+    popup.discoverySearchEntry:initialise()
+    popup.discoverySearchEntry:instantiate()
+    popup.discoverySearchEntry.font = UIFont.Small
+    setDebugWidgetTooltipCompat(popup.discoverySearchEntry, payload.discoveryTooltip or "Type to filter the discovery list.")
+    popup.discoverySearchEntry.onTextChange = function()
+        BurdJournals.UI.DebugPanel.populateDiscoveryBrowserList(popup)
+    end
+    popup:addChild(popup.discoverySearchEntry)
+    y = y + 28
+
+    local listHeight = popupHeight - y - 12
+    popup.discoveryList = ISScrollingListBox:new(padding, y, popupWidth - padding * 2, listHeight)
+    popup.discoveryList:initialise()
+    popup.discoveryList:instantiate()
+    popup.discoveryList.itemheight = 34
+    popup.discoveryList.backgroundColor = {r=0.06, g=0.06, b=0.08, a=1}
+    popup.discoveryList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    popup.discoveryList.doDrawItem = BurdJournals.UI.DebugPanel.drawDiscoveryBrowserItem
+    popup.discoveryList.parentPanel = self
+    setDebugWidgetTooltipCompat(popup.discoveryList, payload.discoveryTooltip or "")
+    popup:addChild(popup.discoveryList)
+
+    popup.close = function(selfRef)
+        selfRef:setVisible(false)
+        selfRef:removeFromUIManager()
+    end
+
+    BurdJournals.UI.DebugPanel.populateDiscoveryBrowserList(popup)
+    self.discoveryPopup = popup
+end
+
 function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     local panel = ISPanel:new(5, startY, self.width - 10, height)
     panel:initialise()
@@ -697,7 +2779,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     
     local padding = 10
     local y = padding
-    local halfWidth = (panel.width - padding * 3) / 2
+    local fullWidth = panel.width - padding * 2
     
     -- Journal Type section
     local typeLabel = ISLabel:new(padding, y, 20, "Journal Type:", 1, 1, 1, 1, UIFont.Small, true)
@@ -708,8 +2790,8 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     
     -- Type buttons
     local typeX = padding
-    local btnWidth = 70
-    local types = {"Blank", "Filled", "Worn", "Bloody", "Cursed"}
+    local btnWidth = 76
+    local types = {"Blank", "Filled", "Worn", "Bloody", "Cursed", "Yuletide"}
     panel.typeButtons = {}
     panel.selectedType = "filled"
     
@@ -722,6 +2804,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
         btn.textColor = {r=1, g=1, b=1, a=1}
         btn.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
         btn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
+        attachDebugButtonIconCompat(btn, getDebugJournalTypeTexture(btn.internal))
         panel:addChild(btn)
         panel.typeButtons[typeName] = btn
         typeX = typeX + btnWidth + 3
@@ -760,7 +2843,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
             or "Debug (Legacy)",
         "debug"
     )
-    panel.spawnProfileCombo:setSelected(1)
+    setComboSelectedCompat(panel.spawnProfileCombo, 1)
     panel:addChild(panel.spawnProfileCombo)
     y = y + 24
 
@@ -807,7 +2890,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
             or "Recovered from Zombie",
         "zombie"
     )
-    panel.spawnOriginCombo:setSelected(1)
+    setComboSelectedCompat(panel.spawnOriginCombo, 1)
     panel:addChild(panel.spawnOriginCombo)
     y = y + 24
     
@@ -878,7 +2961,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
             panel.professionCombo:addOption(displayName)  -- Index 4+
         end
     end
-    panel.professionCombo:setSelected(1)  -- Default to (Random)
+    setComboSelectedCompat(panel.professionCombo, 1)  -- Default to (Random)
     
     panel.professionSectionY = y
     y = y + 24
@@ -915,6 +2998,66 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel:addChild(panel.flavorEntry)
     
     panel.flavorSectionY = y
+    y = y + 24
+
+    panel.loreModeLabel = ISLabel:new(padding, y, 18, getText("UI_BurdJournals_DebugSpawnLoreMode") or "Lore Mode:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    panel.loreModeLabel:initialise()
+    panel.loreModeLabel:instantiate()
+    panel.loreModeLabel:setVisible(false)
+    panel:addChild(panel.loreModeLabel)
+
+    panel.loreModeCombo = ISComboBox:new(padding + 75, y - 2, 120, 22, self, BurdJournals.UI.DebugPanel.onLoreModeComboChange)
+    panel.loreModeCombo:initialise()
+    panel.loreModeCombo:instantiate()
+    panel.loreModeCombo.font = UIFont.Small
+    panel.loreModeCombo:addOptionWithData(getText("UI_BurdJournals_DebugSpawnLoreModeDynamic") or "Dynamic", "dynamic")
+    panel.loreModeCombo:addOptionWithData(getText("UI_BurdJournals_DebugSpawnLoreModeCustom") or "Custom", "custom")
+    setComboSelectedCompat(panel.loreModeCombo, 1)
+    panel.loreModeCombo:setVisible(false)
+    setDebugWidgetTooltipCompat(
+        panel.loreModeCombo,
+        getText("UI_BurdJournals_DebugSpawnLoreModeTip")
+            or "Dynamic uses the built-in Mad Lib templates. Custom lets you type a note with optional dynamic tags."
+    )
+    panel:addChild(panel.loreModeCombo)
+
+    panel.loreModeSectionY = y
+    y = y + 24
+
+    panel.loreNoteLabel = ISLabel:new(padding, y, 18, getText("UI_BurdJournals_DebugSpawnCustomNote") or "Custom Note:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    panel.loreNoteLabel:initialise()
+    panel.loreNoteLabel:instantiate()
+    panel.loreNoteLabel:setVisible(false)
+    panel:addChild(panel.loreNoteLabel)
+
+    local loreEntryX = padding + 75
+    panel.loreTagsBtn = ISButton:new(loreEntryX + 170, y - 2, 60, 20, getText("UI_BurdJournals_DebugSpawnLoreTags") or "Tags", self, BurdJournals.UI.DebugPanel.onLoreTagHelperClick)
+    panel.loreTagsBtn:initialise()
+    panel.loreTagsBtn:instantiate()
+    panel.loreTagsBtn.font = UIFont.Small
+    panel.loreTagsBtn.backgroundColor = {r=0.12, g=0.18, b=0.24, a=1}
+    panel.loreTagsBtn.borderColor = {r=0.35, g=0.48, b=0.62, a=1}
+    panel.loreTagsBtn:setVisible(false)
+    setDebugWidgetTooltipCompat(
+        panel.loreTagsBtn,
+        getText("UI_BurdJournals_DebugSpawnLoreTagsTip")
+            or "Show the available dynamic tags and best practices for custom Mad Lib notes."
+    )
+    panel:addChild(panel.loreTagsBtn)
+
+    panel.loreNoteEntry = ISTextEntryBox:new("", loreEntryX, y - 2, 165, 20)
+    panel.loreNoteEntry:initialise()
+    panel.loreNoteEntry:instantiate()
+    panel.loreNoteEntry.font = UIFont.Small
+    panel.loreNoteEntry:setVisible(false)
+    setDebugWidgetTooltipCompat(
+        panel.loreNoteEntry,
+        getText("UI_BurdJournals_DebugSpawnCustomNoteTip")
+            or "Custom Mad Lib note for this spawned loot journal. You can use tags like {{openerName}} or {{skillNameA}}."
+    )
+    panel:addChild(panel.loreNoteEntry)
+
+    panel.loreNoteSectionY = y
     y = y + 28
 
     -- ====== Spawn Metadata Section ======
@@ -932,6 +3075,51 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel:addChild(panel.ageEntry)
     y = y + 24
 
+    panel.yuletideStateLabel = ISLabel:new(padding, y, 18, "Yuletide State:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    panel.yuletideStateLabel:initialise()
+    panel.yuletideStateLabel:instantiate()
+    panel:addChild(panel.yuletideStateLabel)
+
+    panel.yuletideStateCombo = ISComboBox:new(padding + 95, y - 2, 215, 22, self, nil)
+    panel.yuletideStateCombo:initialise()
+    panel.yuletideStateCombo:instantiate()
+    panel.yuletideStateCombo.font = UIFont.Small
+    panel.yuletideStateCombo:addOptionWithData("Wrapped", BurdJournals.YULETIDE_STATE_WRAPPED or "wrapped")
+    panel.yuletideStateCombo:addOptionWithData("Unwrapped", BurdJournals.YULETIDE_STATE_UNWRAPPED or "unwrapped")
+    panel.yuletideStateCombo.parentPanel = panel
+    installDebugIconCombo(panel.yuletideStateCombo, function(combo, optionIndex, optionText, optionData)
+        local stateValue = optionData or optionText
+        local variant = getSelectedYuletideWrappedVariant(combo.parentPanel)
+        return getDebugYuletideTextureForState(stateValue, variant)
+    end)
+    setComboSelectedCompat(panel.yuletideStateCombo, 1)
+    panel:addChild(panel.yuletideStateCombo)
+    y = y + 24
+
+    panel.yuletideWrappedVariantLabel = ISLabel:new(padding, y, 18, "Wrapped Variant:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    panel.yuletideWrappedVariantLabel:initialise()
+    panel.yuletideWrappedVariantLabel:instantiate()
+    panel:addChild(panel.yuletideWrappedVariantLabel)
+
+    panel.yuletideWrappedVariantCombo = ISComboBox:new(padding + 95, y - 2, 215, 22, self, nil)
+    panel.yuletideWrappedVariantCombo:initialise()
+    panel.yuletideWrappedVariantCombo:instantiate()
+    panel.yuletideWrappedVariantCombo.font = UIFont.Small
+    local yuletideVariants = (BurdJournals.getYuletideWrappedVariants and BurdJournals.getYuletideWrappedVariants())
+        or BurdJournals.YULETIDE_WRAPPED_VARIANTS
+        or {"1"}
+    for _, variant in ipairs(yuletideVariants) do
+        panel.yuletideWrappedVariantCombo:addOptionWithData("Variant " .. tostring(variant), tostring(variant))
+    end
+    panel.yuletideWrappedVariantCombo.parentPanel = panel
+    installDebugIconCombo(panel.yuletideWrappedVariantCombo, function(combo, optionIndex, optionText, optionData)
+        local variant = optionData or optionText
+        return getDebugYuletideTextureForState(BurdJournals.YULETIDE_STATE_WRAPPED or "wrapped", variant)
+    end)
+    setComboSelectedCompat(panel.yuletideWrappedVariantCombo, 1)
+    panel:addChild(panel.yuletideWrappedVariantCombo)
+    y = y + 24
+
     -- Cursed controls (shown only for cursed type)
     panel.cursedStateLabel = ISLabel:new(padding, y, 18, (getText("UI_BurdJournals_DebugCursedState") or "Cursed State:"), 0.8, 0.75, 0.9, 1, UIFont.Small, true)
     panel.cursedStateLabel:initialise()
@@ -943,8 +3131,9 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel.cursedStateCombo:instantiate()
     panel.cursedStateCombo.font = UIFont.Small
     panel.cursedStateCombo:addOption(getText("UI_BurdJournals_DebugCursedDormant") or "Dormant (Cursed Item)")
+    panel.cursedStateCombo:addOption(getText("UI_BurdJournals_DebugCursedHidden") or "Hidden (Disguised Bloody)")
     panel.cursedStateCombo:addOption(getText("UI_BurdJournals_DebugCursedUnleashed") or "Unleashed (Bloody Reward)")
-    panel.cursedStateCombo:setSelected(1)
+    setComboSelectedCompat(panel.cursedStateCombo, 1)
     panel:addChild(panel.cursedStateCombo)
     y = y + 24
 
@@ -973,7 +3162,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel.forceCurseCombo:addOptionWithData(getText("UI_BurdJournals_DebugCurseLosePositive") or "Lose Positive Trait", "lose_positive_trait")
     panel.forceCurseCombo:addOptionWithData(getText("UI_BurdJournals_DebugCurseLoseSkill") or "Lose Skill Level", "lose_skill_level")
     panel.forceCurseCombo:addOptionWithData(getText("UI_BurdJournals_DebugCurseAmbush") or "Ambush (Panic + Horde)", "panic")
-    panel.forceCurseCombo:setSelected(1)
+    setComboSelectedCompat(panel.forceCurseCombo, 1)
     panel:addChild(panel.forceCurseCombo)
 
     panel.forceCurseTargetCombo = ISComboBox:new(forceComboX + forceComboPrimaryW + 6, y - 2, forceComboTargetW, 22, self, nil)
@@ -1002,30 +3191,44 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel:addChild(panel.forgetSlotTick)
     y = y + 24
 
-    -- Separator line
+    -- ====== Content Section (Skills / Traits / Recipes) ======
     panel.contentSeparatorY = y
     y = y + 5
-    
-    -- ====== Content Section (Skills/Traits) ======
-    -- Hidden for Blank journals, shown for Filled/Worn/Bloody
-    
     panel.contentStartY = y
-    
-    -- Left column: Skills
-    panel.skillsLabel = ISLabel:new(padding, y, 18, "Skills (click to add):", 1, 1, 1, 1, UIFont.Small, true)
-    panel.skillsLabel:initialise()
-    panel.skillsLabel:instantiate()
-    panel:addChild(panel.skillsLabel)
-    
-    -- Right column: Traits
-    panel.traitsLabel = ISLabel:new(padding + halfWidth + padding, y, 18, "Traits (click to toggle):", 1, 1, 1, 1, UIFont.Small, true)
-    panel.traitsLabel:initialise()
-    panel.traitsLabel:instantiate()
-    panel:addChild(panel.traitsLabel)
-    y = y + 20
-    
-    -- Search fields for skills and traits
-    panel.spawnSkillSearch = ISTextEntryBox:new("", padding, y, halfWidth - 10, 18)
+    panel.selectedSkills = {}  -- {skillName = {level = X, extraXP = Y}}
+    panel.selectedTraits = {}  -- {traitName = true}
+    panel.selectedRecipes = {} -- {recipeName = true}
+    panel.focusedSkill = nil   -- Currently focused skill for level editing
+    panel.defaultLevel = 10
+    panel.defaultExtraXP = 0
+    panel.spawnTabState = {buttons = {}, panels = {}, current = "skills"}
+
+    local tabX = padding
+    local tabWidth = 84
+    local tabHeight = 22
+    local tabSpacing = 6
+    panel.spawnTabState.buttons.skills = createDebugButton(panel, tabX, y, tabWidth, tabHeight, "Skills", self, BurdJournals.UI.DebugPanel.onSpawnSubTab, "skills")
+    tabX = tabX + tabWidth + tabSpacing
+    panel.spawnTabState.buttons.traits = createDebugButton(panel, tabX, y, tabWidth, tabHeight, "Traits", self, BurdJournals.UI.DebugPanel.onSpawnSubTab, "traits")
+    tabX = tabX + tabWidth + tabSpacing
+    panel.spawnTabState.buttons.recipes = createDebugButton(panel, tabX, y, tabWidth, tabHeight, "Recipes", self, BurdJournals.UI.DebugPanel.onSpawnSubTab, "recipes")
+    y = y + tabHeight + 8
+
+    local sectionPadding = 8
+    local contentWidth = fullWidth - sectionPadding * 2
+    local sectionHeight = 188
+    local searchWidth = 150
+
+    local skillsSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.spawnTabState.panels.skills = skillsSection
+    local sy = sectionPadding
+    local skillLabelText = (BurdJournals.safeGetText and BurdJournals.safeGetText("UI_BurdJournals_DebugSpawnSkillsGrant", "Skills to grant:")) or "Skills to grant:"
+    panel.spawnSkillSectionLabel = ISLabel:new(sectionPadding, sy + 2, 18, skillLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    panel.spawnSkillSectionLabel:initialise()
+    panel.spawnSkillSectionLabel:instantiate()
+    skillsSection:addChild(panel.spawnSkillSectionLabel)
+    local spawnSkillSearchX = math.max(220, contentWidth - (searchWidth + 6))
+    panel.spawnSkillSearch = ISTextEntryBox:new("", spawnSkillSearchX, sy, searchWidth, 20)
     panel.spawnSkillSearch:initialise()
     panel.spawnSkillSearch:instantiate()
     panel.spawnSkillSearch.font = UIFont.Small
@@ -1033,76 +3236,29 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel.spawnSkillSearch.onTextChange = function()
         BurdJournals.UI.DebugPanel.filterSpawnSkillList(self)
     end
-    panel:addChild(panel.spawnSkillSearch)
-    
-    panel.spawnTraitSearch = ISTextEntryBox:new("", padding + halfWidth + padding, y, halfWidth - 10, 18)
-    panel.spawnTraitSearch:initialise()
-    panel.spawnTraitSearch:instantiate()
-    panel.spawnTraitSearch.font = UIFont.Small
-    panel.spawnTraitSearch:setTooltip("Filter traits...")
-    panel.spawnTraitSearch.onTextChange = function()
-        BurdJournals.UI.DebugPanel.filterSpawnTraitList(self)
-    end
-    panel:addChild(panel.spawnTraitSearch)
-    y = y + 22
-    
-    -- Skill selection list
-    local listHeight = 100
-    panel.skillList = ISScrollingListBox:new(padding, y, halfWidth, listHeight)
+    skillsSection:addChild(panel.spawnSkillSearch)
+    panel.spawnSkillSourceFilter = createSectionSourceFilterStrip(skillsSection, self, skillLabelText, spawnSkillSearchX, sy, sectionPadding, BurdJournals.UI.DebugPanel.filterSpawnSkillList, "Filter spawn skills by source.")
+    sy = sy + 24
+    panel.skillList = ISScrollingListBox:new(sectionPadding, sy, contentWidth, 96)
     panel.skillList:initialise()
     panel.skillList:instantiate()
+    panel.skillList.itemheight = 30
     panel.skillList.backgroundColor = {r=0.1, g=0.1, b=0.12, a=1}
     panel.skillList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
     panel.skillList.doDrawItem = BurdJournals.UI.DebugPanel.drawSkillItem
     panel.skillList.onMouseDown = BurdJournals.UI.DebugPanel.onSkillListClick
     panel.skillList.parentPanel = self
-    panel:addChild(panel.skillList)
-    
-    -- Populate skills dynamically
-    panel.selectedSkills = {}  -- {skillName = {level = X, extraXP = Y}}
-    panel.focusedSkill = nil   -- Currently focused skill for level editing
-    local availableSkills = BurdJournals.UI.DebugPanel.getAvailableSkills()
-    for _, skillName in ipairs(availableSkills) do
-        local displayName = BurdJournals.UI.DebugPanel.getSkillDisplayName(skillName)
-        panel.skillList:addItem(displayName, {name = skillName, displayName = displayName, selected = false, level = 10, extraXP = 0})
-    end
-    
-    -- Trait selection list
-    panel.traitList = ISScrollingListBox:new(padding + halfWidth + padding, y, halfWidth, listHeight)
-    panel.traitList:initialise()
-    panel.traitList:instantiate()
-    panel.traitList.backgroundColor = {r=0.1, g=0.1, b=0.12, a=1}
-    panel.traitList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    panel.traitList.doDrawItem = BurdJournals.UI.DebugPanel.drawTraitItem
-    panel.traitList.onMouseDown = BurdJournals.UI.DebugPanel.onTraitListClick
-    panel.traitList.parentPanel = self
-    panel:addChild(panel.traitList)
-    
-    -- Populate traits dynamically (deduplicate by display name for B42 trait variants)
-    panel.selectedTraits = {}  -- {traitName = true}
-    local availableTraits = BurdJournals.UI.DebugPanel.getAvailableTraits()
-    local addedDisplayNames = {}  -- Track display names to prevent visual duplicates
-    for _, traitName in ipairs(availableTraits) do
-        local displayName = BurdJournals.UI.DebugPanel.getTraitDisplayName(traitName)
-        local displayNameLower = string.lower(displayName)
-        -- Skip if we already have a trait with this display name
-        if not addedDisplayNames[displayNameLower] then
-            addedDisplayNames[displayNameLower] = traitName
-            panel.traitList:addItem(displayName, {name = traitName, displayName = displayName, selected = false})
-        end
-    end
-    y = y + listHeight + 5
-    
-    -- Level selector under skills
-    panel.levelLabel = ISLabel:new(padding, y, 18, "Level (default):", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.skillList)
+
+    panel.levelLabel = ISLabel:new(sectionPadding, sy + 102, 18, "Level (default):", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
     panel.levelLabel:initialise()
     panel.levelLabel:instantiate()
-    panel:addChild(panel.levelLabel)
-    
+    skillsSection:addChild(panel.levelLabel)
+
     panel.levelButtons = {}
-    local lvlX = padding + 80
+    local lvlX = sectionPadding + 80
     for lvl = 0, 10 do
-        local btn = ISButton:new(lvlX, y - 2, 22, 20, tostring(lvl), self, BurdJournals.UI.DebugPanel.onLevelSelect)
+        local btn = ISButton:new(lvlX, sy + 100, 22, 20, tostring(lvl), self, BurdJournals.UI.DebugPanel.onLevelSelect)
         btn:initialise()
         btn:instantiate()
         btn.font = UIFont.Small
@@ -1110,39 +3266,139 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
         btn.textColor = {r=1, g=1, b=1, a=1}
         btn.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
         btn.backgroundColor = lvl == 10 and {r=0.3, g=0.5, b=0.4, a=1} or {r=0.2, g=0.2, b=0.25, a=1}
-        panel:addChild(btn)
+        skillsSection:addChild(btn)
         panel.levelButtons[lvl] = btn
         lvlX = lvlX + 24
     end
-    panel.defaultLevel = 10
-    panel.defaultExtraXP = 0
-    y = y + 25
-    
-    -- Extra XP input row
-    panel.extraXPLabel = ISLabel:new(padding, y, 18, "Extra XP:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+
+    panel.extraXPLabel = ISLabel:new(sectionPadding, sy + 126, 18, "Extra XP:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
     panel.extraXPLabel:initialise()
     panel.extraXPLabel:instantiate()
-    panel:addChild(panel.extraXPLabel)
-    
-    panel.extraXPEntry = ISTextEntryBox:new("0", padding + 60, y - 2, 60, 20)
+    skillsSection:addChild(panel.extraXPLabel)
+
+    panel.extraXPEntry = ISTextEntryBox:new("0", sectionPadding + 60, sy + 124, 60, 20)
     panel.extraXPEntry:initialise()
     panel.extraXPEntry:instantiate()
     panel.extraXPEntry.font = UIFont.Small
     panel.extraXPEntry:setOnlyNumbers(true)
     panel.extraXPEntry.backgroundColor = {r=0.15, g=0.15, b=0.18, a=1}
     panel.extraXPEntry.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    -- Use deferred update to fix "one step behind" issue with onTextChange
     panel.extraXPEntry.onTextChange = function()
-        -- Defer the update to next frame so getText() returns the updated value
         panel.extraXPPendingUpdate = true
     end
-    panel:addChild(panel.extraXPEntry)
-    
-    panel.extraXPRange = ISLabel:new(padding + 125, y, 18, "(0-149)", 0.6, 0.7, 0.6, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.extraXPEntry)
+
+    panel.extraXPRange = ISLabel:new(sectionPadding + 125, sy + 126, 18, "(0-149)", 0.6, 0.7, 0.6, 1, UIFont.Small, true)
     panel.extraXPRange:initialise()
     panel.extraXPRange:instantiate()
-    panel:addChild(panel.extraXPRange)
-    y = y + 25
+    skillsSection:addChild(panel.extraXPRange)
+
+    local traitsSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.spawnTabState.panels.traits = traitsSection
+    local ty = sectionPadding
+    local traitLabelText = (BurdJournals.safeGetText and BurdJournals.safeGetText("UI_BurdJournals_DebugSpawnTraitsGrant", "Traits to grant:")) or "Traits to grant:"
+    panel.spawnTraitSectionLabel = ISLabel:new(sectionPadding, ty + 2, 18, traitLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    panel.spawnTraitSectionLabel:initialise()
+    panel.spawnTraitSectionLabel:instantiate()
+    traitsSection:addChild(panel.spawnTraitSectionLabel)
+    local spawnTraitSearchX = math.max(220, contentWidth - (searchWidth + 6))
+    panel.spawnTraitSearch = ISTextEntryBox:new("", spawnTraitSearchX, ty, searchWidth, 20)
+    panel.spawnTraitSearch:initialise()
+    panel.spawnTraitSearch:instantiate()
+    panel.spawnTraitSearch.font = UIFont.Small
+    panel.spawnTraitSearch:setTooltip("Filter traits...")
+    panel.spawnTraitSearch.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterSpawnTraitList(self)
+    end
+    traitsSection:addChild(panel.spawnTraitSearch)
+    panel.spawnTraitSourceFilter = createSectionSourceFilterStrip(traitsSection, self, traitLabelText, spawnTraitSearchX, ty, sectionPadding, BurdJournals.UI.DebugPanel.filterSpawnTraitList, "Filter spawn traits by source.")
+    ty = ty + 24
+    panel.traitList = ISScrollingListBox:new(sectionPadding, ty, contentWidth, 132)
+    panel.traitList:initialise()
+    panel.traitList:instantiate()
+    panel.traitList.itemheight = 30
+    panel.traitList.backgroundColor = {r=0.1, g=0.1, b=0.12, a=1}
+    panel.traitList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    panel.traitList.doDrawItem = BurdJournals.UI.DebugPanel.drawTraitItem
+    panel.traitList.onMouseDown = BurdJournals.UI.DebugPanel.onTraitListClick
+    panel.traitList.parentPanel = self
+    traitsSection:addChild(panel.traitList)
+
+    local recipesSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.spawnTabState.panels.recipes = recipesSection
+    local ry = sectionPadding
+    local recipeLabelText = (BurdJournals.safeGetText and BurdJournals.safeGetText("UI_BurdJournals_DebugSpawnRecipesGrant", "Recipes to grant:")) or "Recipes to grant:"
+    panel.spawnRecipeSectionLabel = ISLabel:new(sectionPadding, ry + 2, 18, recipeLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    panel.spawnRecipeSectionLabel:initialise()
+    panel.spawnRecipeSectionLabel:instantiate()
+    recipesSection:addChild(panel.spawnRecipeSectionLabel)
+    local spawnRecipeSearchX = math.max(220, contentWidth - (searchWidth + 6))
+    panel.spawnRecipeSearch = ISTextEntryBox:new("", spawnRecipeSearchX, ry, searchWidth, 20)
+    panel.spawnRecipeSearch:initialise()
+    panel.spawnRecipeSearch:instantiate()
+    panel.spawnRecipeSearch.font = UIFont.Small
+    panel.spawnRecipeSearch:setTooltip("Filter recipes...")
+    panel.spawnRecipeSearch.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterSpawnRecipeList(self)
+    end
+    recipesSection:addChild(panel.spawnRecipeSearch)
+    panel.spawnRecipeSourceFilter = createSectionSourceFilterStrip(recipesSection, self, recipeLabelText, spawnRecipeSearchX, ry, sectionPadding, BurdJournals.UI.DebugPanel.filterSpawnRecipeList, "Filter spawn recipes by source.")
+    ry = ry + 24
+    panel.recipeList = ISScrollingListBox:new(sectionPadding, ry, contentWidth, 132)
+    panel.recipeList:initialise()
+    panel.recipeList:instantiate()
+    panel.recipeList.itemheight = 30
+    panel.recipeList.backgroundColor = {r=0.1, g=0.1, b=0.12, a=1}
+    panel.recipeList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    panel.recipeList.doDrawItem = BurdJournals.UI.DebugPanel.drawSpawnRecipeItem
+    panel.recipeList.onMouseDown = BurdJournals.UI.DebugPanel.onSpawnRecipeListClick
+    panel.recipeList.parentPanel = self
+    recipesSection:addChild(panel.recipeList)
+
+    for _, row in ipairs(buildDebugSpawnSkillRows()) do
+        panel.skillList:addItem(row.displayName, {
+            name = row.name,
+            displayName = row.displayName,
+            category = row.category,
+            isPassive = row.isPassive,
+            isVanilla = row.isVanilla,
+            source = row.source,
+            sourceId = row.sourceId,
+            selected = false,
+            level = panel.defaultLevel,
+            extraXP = 0,
+        })
+    end
+
+    for _, row in ipairs(buildDebugSpawnTraitRows()) do
+        panel.traitList:addItem(row.displayName, {
+            id = row.id,
+            name = row.id,
+            displayName = row.displayName,
+            isPositive = row.isPositive,
+            isPassiveSkillTrait = row.isPassiveSkillTrait,
+            source = row.source,
+            sourceId = row.sourceId,
+            traitTexture = row.traitTexture,
+            selected = false,
+        })
+    end
+
+    local spawnRecipeRows = buildDebugRecipeRows(self.player, true, false)
+    for _, row in ipairs(spawnRecipeRows) do
+        row.recipeTexture = getDebugRecipeTexture()
+        row.magazineTexture = getDebugMagazineTexture(row.magazineSource)
+        row.magazineDisplayName = row.magazineDisplayName or (row.magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(row.magazineSource) or nil)
+        row.selected = false
+        panel.recipeList:addItem(row.displayName, row)
+    end
+
+    refreshDebugSourceFilterStrip(panel.spawnSkillSourceFilter, panel.skillList and panel.skillList.items or nil)
+    refreshDebugSourceFilterStrip(panel.spawnTraitSourceFilter, panel.traitList and panel.traitList.items or nil)
+    refreshDebugSourceFilterStrip(panel.spawnRecipeSourceFilter, panel.recipeList and panel.recipeList.items or nil)
+    setDebugSubTabState(panel.spawnTabState, "skills")
+
+    y = y + sectionHeight + 8
     
     -- Selected summary
     local summaryLabel = ISLabel:new(padding, y, 18, "Selected:", 0.7, 0.8, 0.9, 1, UIFont.Small, true)
@@ -1194,7 +3450,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     panel.contentEndY = y
     
     -- ====== Spawn Button ======
-    local spawnBtn = ISButton:new(padding, y, panel.width - padding * 2, 30, "SPAWN JOURNAL", self, BurdJournals.UI.DebugPanel.onSpawnClick)
+    local spawnBtn = ISButton:new(padding, y, fullWidth, 30, "SPAWN JOURNAL", self, BurdJournals.UI.DebugPanel.onSpawnClick)
     spawnBtn:initialise()
     spawnBtn:instantiate()
     spawnBtn.font = UIFont.Medium
@@ -1203,6 +3459,7 @@ function BurdJournals.UI.DebugPanel:createSpawnPanel(startY, height)
     spawnBtn.backgroundColor = {r=0.15, g=0.4, b=0.2, a=1}
     panel:addChild(spawnBtn)
     panel.spawnBtn = spawnBtn
+    panel.contentEndY = y
     
     self.spawnPanel = panel
     
@@ -1329,16 +3586,18 @@ function BurdJournals.UI.DebugPanel.onProfessionComboChange(self)
     self:updateSpawnPanelVisibility()
 end
 
+function BurdJournals.UI.DebugPanel.onLoreModeComboChange(self)
+    self:updateSpawnPanelVisibility()
+end
+
 local function buildPositiveTraitDebugTargets()
     local targets = {}
-    local costLookup = BurdJournals.UI.DebugPanel.buildTraitCostLookup()
     local seen = {}
-    local allTraits = BurdJournals.UI.DebugPanel.getAvailableTraits()
+    local allTraits = BurdJournals.getPositiveTraits and BurdJournals.getPositiveTraits(true) or BurdJournals.UI.DebugPanel.getAvailableTraits()
     for _, traitId in ipairs(allTraits or {}) do
         local id = tostring(traitId or "")
         local lower = string.lower(id)
-        local cost = tonumber(costLookup[lower]) or 0
-        if cost > 0 and not seen[lower] then
+        if BurdJournals.UI.DebugPanel.getBulkTraitBucket(id) == "positive" and not seen[lower] then
             seen[lower] = true
             targets[#targets + 1] = {
                 id = id,
@@ -1355,10 +3614,11 @@ end
 local function buildNegativeTraitDebugTargets()
     local targets = {}
     local seen = {}
-    for _, traitId in ipairs(BurdJournals.REMOVABLE_TRAITS or {}) do
+    local allTraits = BurdJournals.getNegativeTraits and BurdJournals.getNegativeTraits(true) or BurdJournals.REMOVABLE_TRAITS or {}
+    for _, traitId in ipairs(allTraits) do
         local id = tostring(traitId or "")
         local lower = string.lower(id)
-        if id ~= "" and not seen[lower] then
+        if id ~= "" and BurdJournals.UI.DebugPanel.getBulkTraitBucket(id) == "negative" and not seen[lower] then
             seen[lower] = true
             targets[#targets + 1] = {
                 id = id,
@@ -1425,7 +3685,7 @@ function BurdJournals.UI.DebugPanel.refreshForceCurseTargetCombo(panel)
     end
 
     if panel.forceCurseTargetType then
-        targetCombo:setSelected(1)
+        setComboSelectedCompat(targetCombo, 1)
         targetCombo:setVisible(true)
     else
         targetCombo:setVisible(false)
@@ -1568,6 +3828,134 @@ local function applyOriginModeToJournalData(journalData, originMode)
     end
 end
 
+local function setDebugWidgetY(widget, y)
+    if not widget then
+        return
+    end
+    if widget.setY then
+        widget:setY(y)
+    else
+        widget.y = y
+    end
+end
+
+local function setDebugWidgetHeight(widget, height)
+    if not widget then
+        return
+    end
+    if widget.setHeight then
+        widget:setHeight(height)
+    else
+        widget.height = height
+    end
+end
+
+local function setSpawnContentVisibility(panel, visible)
+    if not panel then
+        return
+    end
+
+    if panel.spawnTabState then
+        for _, button in pairs(panel.spawnTabState.buttons or {}) do
+            if button then
+                button:setVisible(visible)
+            end
+        end
+        for id, subPanel in pairs(panel.spawnTabState.panels or {}) do
+            if subPanel and subPanel.setVisible then
+                subPanel:setVisible(visible and id == (panel.spawnTabState.current or "skills"))
+            end
+        end
+    end
+
+    if panel.summaryLabelRef then panel.summaryLabelRef:setVisible(visible) end
+    if panel.summaryText then panel.summaryText:setVisible(visible) end
+    if panel.clearBtn then panel.clearBtn:setVisible(visible) end
+    if panel.presetButtons then
+        for _, btn in ipairs(panel.presetButtons) do
+            if btn then btn:setVisible(visible) end
+        end
+    end
+end
+
+local function layoutSpawnContentPanels(panel, startY)
+    if not (panel and panel.spawnTabState) then
+        return startY
+    end
+
+    local padding = 10
+    local fullWidth = panel.width - padding * 2
+    local tabWidth = 84
+    local tabHeight = 22
+    local tabSpacing = 6
+    local sectionPadding = 8
+    local contentWidth = fullWidth - sectionPadding * 2
+    local bottomReserve = 114
+    local availableSectionHeight = math.floor(panel.height - startY - bottomReserve)
+    local sectionHeight = math.max(156, math.min(220, availableSectionHeight))
+    panel.spawnContentSectionHeight = sectionHeight
+    panel.contentStartY = startY
+
+    local tabX = padding
+    setDebugWidgetY(panel.spawnTabState.buttons.skills, startY)
+    if panel.spawnTabState.buttons.skills then panel.spawnTabState.buttons.skills:setX(tabX) end
+    tabX = tabX + tabWidth + tabSpacing
+    setDebugWidgetY(panel.spawnTabState.buttons.traits, startY)
+    if panel.spawnTabState.buttons.traits then panel.spawnTabState.buttons.traits:setX(tabX) end
+    tabX = tabX + tabWidth + tabSpacing
+    setDebugWidgetY(panel.spawnTabState.buttons.recipes, startY)
+    if panel.spawnTabState.buttons.recipes then panel.spawnTabState.buttons.recipes:setX(tabX) end
+
+    local sectionY = startY + tabHeight + 8
+    for _, subPanel in pairs(panel.spawnTabState.panels or {}) do
+        if subPanel then
+            if subPanel.setX then subPanel:setX(padding) end
+            setDebugWidgetY(subPanel, sectionY)
+            if subPanel.setWidth then subPanel:setWidth(fullWidth) end
+            setDebugWidgetHeight(subPanel, sectionHeight)
+        end
+    end
+
+    local skillListY = sectionPadding + 24
+    local skillListHeight = math.max(68, sectionHeight - 92)
+    if panel.skillList then
+        setDebugWidgetY(panel.skillList, skillListY)
+        if panel.skillList.setWidth then panel.skillList:setWidth(contentWidth) end
+        setDebugWidgetHeight(panel.skillList, skillListHeight)
+    end
+    local skillControlsY = skillListY + skillListHeight + 6
+    if panel.levelLabel then setDebugWidgetY(panel.levelLabel, skillControlsY + 2) end
+    if panel.levelButtons then
+        local lvlX = sectionPadding + 80
+        for lvl = 0, 10 do
+            local btn = panel.levelButtons[lvl]
+            if btn then
+                if btn.setX then btn:setX(lvlX) end
+                setDebugWidgetY(btn, skillControlsY)
+            end
+            lvlX = lvlX + 24
+        end
+    end
+    local extraXPY = skillControlsY + 24
+    if panel.extraXPLabel then setDebugWidgetY(panel.extraXPLabel, extraXPY + 2) end
+    if panel.extraXPEntry then setDebugWidgetY(panel.extraXPEntry, extraXPY) end
+    if panel.extraXPRange then setDebugWidgetY(panel.extraXPRange, extraXPY + 2) end
+
+    local genericListHeight = math.max(112, sectionHeight - 40)
+    if panel.traitList then
+        setDebugWidgetY(panel.traitList, skillListY)
+        if panel.traitList.setWidth then panel.traitList:setWidth(contentWidth) end
+        setDebugWidgetHeight(panel.traitList, genericListHeight)
+    end
+    if panel.recipeList then
+        setDebugWidgetY(panel.recipeList, skillListY)
+        if panel.recipeList.setWidth then panel.recipeList:setWidth(contentWidth) end
+        setDebugWidgetHeight(panel.recipeList, genericListHeight)
+    end
+
+    return sectionY + sectionHeight + 8
+end
+
 -- Update spawn panel visibility based on selected journal type
 function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
     local panel = self.spawnPanel
@@ -1582,7 +3970,9 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
     local isBlank = (journalType == "blank")
     local isFilled = (journalType == "filled")
     local isCursed = (journalType == "cursed")
+    local isYuletide = (journalType == "yuletide")
     local isWornOrBloody = (journalType == "worn" or journalType == "bloody")
+    local supportsGeneratedLore = (isWornOrBloody == true or isCursed == true or isYuletide == true)
     
     -- Check combo selections (with nil safety)
     local selectedData = nil
@@ -1603,13 +3993,17 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
     local showProfession = (isWornOrBloody == true)
     local showCustomProf = (isWornOrBloody == true and isCustomProf == true)
     local showFlavor = (isBlank == false)
+    local loreMode = getSpawnLoreMode(panel)
+    local showLoreMode = (supportsGeneratedLore == true)
+    local showCustomLore = (showLoreMode == true and loreMode == "custom")
     local showSpawnMeta = (isBlank == false)
+    local showYuletideControls = (isYuletide == true)
     local showCursedControls = (isCursed == true)
     if showCursedControls then
         BurdJournals.UI.DebugPanel.refreshForceCurseTargetCombo(panel)
     end
     local showForceCurseTarget = showCursedControls and panel.forceCurseTargetType ~= nil
-    local showForgetSlotToggle = (isBlank == false and (isWornOrBloody == true or isCursed == true))
+    local showForgetSlotToggle = (isBlank == false and (isWornOrBloody == true or isCursed == true or isYuletide == true))
     local showContent = (isBlank == false)
     
     -- Set visibility (with nil guards)
@@ -1625,8 +4019,17 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
     if panel.customProfEntry then panel.customProfEntry:setVisible(showCustomProf) end
     if panel.flavorLabel then panel.flavorLabel:setVisible(showFlavor) end
     if panel.flavorEntry then panel.flavorEntry:setVisible(showFlavor) end
+    if panel.loreModeLabel then panel.loreModeLabel:setVisible(showLoreMode) end
+    if panel.loreModeCombo then panel.loreModeCombo:setVisible(showLoreMode) end
+    if panel.loreNoteLabel then panel.loreNoteLabel:setVisible(showCustomLore) end
+    if panel.loreNoteEntry then panel.loreNoteEntry:setVisible(showCustomLore) end
+    if panel.loreTagsBtn then panel.loreTagsBtn:setVisible(showCustomLore) end
     if panel.ageLabel then panel.ageLabel:setVisible(showSpawnMeta) end
     if panel.ageEntry then panel.ageEntry:setVisible(showSpawnMeta) end
+    if panel.yuletideStateLabel then panel.yuletideStateLabel:setVisible(showYuletideControls) end
+    if panel.yuletideStateCombo then panel.yuletideStateCombo:setVisible(showYuletideControls) end
+    if panel.yuletideWrappedVariantLabel then panel.yuletideWrappedVariantLabel:setVisible(showYuletideControls) end
+    if panel.yuletideWrappedVariantCombo then panel.yuletideWrappedVariantCombo:setVisible(showYuletideControls) end
     if panel.cursedStateLabel then panel.cursedStateLabel:setVisible(showCursedControls) end
     if panel.cursedStateCombo then panel.cursedStateCombo:setVisible(showCursedControls) end
     if panel.forceCurseLabel then panel.forceCurseLabel:setVisible(showCursedControls) end
@@ -1679,9 +4082,32 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
         y = y + rowHeight
     end
 
+    if showLoreMode then
+        if panel.loreModeLabel then panel.loreModeLabel:setY(y) end
+        if panel.loreModeCombo then panel.loreModeCombo:setY(y - 2) end
+        y = y + rowHeight
+    end
+
+    if showCustomLore then
+        if panel.loreNoteLabel then panel.loreNoteLabel:setY(y) end
+        if panel.loreNoteEntry then panel.loreNoteEntry:setY(y - 2) end
+        if panel.loreTagsBtn then panel.loreTagsBtn:setY(y - 2) end
+        y = y + rowHeight
+    end
+
     if showSpawnMeta then
         if panel.ageLabel then panel.ageLabel:setY(y) end
         if panel.ageEntry then panel.ageEntry:setY(y - 2) end
+        y = y + rowHeight
+    end
+
+    if showYuletideControls then
+        if panel.yuletideStateLabel then panel.yuletideStateLabel:setY(y) end
+        if panel.yuletideStateCombo then panel.yuletideStateCombo:setY(y - 2) end
+        y = y + rowHeight
+
+        if panel.yuletideWrappedVariantLabel then panel.yuletideWrappedVariantLabel:setY(y) end
+        if panel.yuletideWrappedVariantCombo then panel.yuletideWrappedVariantCombo:setY(y - 2) end
         y = y + rowHeight
     end
 
@@ -1702,77 +4128,21 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
         y = y + rowHeight
     end
     
-    -- Content section (skills/traits)
-    y = y + rowHeight + 4  -- Small gap before content
-    
-    -- Set visibility for content elements (with nil guards)
-    if panel.skillsLabel then panel.skillsLabel:setVisible(showContent) end
-    if panel.traitsLabel then panel.traitsLabel:setVisible(showContent) end
-    if panel.spawnSkillSearch then panel.spawnSkillSearch:setVisible(showContent) end
-    if panel.spawnTraitSearch then panel.spawnTraitSearch:setVisible(showContent) end
-    if panel.skillList then panel.skillList:setVisible(showContent) end
-    if panel.traitList then panel.traitList:setVisible(showContent) end
-    if panel.levelLabel then panel.levelLabel:setVisible(showContent) end
-    if panel.levelButtons then
-        for _, btn in pairs(panel.levelButtons) do
-            if btn then btn:setVisible(showContent) end
+    -- Content section (skills / traits / recipes)
+    y = y + rowHeight + 4
+    setSpawnContentVisibility(panel, showContent)
+
+    if showContent then
+        if panel.spawnTabState then
+            setDebugSubTabState(panel.spawnTabState, panel.spawnTabState.current or "skills")
         end
-    end
-    if panel.extraXPLabel then panel.extraXPLabel:setVisible(showContent) end
-    if panel.extraXPEntry then panel.extraXPEntry:setVisible(showContent) end
-    if panel.extraXPRange then panel.extraXPRange:setVisible(showContent) end
-    if panel.summaryLabelRef then panel.summaryLabelRef:setVisible(showContent) end
-    if panel.summaryText then panel.summaryText:setVisible(showContent) end
-    if panel.clearBtn then panel.clearBtn:setVisible(showContent) end
-    if panel.presetButtons then
-        for _, btn in ipairs(panel.presetButtons) do
-            if btn then btn:setVisible(showContent) end
-        end
-    end
-    
-    if showContent and panel.skillList then
-        local halfWidth = (panel.width - padding * 3) / 2
-        
-        -- Skills/Traits labels
-        if panel.skillsLabel then panel.skillsLabel:setY(y) end
-        if panel.traitsLabel then panel.traitsLabel:setY(y) end
-        y = y + 20
-        
-        -- Search fields
-        if panel.spawnSkillSearch then panel.spawnSkillSearch:setY(y) end
-        if panel.spawnTraitSearch then panel.spawnTraitSearch:setY(y) end
-        y = y + 22
-        
-        -- Skill/Trait lists
-        if panel.skillList then panel.skillList:setY(y) end
-        if panel.traitList then panel.traitList:setY(y) end
-        y = y + (panel.skillList and panel.skillList.height or 0) + 8
-        
-        -- Level controls
-        if panel.levelLabel then panel.levelLabel:setY(y + 3) end
-        if panel.levelButtons then
-            for lvl = 0, 10 do
-                local btn = panel.levelButtons[lvl]
-                if btn then
-                    btn:setY(y)
-                end
-            end
-        end
-        y = y + 28
-        
-        -- Extra XP row
-        if panel.extraXPLabel then panel.extraXPLabel:setY(y + 3) end
-        if panel.extraXPEntry then panel.extraXPEntry:setY(y) end
-        if panel.extraXPRange then panel.extraXPRange:setY(y + 3) end
-        y = y + 28
-        
-        -- Summary (label on one line, content below)
+        y = layoutSpawnContentPanels(panel, y)
+
         if panel.summaryLabelRef then panel.summaryLabelRef:setY(y) end
         y = y + 18
         if panel.summaryText then panel.summaryText:setY(y) end
         y = y + 22
-        
-        -- Preset buttons and Clear button
+
         if panel.clearBtn then panel.clearBtn:setY(y) end
         if panel.presetButtons then
             for _, btn in ipairs(panel.presetButtons) do
@@ -1780,18 +4150,18 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
             end
         end
         y = y + 35
-        
-        -- Spawn button
+        panel.contentEndY = y
         panel.spawnBtn:setY(y)
     else
-        -- Blank journal - just show spawn button near the top
-        y = y + 10
-        panel.spawnBtn:setY(y)
+        panel.contentEndY = y
+        panel.spawnBtn:setY(y + 10)
     end
 
     if showContent then
         sanitizeSpawnSkillSelections(panel, journalType)
         BurdJournals.UI.DebugPanel.filterSpawnSkillList(self)
+        BurdJournals.UI.DebugPanel.filterSpawnTraitList(self)
+        BurdJournals.UI.DebugPanel.filterSpawnRecipeList(self)
         BurdJournals.UI.DebugPanel.updateLevelButtons(self)
         BurdJournals.UI.DebugPanel.updateSpawnSummary(self)
     end
@@ -1800,8 +4170,14 @@ function BurdJournals.UI.DebugPanel:updateSpawnPanelVisibility()
     -- Update spawn button text
     if isBlank then
         panel.spawnBtn:setTitle("SPAWN BLANK JOURNAL")
-    elseif isCursed and panel.cursedStateCombo and panel.cursedStateCombo.selected == 2 then
-        panel.spawnBtn:setTitle("SPAWN CURSED REWARD")
+    elseif isCursed and panel.cursedStateCombo then
+        if panel.cursedStateCombo.selected == 3 then
+            panel.spawnBtn:setTitle("SPAWN CURSED REWARD")
+        elseif panel.cursedStateCombo.selected == 2 then
+            panel.spawnBtn:setTitle("SPAWN HIDDEN CURSED JOURNAL")
+        else
+            panel.spawnBtn:setTitle("SPAWN " .. string.upper(journalType) .. " JOURNAL")
+        end
     else
         panel.spawnBtn:setTitle("SPAWN " .. string.upper(journalType) .. " JOURNAL")
     end
@@ -1817,23 +4193,16 @@ function BurdJournals.UI.DebugPanel.filterSpawnSkillList(self)
     if panel.spawnSkillSearch and panel.spawnSkillSearch.getText then
         searchText = panel.spawnSkillSearch:getText()
     end
+    local selectedSourceId = panel.spawnSkillSourceFilter and panel.spawnSkillSourceFilter.selectedSourceId or "all"
     
-    for _, item in ipairs(panel.skillList.items) do
-        local skillName = item.item and item.item.name
+    applyDebugRowFilter(panel.skillList, function(row)
+        local skillName = row and row.name or nil
         local isAllowed = isSpawnSkillAllowedForType(journalType, skillName)
-        if item.item then
-            item.item.hiddenBySandbox = not isAllowed
-        end
-        if not isAllowed then
-            item.item.hidden = true
-        else
-            if searchText == "" then
-                item.item.hidden = false
-            else
-                item.item.hidden = not debugSearchMatches(searchText, item.item.displayName, item.item.name)
-            end
-        end
-    end
+        row.hiddenBySandbox = not isAllowed
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.category, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return isAllowed and matchesSearch and matchesSource
+    end)
 end
 
 function BurdJournals.UI.DebugPanel.filterSpawnTraitList(self)
@@ -1844,19 +4213,35 @@ function BurdJournals.UI.DebugPanel.filterSpawnTraitList(self)
     if panel.spawnTraitSearch and panel.spawnTraitSearch.getText then
         searchText = panel.spawnTraitSearch:getText()
     end
+    local selectedSourceId = panel.spawnTraitSourceFilter and panel.spawnTraitSourceFilter.selectedSourceId or "all"
     
-    for _, item in ipairs(panel.traitList.items) do
-        if searchText == "" then
-            item.item.hidden = false
-        else
-            item.item.hidden = not debugSearchMatches(searchText, item.item.displayName, item.item.name)
-        end
+    applyDebugRowFilter(panel.traitList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
+end
+
+function BurdJournals.UI.DebugPanel.filterSpawnRecipeList(self)
+    local panel = self.spawnPanel
+    if not panel or not panel.recipeList then return end
+
+    local searchText = ""
+    if panel.spawnRecipeSearch and panel.spawnRecipeSearch.getText then
+        searchText = panel.spawnRecipeSearch:getText()
     end
+    local selectedSourceId = panel.spawnRecipeSourceFilter and panel.spawnRecipeSourceFilter.selectedSourceId or "all"
+
+    applyDebugRowFilter(panel.recipeList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.magazineSource, row.magazineDisplayName, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
 -- Custom draw function for skill list items
 function BurdJournals.UI.DebugPanel.drawSkillItem(self, y, item, alt)
-    local h = self.itemheight
+    local h = getDebugListRowHeight(self, item, 30)
     local data = item.item
     
     -- Skip hidden items (filtered by search)
@@ -1864,14 +4249,18 @@ function BurdJournals.UI.DebugPanel.drawSkillItem(self, y, item, alt)
     
     local isFocused = self.parentPanel and self.parentPanel.spawnPanel and 
                       self.parentPanel.spawnPanel.focusedSkill == data.name
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
     
     -- Background - highlight focused item more prominently
     if isFocused and data.selected then
-        self:drawRect(0, y, self.width, h, 0.4, 0.3, 0.6, 0.5)  -- Bright highlight for focused+selected
+        self:drawRect(0, y, w, h, 0.4, 0.3, 0.6, 0.5)
     elseif data.selected then
-        self:drawRect(0, y, self.width, h, 0.25, 0.2, 0.4, 0.3)  -- Dimmer for just selected
+        self:drawRect(0, y, w, h, 0.25, 0.2, 0.4, 0.3)
     elseif self.mouseoverselected == item.index then
-        self:drawRect(0, y, self.width, h, 0.2, 0.2, 0.3, 0.3)
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
+    elseif data.isPassive then
+        self:drawRect(0, y, w, h, 0.1, 0.15, 0.2, 0.18)
     end
     
     -- Checkbox
@@ -1887,6 +4276,20 @@ function BurdJournals.UI.DebugPanel.drawSkillItem(self, y, item, alt)
     local displayText = data.displayName or data.name
     local color = isFocused and {1, 1, 0.7} or (data.selected and {0.9, 1, 0.9} or {0.7, 0.7, 0.7})
     self:drawText(displayText, textX, y + 2, color[1], color[2], color[3], 1, UIFont.Small)
+
+    local detailParts = {}
+    if data.category and data.category ~= "" then
+        detailParts[#detailParts + 1] = tostring(data.category)
+    end
+    if data.source and data.source ~= "" then
+        detailParts[#detailParts + 1] = tostring(data.source)
+    end
+    if data.isPassive then
+        detailParts[#detailParts + 1] = "Passive"
+    end
+    if #detailParts > 0 then
+        self:drawText(table.concat(detailParts, " | "), textX, y + 15, 0.55, 0.65, 0.78, 0.9, UIFont.Small)
+    end
     
     -- Show level and extra XP for selected skills
     if data.selected then
@@ -1896,10 +4299,9 @@ function BurdJournals.UI.DebugPanel.drawSkillItem(self, y, item, alt)
         if extraXP > 0 then
             lvlText = lvlText .. "+" .. extraXP
         end
-        -- Adjust position based on text length (account for scrollbar)
-        local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH
         local textWidth = getTextManager():MeasureStringX(UIFont.Small, lvlText)
-        self:drawText(lvlText, self.width - textWidth - 5 - scrollOffset, y + 2, lvlColor[1], lvlColor[2], lvlColor[3], 1, UIFont.Small)
+        self:drawText(lvlText, w - textWidth - 5 - scrollOffset, y + 2, lvlColor[1], lvlColor[2], lvlColor[3], 1, UIFont.Small)
+        self:drawText("Selected", w - 54 - scrollOffset, y + 15, 0.55, 0.82, 0.55, 0.9, UIFont.Small)
     end
     
     return y + h
@@ -1907,17 +4309,19 @@ end
 
 -- Custom draw function for trait list items
 function BurdJournals.UI.DebugPanel.drawTraitItem(self, y, item, alt)
-    local h = self.itemheight
+    local h = getDebugListRowHeight(self, item, 30)
     local data = item.item
     
     -- Skip hidden items (filtered by search)
     if data.hidden then return y + h end
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
     
     -- Background
     if data.selected then
-        self:drawRect(0, y, self.width, h, 0.3, 0.3, 0.5, 0.2)
+        self:drawRect(0, y, w, h, 0.3, 0.3, 0.5, 0.2)
     elseif self.mouseoverselected == item.index then
-        self:drawRect(0, y, self.width, h, 0.2, 0.2, 0.3, 0.3)
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
     end
     
     -- Checkbox
@@ -1928,11 +4332,25 @@ function BurdJournals.UI.DebugPanel.drawTraitItem(self, y, item, alt)
         self:drawText("[ ]", checkX, y + 2, 0.5, 0.5, 0.5, 1, UIFont.Small)
     end
     
-    -- Trait name (use display name if available)
-    local textX = 30
-    local displayText = data.displayName or data.name
-    local color = data.selected and {0.9, 1, 0.9} or {0.7, 0.7, 0.7}
+    local iconSize = drawDebugListIcon(self, data.traitTexture or getDebugTraitTexture(data.id or data.name), 28, y, h, 0.95, 13)
+    local textX = 28 + math.max(iconSize, 13) + 6
+    local displayText = BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.name or "Unknown")
+    local color = BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    if data.selected then
+        color = {
+            math.min(1, color[1] + 0.15),
+            math.min(1, color[2] + 0.15),
+            math.min(1, color[3] + 0.15),
+        }
+    end
     self:drawText(displayText, textX, y + 2, color[1], color[2], color[3], 1, UIFont.Small)
+    local sourceText = BurdJournals.UI.DebugPanel.getTraitSourceLine(data)
+    if sourceText ~= "" then
+        self:drawText(sourceText, textX, y + 15, color[1], color[2], color[3], 0.85, UIFont.Small)
+    end
+    if data.selected then
+        self:drawText("Selected", w - 54 - scrollOffset, y + 2, 0.55, 0.82, 0.55, 1, UIFont.Small)
+    end
     
     return y + h
 end
@@ -1988,6 +4406,9 @@ function BurdJournals.UI.DebugPanel.onTraitListClick(self, x, y)
     if row > 0 and row <= #self.items then
         local item = self.items[row]
         local data = item.item
+        if not data or data.hidden then
+            return
+        end
         data.selected = not data.selected
         
         -- Update parent panel's selected traits
@@ -1999,6 +4420,76 @@ function BurdJournals.UI.DebugPanel.onTraitListClick(self, x, y)
         end
         self.parentPanel:updateSpawnSummary()
     end
+end
+
+function BurdJournals.UI.DebugPanel.drawSpawnRecipeItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 30)
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data or data.hidden then return y + h end
+
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+
+    if data.selected then
+        self:drawRect(0, y, w, h, 0.12, 0.2, 0.12, 0.28)
+    elseif self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
+    end
+
+    if data.selected then
+        self:drawText("[X]", 8, y + 2, 0.4, 0.7, 0.4, 1, UIFont.Small)
+    else
+        self:drawText("[ ]", 8, y + 2, 0.5, 0.5, 0.5, 1, UIFont.Small)
+    end
+
+    local iconX = 28
+    local recipeIcon = data.recipeTexture or getDebugRecipeTexture()
+    local recipeSize = drawDebugListIcon(self, recipeIcon, iconX, y, h, 0.95, 13)
+    local textX = iconX + math.max(recipeSize, 13) + 6
+    if data.magazineSource then
+        local magSize = drawDebugListIcon(self, data.magazineTexture or getDebugMagazineTexture(data.magazineSource), textX, y, h, 0.9, 13)
+        if magSize > 0 then
+            textX = textX + magSize + 6
+        end
+    end
+
+    self:drawText(tostring(data.displayName or data.name or "Unknown Recipe"), textX, y + 2, data.selected and 0.82 or 0.74, data.selected and 1 or 0.74, data.selected and 0.82 or 0.74, 1, UIFont.Small)
+    local sourceText = getDebugRecipeSourceText(data, 22)
+    local sourceColor = data.magazineDisplayName and {0.5, 0.7, 0.75}
+        or ((data.source and data.source ~= "Vanilla" and data.source ~= "Runtime" and data.source ~= "Unknown")
+            and {0.82, 0.72, 0.5}
+            or {0.55, 0.65, 0.78})
+    self:drawText(sourceText, textX, y + 15, sourceColor[1], sourceColor[2], sourceColor[3], 0.9, UIFont.Small)
+    if data.selected then
+        self:drawText("Selected", w - 54 - scrollOffset, y + 2, 0.55, 0.82, 0.55, 1, UIFont.Small)
+    elseif data.hasMagazine then
+        self:drawText("Available", w - 56 - scrollOffset, y + 2, 0.68, 0.82, 0.95, 0.9, UIFont.Small)
+    end
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel.onSpawnRecipeListClick(self, x, y)
+    ISScrollingListBox.onMouseDown(self, x, y)
+
+    local row = self:rowAt(x, y)
+    if row <= 0 or row > #self.items then return end
+
+    local item = self.items[row]
+    local data = item and item.item or nil
+    if not (data and self.parentPanel and self.parentPanel.spawnPanel) then return end
+    if data.hidden then
+        return
+    end
+
+    data.selected = not data.selected
+    local panel = self.parentPanel.spawnPanel
+    if data.selected then
+        panel.selectedRecipes[tostring(data.name)] = true
+    else
+        panel.selectedRecipes[tostring(data.name)] = nil
+    end
+    self.parentPanel:updateSpawnSummary()
 end
 
 -- Level selector click - only affects focused skill, or sets default for new selections
@@ -2195,6 +4686,14 @@ function BurdJournals.UI.DebugPanel:onClearSelections()
         itemData.item.selected = false
     end
     panel.selectedTraits = {}
+
+    -- Clear recipes
+    if panel.recipeList and panel.recipeList.items then
+        for _, itemData in ipairs(panel.recipeList.items) do
+            itemData.item.selected = false
+        end
+    end
+    panel.selectedRecipes = {}
     
     self:updateLevelButtons()
     self:updateSpawnSummary()
@@ -2236,6 +4735,14 @@ function BurdJournals.UI.DebugPanel:updateSpawnSummary()
     end
     if traitCount > 0 then
         table.insert(parts, traitCount .. " trait(s)")
+    end
+
+    local recipeCount = 0
+    for name, _ in pairs(panel.selectedRecipes or {}) do
+        recipeCount = recipeCount + 1
+    end
+    if recipeCount > 0 then
+        table.insert(parts, recipeCount .. " recipe(s)")
     end
     
     panel.summaryText:setName(table.concat(parts, ", "))
@@ -2300,30 +4807,20 @@ function BurdJournals.UI.DebugPanel:onPresetClick(button)
             end
         end
     elseif preset == "allpositive" then
-        -- Select ALL positive traits from the list (use trait cost to determine polarity)
-        -- Build a cost lookup from CharacterTraitDefinition for accurate polarity
-        local traitCostLookup = BurdJournals.UI.DebugPanel.buildTraitCostLookup()
-        
-        -- Select all traits with cost >= 0 (positive or neutral)
+        -- Select ALL positive traits from the list using the shared polarity resolver.
         for _, itemData in ipairs(panel.traitList.items) do
             local traitName = itemData.item.name
-            local cost = traitCostLookup[traitName:lower()] or 0
-            if cost >= 0 then  -- Positive traits have cost > 0, neutral have cost = 0
+            if BurdJournals.UI.DebugPanel.matchesBulkTraitAction("addallpositivetraits", traitName) then
                 itemData.item.selected = true
                 panel.selectedTraits[traitName] = true
             end
         end
         panel.selectedType = "bloody"
     elseif preset == "allnegative" then
-        -- Select ALL negative traits from the list (use trait cost to determine polarity)
-        -- Build a cost lookup from CharacterTraitDefinition for accurate polarity
-        local traitCostLookup = BurdJournals.UI.DebugPanel.buildTraitCostLookup()
-        
-        -- Select all traits with cost < 0 (negative traits)
+        -- Select ALL negative traits from the list using the shared polarity resolver.
         for _, itemData in ipairs(panel.traitList.items) do
             local traitName = itemData.item.name
-            local cost = traitCostLookup[traitName:lower()] or 0
-            if cost < 0 then  -- Negative traits have cost < 0
+            if BurdJournals.UI.DebugPanel.matchesBulkTraitAction("addallnegativetraits", traitName) then
                 itemData.item.selected = true
                 panel.selectedTraits[traitName] = true
             end
@@ -2348,11 +4845,13 @@ function BurdJournals.UI.DebugPanel:onSpawnClick()
         traits = {},
         recipes = {},
         stats = {},
+        manualRewards = true,
         owner = nil,
         ownerMode = "none",
         forceCurseType = nil,
         forceCurseTraitId = nil,
         forceCurseSkillName = nil,
+        cursedSpawnState = "dormant",
         cursedUnleashed = false,
         forgetSlot = false,
         spawnProfile = (panel.spawnProfile or "normal"),
@@ -2433,11 +4932,28 @@ function BurdJournals.UI.DebugPanel:onSpawnClick()
                 end
             end
         end
-        
+
         -- Handle custom flavor text (for all non-blank journals)
         local flavorText = panel.flavorEntry:getText()
         if flavorText and flavorText ~= "" then
             params.flavorText = flavorText
+        end
+
+        local supportsGeneratedLore = (journalType == "worn" or journalType == "bloody" or journalType == "cursed" or journalType == "yuletide")
+        if supportsGeneratedLore then
+            params.loreMode = getSpawnLoreMode(panel)
+            if params.loreMode == "custom" then
+                local customLoreNote = normalizeDebugLoreText(panel.loreNoteEntry and panel.loreNoteEntry:getText() or nil)
+                if not customLoreNote then
+                    self:setStatus(
+                        getText("UI_BurdJournals_DebugSpawnCustomNoteRequired")
+                            or "Enter a custom lore note or switch Lore Mode back to Dynamic.",
+                        {r=1, g=0.55, b=0.35}
+                    )
+                    return
+                end
+                params.loreNoteText = customLoreNote
+            end
         end
 
         -- Spawn metadata
@@ -2449,10 +4965,27 @@ function BurdJournals.UI.DebugPanel:onSpawnClick()
         if panel.forgetSlotTick and panel.forgetSlotTick.selected then
             params.forgetSlot = panel.forgetSlotTick.selected[1] == true
         end
-        if journalType == "cursed" then
-            if panel.cursedStateCombo then
-                params.cursedUnleashed = (panel.cursedStateCombo.selected == 2)
+        if journalType == "yuletide" then
+            if panel.yuletideStateCombo and panel.yuletideStateCombo.selected and panel.yuletideStateCombo.selected > 0 then
+                params.yuletideState = panel.yuletideStateCombo:getOptionData(panel.yuletideStateCombo.selected)
+                    or panel.yuletideStateCombo.options[panel.yuletideStateCombo.selected]
             end
+            if panel.yuletideWrappedVariantCombo and panel.yuletideWrappedVariantCombo.selected and panel.yuletideWrappedVariantCombo.selected > 0 then
+                params.yuletideWrappedVariant = panel.yuletideWrappedVariantCombo:getOptionData(panel.yuletideWrappedVariantCombo.selected)
+                    or panel.yuletideWrappedVariantCombo.options[panel.yuletideWrappedVariantCombo.selected]
+            end
+        end
+        if journalType == "cursed" then
+            local cursedSpawnState = "dormant"
+            if panel.cursedStateCombo then
+                if panel.cursedStateCombo.selected == 3 then
+                    cursedSpawnState = "unleashed"
+                elseif panel.cursedStateCombo.selected == 2 then
+                    cursedSpawnState = "hidden"
+                end
+            end
+            params.cursedSpawnState = cursedSpawnState
+            params.cursedUnleashed = (cursedSpawnState == "unleashed")
             if panel.forceCurseCombo and panel.forceCurseCombo.selected and panel.forceCurseCombo.selected > 0 then
                 params.forceCurseType = panel.forceCurseCombo:getOptionData(panel.forceCurseCombo.selected)
                     or panel.forceCurseCombo.options[panel.forceCurseCombo.selected]
@@ -2523,10 +5056,15 @@ function BurdJournals.UI.DebugPanel:onSpawnClick()
         for traitName, _ in pairs(panel.selectedTraits) do
             table.insert(params.traits, traitName)
         end
+
+        -- Add selected recipes
+        for recipeName, _ in pairs(panel.selectedRecipes or {}) do
+            table.insert(params.recipes, recipeName)
+        end
     end
     
     BurdJournals.debugPrint("[BurdJournals] DEBUG UI: Spawning " .. journalType .. " journal" ..
-          (journalType ~= "blank" and (" with " .. #params.skills .. " skills, " .. #params.traits .. " traits") or ""))
+          (journalType ~= "blank" and (" with " .. #params.skills .. " skills, " .. #params.traits .. " traits, " .. #params.recipes .. " recipes") or ""))
     BurdJournals.debugPrint("[BurdJournals] DEBUG UI: Spawn profile = " .. tostring(params.spawnProfile))
     BurdJournals.debugPrint("[BurdJournals] DEBUG UI: Origin mode = " .. tostring(params.originMode))
     
@@ -2583,9 +5121,10 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     local y = padding
     local fullWidth = panel.width - padding * 2
     local btnHeight = 24
+    local sectionPadding = 8
     
     -- Player selector (for admins to select other players)
-    local playerLabel = ISLabel:new(padding, y, 18, "Target Player:", 1, 1, 1, 1, UIFont.Small, true)
+    local playerLabel = ISLabel:new(padding, y, 18, "Selected Player:", 1, 1, 1, 1, UIFont.Small, true)
     playerLabel:initialise()
     playerLabel:instantiate()
     panel:addChild(playerLabel)
@@ -2605,15 +5144,77 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     refreshBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
     panel:addChild(refreshBtn)
     y = y + 28
-    
-    -- Skills section header with search field
-    local skillsLabel = ISLabel:new(padding, y, 18, "Skills (Click squares to set level):", 0.9, 0.9, 0.7, 1, UIFont.Small, true)
-    skillsLabel:initialise()
-    skillsLabel:instantiate()
-    panel:addChild(skillsLabel)
-    
-    -- Skill search field
-    panel.skillSearchEntry = ISTextEntryBox:new("", padding + 200, y - 2, 150, 20)
+
+    panel.characterSummaryLabel = ISLabel:new(padding, y, 18, "", 0.82, 0.88, 0.98, 1, UIFont.Small, true)
+    panel.characterSummaryLabel:initialise()
+    panel.characterSummaryLabel:instantiate()
+    panel:addChild(panel.characterSummaryLabel)
+    y = y + 18
+
+    panel.characterHelpLabel = ISLabel:new(padding, y, 18, "", 0.62, 0.74, 0.86, 1, UIFont.Small, true)
+    panel.characterHelpLabel:initialise()
+    panel.characterHelpLabel:instantiate()
+    panel:addChild(panel.characterHelpLabel)
+    y = y + 22
+
+    panel.characterTabState = {buttons = {}, panels = {}, current = "skills"}
+    local makeDebugButton = type(createDebugButton) == "function"
+        and createDebugButton
+        or BurdJournals.UI.DebugPanel.createDebugButton
+        or function(parentRef, x, y, w, h, title, owner, callback, internal, borderColor, backgroundColor, tooltip)
+            local btn = ISButton:new(x, y, w, h, title, owner, callback)
+            btn:initialise()
+            btn:instantiate()
+            btn.font = UIFont.Small
+            btn.textColor = {r=1, g=1, b=1, a=1}
+            btn.borderColor = borderColor or {r=0.4, g=0.5, b=0.6, a=1}
+            btn.backgroundColor = backgroundColor or {r=0.2, g=0.25, b=0.3, a=1}
+            if internal then
+                btn.internal = internal
+            end
+            if tooltip and btn.setTooltip then
+                btn:setTooltip(tooltip)
+            end
+            parentRef:addChild(btn)
+            return btn
+        end
+    local makeDebugSectionPanel = type(createDebugSectionPanel) == "function"
+        and createDebugSectionPanel
+        or BurdJournals.UI.DebugPanel.createDebugSectionPanel
+        or function(parentRef, x, y, w, h)
+            local childPanel = ISPanel:new(x, y, w, h)
+            childPanel:initialise()
+            childPanel:instantiate()
+            childPanel.backgroundColor = {r=0.09, g=0.09, b=0.11, a=0}
+            childPanel.borderColor = {r=0.2, g=0.24, b=0.3, a=0}
+            parentRef:addChild(childPanel)
+            return childPanel
+        end
+    local tabX = padding
+    local tabWidth = 84
+    local tabHeight = 22
+    local tabSpacing = 6
+    panel.characterTabState.buttons.skills = makeDebugButton(panel, tabX, y, tabWidth, tabHeight, "Skills", self, BurdJournals.UI.DebugPanel.onCharacterSubTab, "skills")
+    tabX = tabX + tabWidth + tabSpacing
+    panel.characterTabState.buttons.traits = makeDebugButton(panel, tabX, y, tabWidth, tabHeight, "Traits", self, BurdJournals.UI.DebugPanel.onCharacterSubTab, "traits")
+    tabX = tabX + tabWidth + tabSpacing
+    panel.characterTabState.buttons.recipes = makeDebugButton(panel, tabX, y, tabWidth, tabHeight, "Recipes", self, BurdJournals.UI.DebugPanel.onCharacterSubTab, "recipes")
+    y = y + tabHeight + 8
+
+    local sectionHeight = math.max(220, panel.height - y - padding)
+    local sectionWidth = fullWidth
+
+    local skillsSection = makeDebugSectionPanel(panel, padding, y, sectionWidth, sectionHeight)
+    panel.characterTabState.panels.skills = skillsSection
+    local sy = sectionPadding
+    local contentWidth = skillsSection.width - sectionPadding * 2
+    local skillLabelText = getText("UI_BurdJournals_DebugSkillsChangeLevel")
+    local skillLabel = ISLabel:new(sectionPadding, sy + 2, 18, skillLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    skillLabel:initialise()
+    skillLabel:instantiate()
+    skillsSection:addChild(skillLabel)
+    local skillSearchX = math.max(210, contentWidth - 160)
+    panel.skillSearchEntry = ISTextEntryBox:new("", skillSearchX, sy, 150, 20)
     panel.skillSearchEntry:initialise()
     panel.skillSearchEntry:instantiate()
     panel.skillSearchEntry.font = UIFont.Small
@@ -2621,12 +5222,11 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     panel.skillSearchEntry.onTextChange = function()
         BurdJournals.UI.DebugPanel.filterCharacterSkillList(self)
     end
-    panel:addChild(panel.skillSearchEntry)
-    y = y + 22
-    
-    -- Skill list (scrollable) with interactive level visualizers
-    local skillListHeight = 140
-    panel.charSkillList = ISScrollingListBox:new(padding, y, fullWidth, skillListHeight)
+    skillsSection:addChild(panel.skillSearchEntry)
+    panel.skillSourceFilter = createSectionSourceFilterStrip(skillsSection, self, skillLabelText, skillSearchX, sy, sectionPadding, BurdJournals.UI.DebugPanel.filterCharacterSkillList, "Filter skill rows by source.")
+    sy = sy + 24
+    local skillListHeight = math.max(120, sectionHeight - 98)
+    panel.charSkillList = ISScrollingListBox:new(sectionPadding, sy, contentWidth, skillListHeight)
     panel.charSkillList:initialise()
     panel.charSkillList:instantiate()
     panel.charSkillList.itemheight = 24
@@ -2635,50 +5235,42 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     panel.charSkillList.doDrawItem = BurdJournals.UI.DebugPanel.drawCharacterSkillItem
     panel.charSkillList.onMouseDown = BurdJournals.UI.DebugPanel.onCharacterSkillListClick
     panel.charSkillList.parentPanel = self
-    panel:addChild(panel.charSkillList)
-    y = y + skillListHeight + 5
-    
-    -- XP input row for focused skill
-    panel.focusedSkill = nil  -- Track which skill is selected for XP addition
-    
-    panel.xpLabel = ISLabel:new(padding, y, 18, "Add XP:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.charSkillList)
+    sy = sy + skillListHeight + 6
+    panel.focusedSkill = nil
+    panel.xpLabel = ISLabel:new(sectionPadding, sy + 2, 18, "Add XP:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
     panel.xpLabel:initialise()
     panel.xpLabel:instantiate()
-    panel:addChild(panel.xpLabel)
-    
-    panel.xpEntry = ISTextEntryBox:new("100", padding + 50, y - 2, 60, 20)
+    skillsSection:addChild(panel.xpLabel)
+    panel.xpEntry = ISTextEntryBox:new("100", sectionPadding + 48, sy, 60, 20)
     panel.xpEntry:initialise()
     panel.xpEntry:instantiate()
     panel.xpEntry.font = UIFont.Small
     panel.xpEntry:setOnlyNumbers(true)
     panel.xpEntry.backgroundColor = {r=0.15, g=0.15, b=0.18, a=1}
     panel.xpEntry.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    panel:addChild(panel.xpEntry)
-    
-    panel.xpSkillLabel = ISLabel:new(padding + 115, y, 18, "Click skill row to select", 0.5, 0.6, 0.7, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.xpEntry)
+    panel.xpSkillLabel = ISLabel:new(sectionPadding + 114, sy + 2, 18, "Click skill row to select", 0.5, 0.6, 0.7, 1, UIFont.Small, true)
     panel.xpSkillLabel:initialise()
     panel.xpSkillLabel:instantiate()
-    panel:addChild(panel.xpSkillLabel)
-    
-    local addXpBtn = ISButton:new(fullWidth - 50, y - 2, 60, 20, "+Add", self, BurdJournals.UI.DebugPanel.onCharacterAddXP)
-    addXpBtn:initialise()
-    addXpBtn:instantiate()
-    addXpBtn.font = UIFont.Small
-    addXpBtn.textColor = {r=1, g=1, b=1, a=1}
-    addXpBtn.borderColor = {r=0.3, g=0.5, b=0.4, a=1}
-    addXpBtn.backgroundColor = {r=0.2, g=0.3, b=0.25, a=1}
-    panel:addChild(addXpBtn)
+    skillsSection:addChild(panel.xpSkillLabel)
+    local addXpBtn = createDebugButton(skillsSection, contentWidth - 60 + sectionPadding, sy, 60, 20, "+Add", self, BurdJournals.UI.DebugPanel.onCharacterAddXP, nil, {r=0.3, g=0.5, b=0.4, a=1}, {r=0.2, g=0.3, b=0.25, a=1})
     panel.addXpBtn = addXpBtn
-    y = y + 25
-    
-    -- Traits section header with search field
-    local traitsLabel = ISLabel:new(padding, y, 18, "Traits (Add/Remove):", 0.9, 0.9, 0.7, 1, UIFont.Small, true)
-    traitsLabel:initialise()
-    traitsLabel:instantiate()
-    panel:addChild(traitsLabel)
-    
-    -- Trait search field
-    panel.traitSearchEntry = ISTextEntryBox:new("", padding + 140, y - 2, 150, 20)
+    sy = sy + 28
+    createDebugButton(skillsSection, sectionPadding, sy, 104, btnHeight, "All Skills Max", self, BurdJournals.UI.DebugPanel.onCharCmd, "setallmax", {r=0.3, g=0.6, b=0.3, a=1}, {r=0.15, g=0.3, b=0.15, a=1})
+    createDebugButton(skillsSection, sectionPadding + 110, sy, 108, btnHeight, "All Skills Zero", self, BurdJournals.UI.DebugPanel.onCharCmd, "setallzero", {r=0.6, g=0.4, b=0.3, a=1}, {r=0.35, g=0.2, b=0.15, a=1})
+    createDebugButton(skillsSection, sectionPadding + 224, sy, 96, btnHeight, "Dump Skills", self, BurdJournals.UI.DebugPanel.onCharCmd, "dumpskills")
+
+    local traitsSection = createDebugSectionPanel(panel, padding, y, sectionWidth, sectionHeight)
+    panel.characterTabState.panels.traits = traitsSection
+    local ty = sectionPadding
+    local traitLabelText = getText("UI_BurdJournals_DebugTraitsAddRemove")
+    local traitLabel = ISLabel:new(sectionPadding, ty + 2, 18, traitLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    traitLabel:initialise()
+    traitLabel:instantiate()
+    traitsSection:addChild(traitLabel)
+    local traitSearchX = math.max(210, contentWidth - 160)
+    panel.traitSearchEntry = ISTextEntryBox:new("", traitSearchX, ty, 150, 20)
     panel.traitSearchEntry:initialise()
     panel.traitSearchEntry:instantiate()
     panel.traitSearchEntry.font = UIFont.Small
@@ -2686,12 +5278,11 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     panel.traitSearchEntry.onTextChange = function()
         BurdJournals.UI.DebugPanel.filterCharacterTraitList(self)
     end
-    panel:addChild(panel.traitSearchEntry)
-    y = y + 22
-    
-    -- Trait list (scrollable) with Add/Remove buttons
-    local traitListHeight = 110
-    panel.charTraitList = ISScrollingListBox:new(padding, y, fullWidth, traitListHeight)
+    traitsSection:addChild(panel.traitSearchEntry)
+    panel.traitSourceFilter = createSectionSourceFilterStrip(traitsSection, self, traitLabelText, traitSearchX, ty, sectionPadding, BurdJournals.UI.DebugPanel.filterCharacterTraitList, "Filter trait rows by source.")
+    ty = ty + 24
+    local traitListHeight = math.max(96, sectionHeight - 122)
+    panel.charTraitList = ISScrollingListBox:new(sectionPadding, ty, contentWidth, traitListHeight)
     panel.charTraitList:initialise()
     panel.charTraitList:instantiate()
     panel.charTraitList.itemheight = 24
@@ -2700,71 +5291,68 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     panel.charTraitList.doDrawItem = BurdJournals.UI.DebugPanel.drawCharacterTraitItem
     panel.charTraitList.onMouseDown = BurdJournals.UI.DebugPanel.onCharacterTraitListClick
     panel.charTraitList.parentPanel = self
-    panel:addChild(panel.charTraitList)
-    y = y + traitListHeight + 10
-    
-    -- Action buttons row 1
-    local btnWidth = 100
-    local btnSpacing = 6
-    local btnX = padding
-    
-    local allMaxBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "All Skills Max", self, BurdJournals.UI.DebugPanel.onCharCmd)
-    allMaxBtn:initialise()
-    allMaxBtn:instantiate()
-    allMaxBtn.font = UIFont.Small
-    allMaxBtn.internal = "setallmax"
-    allMaxBtn.textColor = {r=1, g=1, b=1, a=1}
-    allMaxBtn.borderColor = {r=0.3, g=0.6, b=0.3, a=1}
-    allMaxBtn.backgroundColor = {r=0.15, g=0.3, b=0.15, a=1}
-    panel:addChild(allMaxBtn)
-    btnX = btnX + btnWidth + btnSpacing
-    
-    local allZeroBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "All Skills Zero", self, BurdJournals.UI.DebugPanel.onCharCmd)
-    allZeroBtn:initialise()
-    allZeroBtn:instantiate()
-    allZeroBtn.font = UIFont.Small
-    allZeroBtn.internal = "setallzero"
-    allZeroBtn.textColor = {r=1, g=1, b=1, a=1}
-    allZeroBtn.borderColor = {r=0.6, g=0.4, b=0.3, a=1}
-    allZeroBtn.backgroundColor = {r=0.35, g=0.2, b=0.15, a=1}
-    panel:addChild(allZeroBtn)
-    btnX = btnX + btnWidth + btnSpacing
-    
-    local removeAllTraitsBtn = ISButton:new(btnX, y, btnWidth + 20, btnHeight, "Remove All Traits", self, BurdJournals.UI.DebugPanel.onCharCmd)
-    removeAllTraitsBtn:initialise()
-    removeAllTraitsBtn:instantiate()
-    removeAllTraitsBtn.font = UIFont.Small
-    removeAllTraitsBtn.internal = "removealltraits"
-    removeAllTraitsBtn.textColor = {r=1, g=1, b=1, a=1}
-    removeAllTraitsBtn.borderColor = {r=0.6, g=0.3, b=0.3, a=1}
-    removeAllTraitsBtn.backgroundColor = {r=0.4, g=0.15, b=0.15, a=1}
-    panel:addChild(removeAllTraitsBtn)
-    y = y + btnHeight + 5
-    
-    -- Action buttons row 2
-    btnX = padding
-    
-    local dumpSkillsBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Dump Skills", self, BurdJournals.UI.DebugPanel.onCharCmd)
-    dumpSkillsBtn:initialise()
-    dumpSkillsBtn:instantiate()
-    dumpSkillsBtn.font = UIFont.Small
-    dumpSkillsBtn.internal = "dumpskills"
-    dumpSkillsBtn.textColor = {r=1, g=1, b=1, a=1}
-    dumpSkillsBtn.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
-    dumpSkillsBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
-    panel:addChild(dumpSkillsBtn)
-    btnX = btnX + btnWidth + btnSpacing
-    
-    local dumpTraitsBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Dump Traits", self, BurdJournals.UI.DebugPanel.onCharCmd)
-    dumpTraitsBtn:initialise()
-    dumpTraitsBtn:instantiate()
-    dumpTraitsBtn.font = UIFont.Small
-    dumpTraitsBtn.internal = "dumptraits"
-    dumpTraitsBtn.textColor = {r=1, g=1, b=1, a=1}
-    dumpTraitsBtn.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
-    dumpTraitsBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
-    panel:addChild(dumpTraitsBtn)
-    
+    traitsSection:addChild(panel.charTraitList)
+    ty = ty + traitListHeight + 6
+    panel.traitReconcileTick = ISTickBox:new(sectionPadding, ty - 2, contentWidth, 20, "", self, nil)
+    panel.traitReconcileTick:initialise()
+    panel.traitReconcileTick:instantiate()
+    panel.traitReconcileTick:addOption(getText("UI_BurdJournals_DebugAllowTraitReconciliation") or "Allow Trait Reconciliation")
+    panel.traitReconcileTick.selected[1] = false
+    if panel.traitReconcileTick.setTooltip then
+        panel.traitReconcileTick:setTooltip(getText("UI_BurdJournals_DebugAllowTraitReconciliationTip") or "When enabled, debug trait adds run BSJ trait XP reconciliation after the trait is applied.")
+    end
+    traitsSection:addChild(panel.traitReconcileTick)
+    ty = ty + 24
+    createDebugButton(traitsSection, sectionPadding, ty, 122, btnHeight, getText("UI_BurdJournals_DebugAddAllTraits") or "Add All Traits", self, BurdJournals.UI.DebugPanel.onCharCmd, "addalltraits", {r=0.3, g=0.55, b=0.32, a=1}, {r=0.15, g=0.3, b=0.17, a=1})
+    createDebugButton(traitsSection, sectionPadding + 128, ty, 118, btnHeight, getText("UI_BurdJournals_DebugAddAllPositiveTraits") or "+ All Positive", self, BurdJournals.UI.DebugPanel.onCharCmd, "addallpositivetraits", {r=0.28, g=0.52, b=0.34, a=1}, {r=0.14, g=0.28, b=0.18, a=1})
+    createDebugButton(traitsSection, sectionPadding + 252, ty, 118, btnHeight, getText("UI_BurdJournals_DebugAddAllNegativeTraits") or "+ All Negative", self, BurdJournals.UI.DebugPanel.onCharCmd, "addallnegativetraits", {r=0.55, g=0.42, b=0.22, a=1}, {r=0.3, g=0.22, b=0.12, a=1})
+    createDebugButton(traitsSection, sectionPadding + 376, ty, 96, btnHeight, "Dump Traits", self, BurdJournals.UI.DebugPanel.onCharCmd, "dumptraits")
+    ty = ty + btnHeight + 6
+    createDebugButton(traitsSection, sectionPadding, ty, 122, btnHeight, getText("UI_BurdJournals_DebugRemoveAllTraits") or "Remove All Traits", self, BurdJournals.UI.DebugPanel.onCharCmd, "removealltraits", {r=0.6, g=0.3, b=0.3, a=1}, {r=0.4, g=0.15, b=0.15, a=1})
+    createDebugButton(traitsSection, sectionPadding + 128, ty, 118, btnHeight, getText("UI_BurdJournals_DebugRemoveAllPositiveTraits") or "- All Positive", self, BurdJournals.UI.DebugPanel.onCharCmd, "removeallpositivetraits", {r=0.58, g=0.34, b=0.28, a=1}, {r=0.34, g=0.18, b=0.14, a=1})
+    createDebugButton(traitsSection, sectionPadding + 252, ty, 118, btnHeight, getText("UI_BurdJournals_DebugRemoveAllNegativeTraits") or "- All Negative", self, BurdJournals.UI.DebugPanel.onCharCmd, "removeallnegativetraits", {r=0.62, g=0.28, b=0.24, a=1}, {r=0.36, g=0.14, b=0.12, a=1})
+
+    local recipesSection = createDebugSectionPanel(panel, padding, y, sectionWidth, sectionHeight)
+    panel.characterTabState.panels.recipes = recipesSection
+    local ry = sectionPadding
+    panel.charRecipeSummaryLabel = ISLabel:new(sectionPadding, ry + 2, 18, "Known recipes for the selected player.", 0.78, 0.82, 0.9, 1, UIFont.Small, true)
+    panel.charRecipeSummaryLabel:initialise()
+    panel.charRecipeSummaryLabel:instantiate()
+    recipesSection:addChild(panel.charRecipeSummaryLabel)
+    ry = ry + 20
+    local recipeLabelText = getText("UI_BurdJournals_DebugRecipesViewSources")
+    local recipeLabel = ISLabel:new(sectionPadding, ry + 2, 18, recipeLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    recipeLabel:initialise()
+    recipeLabel:instantiate()
+    recipesSection:addChild(recipeLabel)
+    local recipeSearchX = math.max(210, contentWidth - 160)
+    panel.recipeSearchEntry = ISTextEntryBox:new("", recipeSearchX, ry, 150, 20)
+    panel.recipeSearchEntry:initialise()
+    panel.recipeSearchEntry:instantiate()
+    panel.recipeSearchEntry.font = UIFont.Small
+    panel.recipeSearchEntry:setTooltip("Type to filter recipes...")
+    panel.recipeSearchEntry.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterCharacterRecipeList(self)
+    end
+    recipesSection:addChild(panel.recipeSearchEntry)
+    panel.recipeSourceFilter = createSectionSourceFilterStrip(recipesSection, self, recipeLabelText, recipeSearchX, ry, sectionPadding, BurdJournals.UI.DebugPanel.filterCharacterRecipeList, "Filter recipe rows by source.")
+    ry = ry + 24
+    local recipeListHeight = math.max(120, sectionHeight - 88)
+    panel.charRecipeList = ISScrollingListBox:new(sectionPadding, ry, contentWidth, recipeListHeight)
+    panel.charRecipeList:initialise()
+    panel.charRecipeList:instantiate()
+    panel.charRecipeList.itemheight = 30
+    panel.charRecipeList.backgroundColor = {r=0.08, g=0.08, b=0.1, a=1}
+    panel.charRecipeList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    panel.charRecipeList.doDrawItem = BurdJournals.UI.DebugPanel.drawCharacterRecipeItem
+    panel.charRecipeList.onMouseDown = BurdJournals.UI.DebugPanel.onCharacterRecipeListClick
+    panel.charRecipeList.parentPanel = self
+    recipesSection:addChild(panel.charRecipeList)
+    ry = ry + recipeListHeight + 6
+    createDebugButton(recipesSection, sectionPadding, ry, 104, btnHeight, "Dump Recipes", self, BurdJournals.UI.DebugPanel.onCharCmd, "dumprecipes")
+
+    setDebugSubTabState(panel.characterTabState, "skills")
+
     -- Store reference
     self.charPanel = panel
     panel.targetPlayer = self.player  -- Default to current player
@@ -2774,53 +5362,52 @@ function BurdJournals.UI.DebugPanel:createCharacterPanel(startY, height)
     self:refreshCharacterData()
 end
 
+function BurdJournals.UI.DebugPanel:onCharacterSubTab(button)
+    local panel = self.charPanel
+    if not (panel and panel.characterTabState and button and button.internal) then
+        return
+    end
+    setDebugSubTabState(panel.characterTabState, tostring(button.internal))
+end
+
 -- Populate player dropdown with online players
 function BurdJournals.UI.DebugPanel:populateCharacterPlayerList()
     local panel = self.charPanel
     if not panel or not panel.targetPlayerCombo then return end
-    
+
+    local selectedPlayer = panel.targetPlayer or self:getSharedTargetPlayer() or self.player
+    local selectedName = getDebugTargetPlayerName(selectedPlayer)
+
     panel.targetPlayerCombo:clear()
-    
-    -- Add current player first (use addOptionWithData to store player reference)
-    local currentName = self.player and self.player:getUsername() or "You"
-    panel.targetPlayerCombo:addOptionWithData(currentName, self.player)
-    
-    -- In multiplayer, only admins can target other online players.
-    if self:canTargetOtherPlayers() then
-        local onlinePlayers = getOnlinePlayers()
-        if onlinePlayers then
-            for i = 0, onlinePlayers:size() - 1 do
-                local p = onlinePlayers:get(i)
-                if p and p ~= self.player then
-                    local name = p:getUsername() or ("Player " .. i)
-                    panel.targetPlayerCombo:addOptionWithData(name, p)
-                end
-            end
-        end
+
+    local targetablePlayers = collectDebugTargetablePlayers(self)
+    for _, playerObj in ipairs(targetablePlayers) do
+        panel.targetPlayerCombo:addOptionWithData(getDebugTargetPlayerName(playerObj), playerObj)
     end
-    
-    panel.targetPlayerCombo:select(currentName)
-    panel.targetPlayer = self.player
+
+    if panel.targetPlayerCombo.select then
+        panel.targetPlayerCombo:select(selectedName)
+    else
+        panel.targetPlayerCombo.selected = 1
+    end
+    panel.targetPlayer = selectedPlayer
 end
 
 -- Handle player selection change
 function BurdJournals.UI.DebugPanel:onCharacterTargetPlayerChange(combo)
+    if self.suppressTargetSync then
+        return
+    end
+
     local panel = self.charPanel
     if not panel then return end
     
     local selected = combo:getSelectedIndex()
     local data = combo.options[selected + 1]
     if data and data.data then
-        if data.data ~= self.player and not self:canTargetOtherPlayers() then
-            local currentName = self.player and self.player:getUsername() or "You"
-            combo:select(currentName)
-            panel.targetPlayer = self.player
-            self:setStatus(getText("UI_BurdJournals_AdminOnly") or "This command requires admin access.", {r=1, g=0.6, b=0.3})
-            return
-        end
-        panel.targetPlayer = data.data
-        self:refreshCharacterData()
-        self:setStatus("Viewing: " .. (panel.targetPlayer:getUsername() or "Unknown"), {r=0.5, g=0.8, b=1})
+        self:applySharedTargetPlayer(data.data, {
+            statusText = BurdJournals.formatText(getText("UI_BurdJournals_DebugViewingPlayer"), getDebugTargetPlayerName(data.data)),
+        })
     end
 end
 
@@ -2829,6 +5416,44 @@ function BurdJournals.UI.DebugPanel:onCharacterRefresh()
     self:populateCharacterPlayerList()
     self:refreshCharacterData()
     self:setStatus("Character data refreshed", {r=0.5, g=0.8, b=1})
+end
+
+function BurdJournals.UI.DebugPanel:updateCharacterSummary()
+    local panel = self.charPanel
+    if not panel then
+        return
+    end
+
+    local targetPlayer = panel.targetPlayer or self:getSharedTargetPlayer() or self.player
+    local targetName = getDebugTargetPlayerName(targetPlayer)
+
+    if panel.characterSummaryLabel then
+        panel.characterSummaryLabel:setName("Viewing " .. targetName .. ". Skill and trait changes on this tab apply to that player.")
+    end
+
+    if panel.characterHelpLabel then
+        local helpText
+        if not BurdJournals.UI.DebugPanel.isDiminishingEnabled() then
+            helpText = getText("UI_BurdJournals_DebugReclaimHistoryDisabled")
+                or "Journal reclaim reduction is disabled. Turn on diminished XP recovery to inspect reclaim history."
+        else
+            local journalName = self.editingJournal and self.editingJournal.getName and self.editingJournal:getName() or nil
+            if journalName and journalName ~= "" then
+                helpText = BurdJournals.formatText(
+                    getText("UI_BurdJournals_DebugReclaimPreviewReady")
+                        or "Journal reclaim preview is ready for %s. Open Journal Editor and select a skill to inspect the next reclaim values.",
+                    targetName
+                )
+            else
+                helpText = BurdJournals.formatText(
+                    getText("UI_BurdJournals_DebugReclaimJournalBased")
+                        or "Journal reclaim reduction is journal-based. Open Journal Editor, load a journal, and pick a skill to inspect the next reclaim values for %s.",
+                    targetName
+                )
+            end
+        end
+        panel.characterHelpLabel:setName(helpText)
+    end
 end
 
 -- Refresh character skill/trait data
@@ -2841,6 +5466,8 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
         -- No player yet, skip population
         return 
     end
+    panel.targetPlayer = targetPlayer
+    self:updateCharacterSummary()
 
     -- Clear existing lists safely
     if panel.charSkillList and panel.charSkillList.clear then 
@@ -2848,6 +5475,9 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
     end
     if panel.charTraitList and panel.charTraitList.clear then 
         panel.charTraitList:clear()
+    end
+    if panel.charRecipeList and panel.charRecipeList.clear then
+        panel.charRecipeList:clear()
     end
     
     -- Populate skills using dynamic discovery
@@ -2873,6 +5503,7 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
                     local p = onlinePlayers:get(i)
                     if p and p.getUsername and p:getUsername() == username then
                         targetPlayer = p
+                        panel.targetPlayer = p
                         if p.getXp then
                             xpObj = p:getXp()
                         end
@@ -2930,7 +5561,7 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
             
             -- Method 2: Get XP and calculate level (fallback)
             if level == 0 and xpObj and xpObj.getXP then
-                local xp = xpObj:getXP(perk)
+                local xp = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(targetPlayer, perk, skill.name) or xpObj:getXP(perk)
                 if type(xp) == "number" and xp > 0 then
                     currentXP = xp
                     -- Calculate level from XP using corrected helper
@@ -2952,7 +5583,7 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
             
             -- Get current XP if we didn't already
             if currentXP == 0 and xpObj and xpObj.getXP then
-                local xp = xpObj:getXP(perk)
+                local xp = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(targetPlayer, perk, skill.name) or xpObj:getXP(perk)
                 if type(xp) == "number" then
                     currentXP = xp
                 end
@@ -2961,6 +5592,8 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
         
         local prefix = skill.isVanilla == false and "[MOD] " or ""
         local itemText = prefix .. skill.displayName
+        local source = BurdJournals.getSkillModSource and BurdJournals.getSkillModSource(skill.name) or (skill.isVanilla == false and "Modded" or "Vanilla")
+        local sourceId = BurdJournals.getSkillModId and BurdJournals.getSkillModId(skill.name) or (skill.isVanilla == false and "modded" or "vanilla")
         
         if panel.charSkillList then
             panel.charSkillList:addItem(itemText, {
@@ -2970,7 +5603,9 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
                 level = level,
                 currentXP = currentXP,
                 isPassive = skill.isPassive,
-                isVanilla = skill.isVanilla
+                isVanilla = skill.isVanilla,
+                source = source,
+                sourceId = sourceId,
             })
         end
     end
@@ -2997,8 +5632,10 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
         for _, t in ipairs(negativeTraits) do table.insert(discoveredTraits, t) end
     end
     
-    -- Determine trait polarity from CharacterTraitDefinition
-    -- Also deduplicate by display name to handle B42 trait variants
+    local traitCostLookup = BurdJournals.UI.DebugPanel.buildTraitCostLookup()
+
+    -- Determine trait polarity from the shared resolver and deduplicate by display name.
+    -- This keeps the DebugPanel aligned even when trait definitions expose aliases.
     local addedDisplayNames = {}  -- Track display names to prevent visual duplicates
     for _, traitId in ipairs(discoveredTraits) do
         local lowerTraitId = string.lower(traitId)
@@ -3014,33 +5651,18 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
             if not addedDisplayNames[displayNameLower] then
                 addedTraits[lowerTraitId] = true
                 addedDisplayNames[displayNameLower] = traitId
+                local traitSource = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitId) or "Vanilla"
+                local traitSourceId = BurdJournals.getTraitModId and BurdJournals.getTraitModId(traitId) or traitSource
                 
-                -- Determine if positive or negative by cost
-                local isPositive = true  -- Default to positive
-                if CharacterTraitDefinition and CharacterTraitDefinition.getTraits then
-                    local allDefs = CharacterTraitDefinition.getTraits()
-                    if allDefs then
-                        for i = 0, allDefs:size() - 1 do
-                            local def = allDefs:get(i)
-                            if def then
-                                local defTraitId = nil
-                                local traitType = def.getType and def:getType() or nil
-                                if traitType and traitType.getName then
-                                    defTraitId = traitType:getName()
-                                elseif traitType then
-                                    defTraitId = tostring(traitType):gsub("^base:", "")
-                                end
-                                if defTraitId and string.lower(defTraitId) == lowerTraitId then
-                                    local cost = def.getCost and def:getCost() or 0
-                                    isPositive = cost >= 0  -- positive or neutral
-                                    break
-                                end
-                            end
-                        end
-                    end
-                end
+                local isPositive = BurdJournals.UI.DebugPanel.resolveTraitIsPositive(traitId, nil, traitCostLookup)
                 
-                table.insert(allTraits, {id = traitId, isPositive = isPositive})
+                table.insert(allTraits, {
+                    id = traitId,
+                    isPositive = isPositive,
+                    source = traitSource,
+                    sourceId = traitSourceId,
+                    isModded = traitSource ~= "Vanilla",
+                })
             end
         end
     end
@@ -3098,16 +5720,40 @@ function BurdJournals.UI.DebugPanel:refreshCharacterData()
                 displayName = displayName,
                 isPositive = trait.isPositive,
                 hasCount = count,
-                isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(trait.id)
+                isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(trait.id),
+                traitTexture = getDebugTraitTexture(trait.id),
+                source = trait.source,
+                sourceId = trait.sourceId,
+                isModded = trait.isModded,
             })
         end
     end
+
+    local recipeRows = buildDebugRecipeRows(targetPlayer, true, false)
+    for _, row in ipairs(recipeRows) do
+        row.recipeTexture = getDebugRecipeTexture()
+        row.magazineTexture = getDebugMagazineTexture(row.magazineSource)
+        row.magazineDisplayName = row.magazineDisplayName or (row.magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(row.magazineSource) or nil)
+        if panel.charRecipeList then
+            panel.charRecipeList:addItem(row.displayName, row)
+        end
+    end
+    if panel.charRecipeSummaryLabel then
+        panel.charRecipeSummaryLabel:setName(BurdJournals.formatText("Runtime recipes for selected player: %d", #recipeRows))
+    end
+    refreshDebugSourceFilterStrip(panel.skillSourceFilter, panel.charSkillList and panel.charSkillList.items or nil)
+    refreshDebugSourceFilterStrip(panel.traitSourceFilter, panel.charTraitList and panel.charTraitList.items or nil)
+    refreshDebugSourceFilterStrip(panel.recipeSourceFilter, panel.charRecipeList and panel.charRecipeList.items or nil)
+
+    BurdJournals.UI.DebugPanel.filterCharacterSkillList(self)
+    BurdJournals.UI.DebugPanel.filterCharacterTraitList(self)
+    BurdJournals.UI.DebugPanel.filterCharacterRecipeList(self)
 end
 
 -- Draw function for character skill items with interactive level visualizer
 function BurdJournals.UI.DebugPanel.drawCharacterSkillItem(self, y, item, alt)
     -- Safety checks for required values
-    local h = self.itemheight or 24
+    local h = getDebugListRowHeight(self, item, 24)
     
     -- CRITICAL: Must always return y + h for ISScrollingListBox
     if not item or not item.item then return y + h end
@@ -3119,6 +5765,7 @@ function BurdJournals.UI.DebugPanel.drawCharacterSkillItem(self, y, item, alt)
     
     -- Ensure we have valid dimensions
     local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH
     
     -- Check if this skill is selected for XP addition
     local parentPanel = self.parentPanel
@@ -3274,20 +5921,14 @@ function BurdJournals.UI.DebugPanel.onCharacterSkillListClick(self, x, y)
                     -- This bypasses XP scaling issues that affect Strength specifically
                     targetPlayer:setPerkLevelDebug(perk, clickedLevel)
                 else
-                    -- For non-passive skills, use XP-based approach
-                    local xpObj = targetPlayer:getXp()
-                    if xpObj then
-                        local currentXP = xpObj:getXP(perk)
-                        local targetXP = 0
-                        
-                        if clickedLevel > 0 then
-                            targetXP = perk:getTotalXpForLevel(clickedLevel)
-                        end
-                        
-                        local xpDiff = targetXP - currentXP
-                        if xpDiff ~= 0 then
-                            xpObj:AddXP(perk, xpDiff, false, false, false, true)
-                        end
+                    local targetXP = 0
+                    if clickedLevel > 0 then
+                        targetXP = (BurdJournals.getXPThresholdForLevel and BurdJournals.getXPThresholdForLevel(data.name, clickedLevel))
+                            or (perk.getTotalXpForLevel and perk:getTotalXpForLevel(clickedLevel))
+                            or 0
+                    end
+                    if BurdJournals.setSkillTotalXPCompat then
+                        BurdJournals.setSkillTotalXPCompat(targetPlayer, perk, targetXP, data.name)
                     end
                 end
             end
@@ -3399,11 +6040,11 @@ function BurdJournals.UI.DebugPanel:onCharacterAddXP()
     else
         -- Singleplayer: apply directly using AddXP
         if perk and targetPlayer then
-            local xpObj = targetPlayer:getXp()
-            if xpObj then
-                -- AddXP adds the specified amount directly for all skills
-                xpObj:AddXP(perk, xpToAdd, false, false, false, true)
-            end
+            applyDebugXPCompat(targetPlayer, perk, xpToAdd, {
+                skillName = focusedSkillName,
+                useMultipliers = false,
+                isPassive = false,
+            })
         end
     end
     
@@ -3434,7 +6075,7 @@ end
 -- Draw function for character trait items with Add/Remove buttons
 function BurdJournals.UI.DebugPanel.drawCharacterTraitItem(self, y, item, alt)
     -- Safety checks for required values
-    local h = self.itemheight or 24
+    local h = getDebugListRowHeight(self, item, 24)
     
     -- CRITICAL: Must always return y + h for ISScrollingListBox
     if not item or not item.item then return y + h end
@@ -3459,29 +6100,26 @@ function BurdJournals.UI.DebugPanel.drawCharacterTraitItem(self, y, item, alt)
         self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
     end
     
-    local textX = 8
-    
-    -- [HAS] indicator with count if duplicates
-    if data.hasCount > 0 then
-        local hasText = "[HAS]"
-        if data.hasCount > 1 then
-            hasText = "[x" .. data.hasCount .. "]"
-        end
-        self:drawText(hasText, textX, y + 4, 0.4, 0.8, 0.4, 1, UIFont.Small)
-        textX = textX + 40
-    else
-        textX = textX + 40  -- Keep alignment
-    end
-    
+    local iconSize = drawDebugListIcon(self, data.traitTexture or getDebugTraitTexture(data.id), 6, y, h, 0.95, 14)
+    local textX = 10 + math.max(iconSize, 14) + 6
+
     -- Trait name
-    local nameColor = data.isPositive and {0.5, 0.8, 0.5} or {0.8, 0.5, 0.5}
+    local nameColor = BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    self:drawText(BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown"), textX, y + 4, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
+
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+    local statusX = w - 142 - scrollOffset
     if data.isPassiveSkillTrait then
-        nameColor = {0.5, 0.5, 0.5}
+        self:drawText("Passive", statusX, y + 4, 0.4, 0.4, 0.4, 0.85, UIFont.Small)
+    elseif data.hasCount > 1 then
+        self:drawText("Owned x" .. tostring(data.hasCount), statusX, y + 4, 0.52, 0.82, 0.52, 1, UIFont.Small)
+    elseif data.hasCount > 0 then
+        self:drawText("Owned", statusX, y + 4, 0.52, 0.82, 0.52, 1, UIFont.Small)
+    else
+        self:drawText(BurdJournals.UI.DebugPanel.getTraitPolarityText(data), statusX, y + 4, nameColor[1], nameColor[2], nameColor[3], 0.95, UIFont.Small)
     end
-    self:drawText(data.displayName, textX, y + 4, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
     
     -- Buttons (right side, account for scrollbar)
-    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH
     if not data.isPassiveSkillTrait then
         local btnWidth = 45
         local btnHeight = 18
@@ -3498,9 +6136,6 @@ function BurdJournals.UI.DebugPanel.drawCharacterTraitItem(self, y, item, alt)
         self:drawRect(removeBtnX, btnY, btnWidth, btnHeight, 1, 0.3, 0.15, 0.15)
         self:drawRectBorder(removeBtnX, btnY, btnWidth, btnHeight, 0.8, 0.5, 0.3, 0.3)
         self:drawTextCentre("-Rem", removeBtnX + btnWidth / 2, btnY + 2, 1, 0.5, 0.5, 1, UIFont.Small)
-    else
-        -- Show passive skill trait indicator
-        self:drawText("[Passive]", w - 60 - scrollOffset, y + 4, 0.4, 0.4, 0.4, 0.7, UIFont.Small)
     end
     
     -- CRITICAL: Must return y + h for ISScrollingListBox
@@ -3509,11 +6144,10 @@ end
 
 -- Click handler for character trait list (Add/Remove buttons)
 function BurdJournals.UI.DebugPanel.onCharacterTraitListClick(self, x, y)
-    BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
+    local row = BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
     
     -- Safety checks
     if not self.items then return end
-    local row = self:rowAt(x, y)
     if not row or row <= 0 or row > #self.items then return end
     
     local item = self.items[row]
@@ -3543,17 +6177,28 @@ function BurdJournals.UI.DebugPanel.onCharacterTraitListClick(self, x, y)
         -- Add button clicked - update UI immediately (optimistic)
         data.hasCount = (data.hasCount or 0) + 1
         parentPanel:setStatus("Added trait: " .. data.displayName, {r=0.3, g=1, b=0.5})
+        local addOpts = BurdJournals.UI.DebugPanel.buildDebugTraitAddOptions(parentPanel)
         
         if isClient() and not isServer() then
             -- Multiplayer: send to server
             sendClientCommand("BurdJournals", "debugAddTrait", {
                 traitId = data.id,
+                allowTraitReconciliation = not (addOpts and addOpts.skipTraitReconciliation == true),
                 targetUsername = targetPlayer:getUsername()
             })
         else
             -- Singleplayer: apply directly
             if BurdJournals.safeAddTrait then
-                BurdJournals.safeAddTrait(targetPlayer, data.id)
+                local added = BurdJournals.safeAddTrait(targetPlayer, data.id, addOpts)
+                if added
+                    and not (addOpts and addOpts.skipTraitReconciliation == true)
+                    and BurdJournals.Server
+                    and BurdJournals.Server.resolveAndRemoveTraitConflicts then
+                    BurdJournals.Server.resolveAndRemoveTraitConflicts(targetPlayer, data.id)
+                end
+            end
+            if parentPanel.refreshCharacterData then
+                parentPanel:refreshCharacterData()
             end
         end
         
@@ -3601,6 +6246,9 @@ function BurdJournals.UI.DebugPanel.onCharacterTraitListClick(self, x, y)
                     end
                 end
             end
+            if parentPanel.refreshCharacterData then
+                parentPanel:refreshCharacterData()
+            end
         end
     end
 end
@@ -3614,18 +6262,13 @@ function BurdJournals.UI.DebugPanel.filterCharacterSkillList(self)
     if panel.skillSearchEntry and panel.skillSearchEntry.getText then
         searchText = panel.skillSearchEntry:getText()
     end
+    local selectedSourceId = panel.skillSourceFilter and panel.skillSourceFilter.selectedSourceId or "all"
     
-    -- If no search text, show all items
-    if searchText == "" then
-        for _, item in ipairs(panel.charSkillList.items) do
-            item.item.hidden = false
-        end
-    else
-        -- Filter items by name
-        for _, item in ipairs(panel.charSkillList.items) do
-            item.item.hidden = not debugSearchMatches(searchText, item.item.displayName, item.item.name, item.item.category)
-        end
-    end
+    applyDebugRowFilter(panel.charSkillList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.category, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
 -- Filter trait list based on search text
@@ -3637,16 +6280,155 @@ function BurdJournals.UI.DebugPanel.filterCharacterTraitList(self)
     if panel.traitSearchEntry and panel.traitSearchEntry.getText then
         searchText = panel.traitSearchEntry:getText()
     end
+    local selectedSourceId = panel.traitSourceFilter and panel.traitSourceFilter.selectedSourceId or "all"
     
-    -- If no search text, show all items
-    if searchText == "" then
-        for _, item in ipairs(panel.charTraitList.items) do
-            item.item.hidden = false
+    applyDebugRowFilter(panel.charTraitList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.id, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
+end
+
+function BurdJournals.UI.DebugPanel.filterCharacterRecipeList(self)
+    local panel = self.charPanel
+    if not panel or not panel.charRecipeList then return end
+
+    local searchText = ""
+    if panel.recipeSearchEntry and panel.recipeSearchEntry.getText then
+        searchText = panel.recipeSearchEntry:getText()
+    end
+    local selectedSourceId = panel.recipeSourceFilter and panel.recipeSourceFilter.selectedSourceId or "all"
+
+    applyDebugRowFilter(panel.charRecipeList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.magazineSource, row.magazineDisplayName, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
+end
+
+function BurdJournals.UI.DebugPanel.drawCharacterRecipeItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 30)
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data or data.hidden then return y + h end
+
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH
+
+    if data.isKnown then
+        self:drawRect(0, y, w, h, 0.12, 0.18, 0.12, 0.25)
+    elseif self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
+    end
+
+    local iconX = 6
+    local recipeIcon = data.recipeTexture or getDebugRecipeTexture()
+    local recipeIconSize = drawDebugListIcon(self, recipeIcon, iconX, y, h, 0.95, 14)
+    local textX = iconX + math.max(recipeIconSize, 14) + 6
+    if data.magazineSource then
+        local magazineIcon = data.magazineTexture or getDebugMagazineTexture(data.magazineSource)
+        local magSize = drawDebugListIcon(self, magazineIcon, textX, y, h, 0.9, 14)
+        if magSize > 0 then
+            textX = textX + magSize + 6
         end
-    else
-        -- Filter items by name
-        for _, item in ipairs(panel.charTraitList.items) do
-            item.item.hidden = not debugSearchMatches(searchText, item.item.displayName, item.item.id)
+    end
+
+    self:drawText(tostring(data.displayName or data.name or "Unknown Recipe"), textX, y + 2, 0.92, 0.92, 0.92, 1, UIFont.Small)
+    local sourceText = getDebugRecipeSourceText(data, 22)
+    local sourceColor = data.magazineDisplayName and {0.5, 0.7, 0.75}
+        or ((data.source and data.source ~= "Vanilla" and data.source ~= "Runtime" and data.source ~= "Unknown")
+            and {0.82, 0.72, 0.5}
+            or {0.55, 0.65, 0.78})
+    self:drawText(sourceText, textX, y + 15, sourceColor[1], sourceColor[2], sourceColor[3], 0.9, UIFont.Small)
+    local rightLabel = data.isKnown and "Known" or (data.hasMagazine and "Available" or "Piped")
+    self:drawText(rightLabel, w - 148 - scrollOffset, y + 2, 0.68, 0.82, 0.95, 0.9, UIFont.Small)
+
+    local btnWidth = 45
+    local btnHeight = 18
+    local btnY = y + (h - btnHeight) / 2
+    local addBtnX = w - btnWidth * 2 - 12 - scrollOffset
+    local removeBtnX = w - btnWidth - 6 - scrollOffset
+    local addEnabled = not data.isKnown
+    local removeEnabled = data.isKnown == true
+
+    self:drawRect(addBtnX, btnY, btnWidth, btnHeight, 1, addEnabled and 0.15 or 0.1, addEnabled and 0.3 or 0.16, addEnabled and 0.15 or 0.16)
+    self:drawRectBorder(addBtnX, btnY, btnWidth, btnHeight, 0.8, addEnabled and 0.3 or 0.22, addEnabled and 0.5 or 0.28, addEnabled and 0.3 or 0.28)
+    self:drawTextCentre("+Add", addBtnX + btnWidth / 2, btnY + 2, addEnabled and 0.5 or 0.55, addEnabled and 1 or 0.65, addEnabled and 0.5 or 0.65, 1, UIFont.Small)
+
+    self:drawRect(removeBtnX, btnY, btnWidth, btnHeight, 1, removeEnabled and 0.3 or 0.1, removeEnabled and 0.15 or 0.16, removeEnabled and 0.15 or 0.16)
+    self:drawRectBorder(removeBtnX, btnY, btnWidth, btnHeight, 0.8, removeEnabled and 0.5 or 0.28, removeEnabled and 0.3 or 0.22, removeEnabled and 0.3 or 0.28)
+    self:drawTextCentre("-Rem", removeBtnX + btnWidth / 2, btnY + 2, removeEnabled and 1 or 0.65, removeEnabled and 0.5 or 0.55, removeEnabled and 0.5 or 0.55, 1, UIFont.Small)
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel.onCharacterRecipeListClick(self, x, y)
+    BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
+
+    if not self.items then return end
+    local row = self:rowAt(x, y)
+    if not row or row <= 0 or row > #self.items then return end
+
+    local item = self.items[row]
+    if not item or not item.item then return end
+    local data = item.item
+    if not data or not data.name then return end
+
+    local parentPanel = self.parentPanel
+    if not parentPanel then return end
+    local charPanel = parentPanel.charPanel
+    local targetPlayer = charPanel and charPanel.targetPlayer or parentPanel.player
+    if not targetPlayer then return end
+
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+    local btnWidth = 45
+    local addBtnX = self.width - btnWidth * 2 - 12 - scrollOffset
+    local removeBtnX = self.width - btnWidth - 6 - scrollOffset
+
+    if x >= addBtnX and x < addBtnX + btnWidth then
+        if data.isKnown then
+            parentPanel:setStatus("Player already knows: " .. tostring(data.displayName or data.name), {r=0.95, g=0.78, b=0.45})
+            return
+        end
+
+        data.isKnown = true
+        parentPanel:setStatus("Learned recipe: " .. tostring(data.displayName or data.name), {r=0.3, g=1, b=0.5})
+
+        if isClient() and not isServer() then
+            sendClientCommand("BurdJournals", "debugAddRecipe", {
+                recipeName = data.name,
+                targetUsername = targetPlayer:getUsername()
+            })
+        else
+            local learned = BurdJournals.learnRecipeWithVerification and BurdJournals.learnRecipeWithVerification(targetPlayer, data.name, "[BSJ Debug Recipes]")
+            if not learned then
+                data.isKnown = false
+                parentPanel:setStatus("Failed to learn recipe: " .. tostring(data.displayName or data.name), {r=1, g=0.5, b=0.3})
+            elseif parentPanel.refreshCharacterData then
+                parentPanel:refreshCharacterData()
+            end
+        end
+    elseif x >= removeBtnX and x < removeBtnX + btnWidth then
+        if not data.isKnown then
+            parentPanel:setStatus("Player doesn't know: " .. tostring(data.displayName or data.name), {r=1, g=0.6, b=0.3})
+            return
+        end
+
+        data.isKnown = false
+        parentPanel:setStatus("Removed recipe: " .. tostring(data.displayName or data.name), {r=0.3, g=1, b=0.5})
+
+        if isClient() and not isServer() then
+            sendClientCommand("BurdJournals", "debugRemoveRecipe", {
+                recipeName = data.name,
+                targetUsername = targetPlayer:getUsername()
+            })
+        else
+            local removed = BurdJournals.forgetRecipeWithVerification and BurdJournals.forgetRecipeWithVerification(targetPlayer, data.name, "[BSJ Debug Recipes]")
+            if not removed then
+                data.isKnown = true
+                parentPanel:setStatus("Failed to remove recipe: " .. tostring(data.displayName or data.name), {r=1, g=0.5, b=0.3})
+            elseif parentPanel.refreshCharacterData then
+                parentPanel:refreshCharacterData()
+            end
         end
     end
 end
@@ -3705,12 +6487,11 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                         local perkName = tostring(perk)
                         -- Skip passive skills - already handled above
                         if perkName ~= "Fitness" and perkName ~= "Strength" then
-                            local currentXP = xpObj:getXP(perk)
-                            local targetXP = perk:getTotalXpForLevel(10)
-                            
-                            local xpDiff = targetXP - currentXP
-                            if xpDiff ~= 0 then
-                                xpObj:AddXP(perk, xpDiff, false, false, false, true)
+                            local targetXP = (BurdJournals.getXPThresholdForLevel and BurdJournals.getXPThresholdForLevel(perkName, 10))
+                                or (perk.getTotalXpForLevel and perk:getTotalXpForLevel(10))
+                                or 0
+                            if BurdJournals.setSkillTotalXPCompat then
+                                BurdJournals.setSkillTotalXPCompat(targetPlayer, perk, targetXP, perkName)
                             end
                             count = count + 1
                         end
@@ -3758,7 +6539,11 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                     targetPlayer:setPerkLevelDebug(strengthPerk, 0)
                     -- Also reset XP directly and remove traits again
                     -- PZ auto-applies "Weak" trait which bounces Strength back up
-                    xpObj:AddXP(strengthPerk, -xpObj:getXP(strengthPerk), false, false, false, false)
+                    applyDebugXPCompat(targetPlayer, strengthPerk, -xpObj:getXP(strengthPerk), {
+                        skillName = "Strength",
+                        useMultipliers = false,
+                        isPassive = true,
+                    })
                     BurdJournals.UI.DebugPanel.removePassiveSkillTraits(targetPlayer, "Strength")
                     targetPlayer:setPerkLevelDebug(strengthPerk, 0)
                     count = count + 1
@@ -3767,7 +6552,11 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                 if fitnessPerk then
                     targetPlayer:setPerkLevelDebug(fitnessPerk, 0)
                     -- Same treatment for Fitness just in case
-                    xpObj:AddXP(fitnessPerk, -xpObj:getXP(fitnessPerk), false, false, false, false)
+                    applyDebugXPCompat(targetPlayer, fitnessPerk, -xpObj:getXP(fitnessPerk), {
+                        skillName = "Fitness",
+                        useMultipliers = false,
+                        isPassive = true,
+                    })
                     BurdJournals.UI.DebugPanel.removePassiveSkillTraits(targetPlayer, "Fitness")
                     targetPlayer:setPerkLevelDebug(fitnessPerk, 0)
                     count = count + 1
@@ -3780,9 +6569,8 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                         local perkName = tostring(perk)
                         -- Skip passive skills - already handled above
                         if perkName ~= "Fitness" and perkName ~= "Strength" then
-                            local currentXP = xpObj:getXP(perk)
-                            if currentXP > 0 then
-                                xpObj:AddXP(perk, -currentXP, false, false, false, false)
+                            if BurdJournals.setSkillTotalXPCompat then
+                                BurdJournals.setSkillTotalXPCompat(targetPlayer, perk, 0, perkName)
                             end
                             count = count + 1
                         end
@@ -3793,78 +6581,35 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
             end
         end
         
-    elseif cmd == "removealltraits" then
-        -- Optimistically update the UI immediately
+    elseif BurdJournals.UI.DebugPanel.getDebugBulkTraitActionSpec(cmd) then
+        local actionSpec = BurdJournals.UI.DebugPanel.getDebugBulkTraitActionSpec(cmd)
+        local addOpts = actionSpec.isAdd and BurdJournals.UI.DebugPanel.buildDebugTraitAddOptions(self) or nil
         if self.charPanel and self.charPanel.charTraitList then
             for _, item in ipairs(self.charPanel.charTraitList.items) do
-                if item.item then
-                    item.item.hasCount = 0
+                local traitData = item and item.item or nil
+                if traitData
+                    and not traitData.isPassiveSkillTrait
+                    and BurdJournals.UI.DebugPanel.matchesBulkTraitAction(cmd, traitData.id or traitData.displayName) then
+                    if actionSpec.isAdd then
+                        traitData.hasCount = math.max(1, tonumber(traitData.hasCount) or 0)
+                    else
+                        traitData.hasCount = 0
+                    end
                 end
             end
         end
-        self:setStatus("Removing all traits...", {r=1, g=0.8, b=0.3})
-        
+        self:setStatus(actionSpec.pendingMessage, {r=1, g=0.8, b=0.3})
+
         if targetPlayer then
             if isClient() and not isServer() then
-                -- Multiplayer: send to server
-                sendClientCommand("BurdJournals", "debugRemoveAllTraits", {
+                sendClientCommand("BurdJournals", "debugBulkTraits", {
+                    action = cmd,
+                    allowTraitReconciliation = actionSpec.isAdd and not (addOpts and addOpts.skipTraitReconciliation == true) or false,
                     targetUsername = targetPlayer:getUsername()
                 })
             else
-                -- Singleplayer: apply directly using Build 42 approach
-                local removeCount = 0
-                
-                -- Get CharacterTraits collection for removal (Build 42 API)
-                local charTraits = nil
-                if targetPlayer.getCharacterTraits then
-                    charTraits = targetPlayer:getCharacterTraits()
-                end
-                
-                -- Collect all traits the player has using CharacterTraitDefinition iteration
-                local traitsToRemove = {}
-                
-                if CharacterTraitDefinition and CharacterTraitDefinition.getTraits then
-                    local allDefs = CharacterTraitDefinition.getTraits()
-                    if allDefs then
-                        for i = 0, allDefs:size() - 1 do
-                            local def = allDefs:get(i)
-                            if def then
-                                -- Build 42 uses getType(), not getTrait()
-                                local traitObj = def.getType and def:getType() or nil
-                                if traitObj and targetPlayer.hasTrait and targetPlayer:hasTrait(traitObj) then
-                                    -- Skip passive skill traits (Fitness/Strength related)
-                                    local isPassiveSkillTrait = false
-                                    if BurdJournals.isPassiveSkillTrait then
-                                        local traitName = ""
-                                        if traitObj.getName then traitName = traitObj:getName() or "" end
-                                        isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait(traitName)
-                                    end
-                                    if not isPassiveSkillTrait then
-                                        table.insert(traitsToRemove, traitObj)
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-                
-                BurdJournals.debugPrint("[BurdJournals] Remove All Traits: Found " .. #traitsToRemove .. " traits to remove")
-                
-                -- Remove each trait via safeRemoveTrait to keep side-effects symmetric.
-                for _, traitObj in ipairs(traitsToRemove) do
-                    local removed = false
-                    local traitName = traitObj.getName and traitObj:getName() or tostring(traitObj)
-                    if BurdJournals.safeRemoveTrait then
-                        removed = BurdJournals.safeRemoveTrait(targetPlayer, traitName) == true
-                    end
-                    if removed then
-                        removeCount = removeCount + 1
-                        BurdJournals.debugPrint("[BurdJournals] Removed trait: " .. traitName)
-                    end
-                end
-                
-                self:setStatus("Removed " .. removeCount .. " traits!", {r=0.3, g=1, b=0.5})
-                -- Refresh to show actual state
+                local appliedCount, skippedCount, failedCount = BurdJournals.UI.DebugPanel.applyBulkTraitActionLocally(targetPlayer, cmd, addOpts)
+                self:setStatus(BurdJournals.UI.DebugPanel.formatBulkTraitActionMessage(cmd, appliedCount, skippedCount, failedCount), {r=0.3, g=1, b=0.5})
                 self:refreshCharacterData()
             end
         end
@@ -3877,7 +6622,7 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
                 local perk = Perks.fromIndex(i)
                 if perk and perk:getParent() ~= Perks.None then
                     local level = targetPlayer:getPerkLevel(perk)
-                    local xpVal = xp:getXP(perk)
+                    local xpVal = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(targetPlayer, perk, tostring(perk)) or xp:getXP(perk)
                     BurdJournals.debugPrint(BurdJournals.formatText("  %s: Level %d (XP: %.0f)", tostring(perk), level, xpVal))
                 end
             end
@@ -3943,6 +6688,21 @@ function BurdJournals.UI.DebugPanel:onCharCmd(button)
             BurdJournals.debugPrint("[BSJ DEBUG] Total: " .. totalCount .. " traits")
         end
         self:setStatus("Traits dumped to console", {r=0.5, g=0.8, b=1})
+    elseif cmd == "dumprecipes" then
+        BurdJournals.debugPrint("[BSJ DEBUG] Player Recipes for: " .. (targetPlayer and targetPlayer:getUsername() or "Unknown"))
+        if targetPlayer then
+        local rows = buildDebugRecipeRows(targetPlayer, true, false)
+            if #rows == 0 then
+                BurdJournals.debugPrint("  (no known recipes found)")
+            else
+                for _, row in ipairs(rows) do
+                    local suffix = row.magazineSource and (" | Magazine: " .. tostring(row.magazineSource)) or ""
+                    BurdJournals.debugPrint("  " .. tostring(row.name) .. " -> " .. tostring(row.displayName) .. suffix)
+                end
+            end
+            BurdJournals.debugPrint("[BSJ DEBUG] Total: " .. tostring(#rows) .. " recipes")
+        end
+        self:setStatus("Recipes dumped to console", {r=0.5, g=0.8, b=1})
     end
 end
 
@@ -3971,6 +6731,7 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     panel.baselineDraftDirty = false
     panel.baselineDraftSkills = {}
     panel.baselineDraftTraits = {}
+    panel.baselineDraftRecipes = {}
     
     -- Status indicator for baseline setting
     local statusText = baselineEnabled and "Baseline Restriction: ENABLED" or "Baseline Restriction: DISABLED"
@@ -4059,7 +6820,7 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     
     -- Full baseline management UI (when enabled)
     -- Player selector (for admins to select other players)
-    local playerLabel = ISLabel:new(padding, y, 18, "Target Player:", 1, 1, 1, 1, UIFont.Small, true)
+    local playerLabel = ISLabel:new(padding, y, 18, "Selected Player:", 1, 1, 1, 1, UIFont.Small, true)
     playerLabel:initialise()
     playerLabel:instantiate()
     panel:addChild(playerLabel)
@@ -4141,11 +6902,47 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     openSnapshotsBtn.borderColor = {r=0.55, g=0.5, b=0.75, a=1}
     openSnapshotsBtn.backgroundColor = {r=0.24, g=0.2, b=0.34, a=1}
     panel:addChild(openSnapshotsBtn)
-    y = y + 22
-    
-    -- Skill baseline list (scrollable)
-    local skillListHeight = 150
-    panel.baselineSkillList = ISScrollingListBox:new(padding, y, fullWidth, skillListHeight)
+    y = y + 24
+
+    panel.baselineTabState = {buttons = {}, panels = {}, current = "skills"}
+    local tabX = padding
+    local tabWidth = 84
+    local tabHeight = 22
+    local tabSpacing = 6
+    panel.baselineTabState.buttons.skills = createDebugButton(panel, tabX, y, tabWidth, tabHeight, "Skills", self, BurdJournals.UI.DebugPanel.onBaselineSubTab, "skills")
+    tabX = tabX + tabWidth + tabSpacing
+    panel.baselineTabState.buttons.traits = createDebugButton(panel, tabX, y, tabWidth, tabHeight, "Traits", self, BurdJournals.UI.DebugPanel.onBaselineSubTab, "traits")
+    tabX = tabX + tabWidth + tabSpacing
+    panel.baselineTabState.buttons.recipes = createDebugButton(panel, tabX, y, tabWidth, tabHeight, "Recipes", self, BurdJournals.UI.DebugPanel.onBaselineSubTab, "recipes")
+    y = y + tabHeight + 8
+
+    local utilityY = panel.height - padding - btnHeight
+    local sectionHeight = math.max(220, utilityY - y - 8)
+    local sectionPadding = 8
+    local contentWidth = fullWidth - sectionPadding * 2
+
+    local skillsSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.baselineTabState.panels.skills = skillsSection
+    local sy = sectionPadding
+    local baselineSkillLabelText = getText("UI_BurdJournals_DebugSkillsSetBaseline")
+    local skillsLabel = ISLabel:new(sectionPadding, sy + 2, 18, baselineSkillLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    skillsLabel:initialise()
+    skillsLabel:instantiate()
+    skillsSection:addChild(skillsLabel)
+    local baselineSkillSearchX = math.max(220, contentWidth - 156)
+    panel.baselineSkillSearch = ISTextEntryBox:new("", baselineSkillSearchX, sy, 150, 20)
+    panel.baselineSkillSearch:initialise()
+    panel.baselineSkillSearch:instantiate()
+    panel.baselineSkillSearch.font = UIFont.Small
+    panel.baselineSkillSearch:setTooltip("Filter skills...")
+    panel.baselineSkillSearch.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterBaselineSkillList(self)
+    end
+    skillsSection:addChild(panel.baselineSkillSearch)
+    panel.baselineSkillSourceFilter = createSectionSourceFilterStrip(skillsSection, self, baselineSkillLabelText, baselineSkillSearchX, sy, sectionPadding, BurdJournals.UI.DebugPanel.filterBaselineSkillList, "Filter baseline skills by source.")
+    sy = sy + 24
+    local skillListHeight = math.max(120, sectionHeight - 62)
+    panel.baselineSkillList = ISScrollingListBox:new(sectionPadding, sy, contentWidth, skillListHeight)
     panel.baselineSkillList:initialise()
     panel.baselineSkillList:instantiate()
     panel.baselineSkillList.itemheight = 24
@@ -4154,17 +6951,20 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     panel.baselineSkillList.doDrawItem = BurdJournals.UI.DebugPanel.drawBaselineSkillItem
     panel.baselineSkillList.onMouseDown = BurdJournals.UI.DebugPanel.onBaselineSkillListClick
     panel.baselineSkillList.parentPanel = self
-    panel:addChild(panel.baselineSkillList)
-    y = y + skillListHeight + 5
-    
-    -- Traits section header with search
-    local traitsLabel = ISLabel:new(padding, y, 18, "Traits (Check to include in baseline):", 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.baselineSkillList)
+    sy = sy + skillListHeight + 6
+    createDebugButton(skillsSection, sectionPadding, sy, 140, btnHeight, "Set to Current Skills", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "recalculate", {r=0.5, g=0.6, b=0.3, a=1}, {r=0.25, g=0.35, b=0.15, a=1})
+
+    local traitsSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.baselineTabState.panels.traits = traitsSection
+    local ty = sectionPadding
+    local baselineTraitLabelText = getText("UI_BurdJournals_DebugTraitsBaseline")
+    local traitsLabel = ISLabel:new(sectionPadding, ty + 2, 18, baselineTraitLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
     traitsLabel:initialise()
     traitsLabel:instantiate()
-    panel:addChild(traitsLabel)
-    
-    -- Trait search field
-    panel.baselineTraitSearch = ISTextEntryBox:new("", padding + 210, y - 2, 130, 20)
+    traitsSection:addChild(traitsLabel)
+    local baselineTraitSearchX = math.max(220, contentWidth - 156)
+    panel.baselineTraitSearch = ISTextEntryBox:new("", baselineTraitSearchX, ty, 150, 20)
     panel.baselineTraitSearch:initialise()
     panel.baselineTraitSearch:instantiate()
     panel.baselineTraitSearch.font = UIFont.Small
@@ -4172,12 +6972,11 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     panel.baselineTraitSearch.onTextChange = function()
         BurdJournals.UI.DebugPanel.filterBaselineTraitList(self)
     end
-    panel:addChild(panel.baselineTraitSearch)
-    y = y + 22
-    
-    -- Trait baseline list (scrollable)
-    local traitListHeight = 90
-    panel.baselineTraitList = ISScrollingListBox:new(padding, y, fullWidth, traitListHeight)
+    traitsSection:addChild(panel.baselineTraitSearch)
+    panel.baselineTraitSourceFilter = createSectionSourceFilterStrip(traitsSection, self, baselineTraitLabelText, baselineTraitSearchX, ty, sectionPadding, BurdJournals.UI.DebugPanel.filterBaselineTraitList, "Filter baseline traits by source.")
+    ty = ty + 24
+    local traitListHeight = math.max(120, sectionHeight - 62)
+    panel.baselineTraitList = ISScrollingListBox:new(sectionPadding, ty, contentWidth, traitListHeight)
     panel.baselineTraitList:initialise()
     panel.baselineTraitList:instantiate()
     panel.baselineTraitList.itemheight = 22
@@ -4186,68 +6985,56 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     panel.baselineTraitList.doDrawItem = BurdJournals.UI.DebugPanel.drawBaselineTraitItem
     panel.baselineTraitList.onMouseDown = BurdJournals.UI.DebugPanel.onBaselineTraitListClick
     panel.baselineTraitList.parentPanel = self
-    panel:addChild(panel.baselineTraitList)
-    y = y + traitListHeight + 10
-    
-    -- Action buttons row
-    local btnWidth = 140
+    traitsSection:addChild(panel.baselineTraitList)
+    ty = ty + traitListHeight + 6
+    createDebugButton(traitsSection, sectionPadding, ty, 134, btnHeight, "Copy Current Traits", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "copycurrenttraits", {r=0.45, g=0.58, b=0.38, a=1}, {r=0.2, g=0.3, b=0.2, a=1})
+
+    local recipesSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.baselineTabState.panels.recipes = recipesSection
+    local ry = sectionPadding
+    local baselineRecipeLabelText = getText("UI_BurdJournals_DebugRecipesBaseline")
+    local recipesLabel = ISLabel:new(sectionPadding, ry + 2, 18, baselineRecipeLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    recipesLabel:initialise()
+    recipesLabel:instantiate()
+    recipesSection:addChild(recipesLabel)
+    local baselineRecipeSearchX = math.max(220, contentWidth - 156)
+    panel.baselineRecipeSearch = ISTextEntryBox:new("", baselineRecipeSearchX, ry, 150, 20)
+    panel.baselineRecipeSearch:initialise()
+    panel.baselineRecipeSearch:instantiate()
+    panel.baselineRecipeSearch.font = UIFont.Small
+    panel.baselineRecipeSearch:setTooltip("Filter recipes...")
+    panel.baselineRecipeSearch.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterBaselineRecipeList(self)
+    end
+    recipesSection:addChild(panel.baselineRecipeSearch)
+    panel.baselineRecipeSourceFilter = createSectionSourceFilterStrip(recipesSection, self, baselineRecipeLabelText, baselineRecipeSearchX, ry, sectionPadding, BurdJournals.UI.DebugPanel.filterBaselineRecipeList, "Filter baseline recipes by source.")
+    ry = ry + 24
+    local recipeListHeight = math.max(120, sectionHeight - 62)
+    panel.baselineRecipeList = ISScrollingListBox:new(sectionPadding, ry, contentWidth, recipeListHeight)
+    panel.baselineRecipeList:initialise()
+    panel.baselineRecipeList:instantiate()
+    panel.baselineRecipeList.itemheight = 30
+    panel.baselineRecipeList.backgroundColor = {r=0.08, g=0.08, b=0.1, a=1}
+    panel.baselineRecipeList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    panel.baselineRecipeList.doDrawItem = BurdJournals.UI.DebugPanel.drawBaselineRecipeItem
+    panel.baselineRecipeList.onMouseDown = BurdJournals.UI.DebugPanel.onBaselineRecipeListClick
+    panel.baselineRecipeList.parentPanel = self
+    recipesSection:addChild(panel.baselineRecipeList)
+    ry = ry + recipeListHeight + 6
+    createDebugButton(recipesSection, sectionPadding, ry, 146, btnHeight, "Copy Current Recipes", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "copycurrentrecipes", {r=0.45, g=0.58, b=0.38, a=1}, {r=0.2, g=0.3, b=0.2, a=1})
+
+    local btnWidth = 136
     local btnSpacing = 8
     local btnX = padding
-    
-    local recalcBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Set to Current Skills", self, BurdJournals.UI.DebugPanel.onBaselineCmd)
-    recalcBtn:initialise()
-    recalcBtn:instantiate()
-    recalcBtn.font = UIFont.Small
-    recalcBtn.internal = "recalculate"
-    recalcBtn.textColor = {r=1, g=1, b=1, a=1}
-    recalcBtn.borderColor = {r=0.5, g=0.6, b=0.3, a=1}
-    recalcBtn.backgroundColor = {r=0.25, g=0.35, b=0.15, a=1}
-    panel:addChild(recalcBtn)
+    createDebugButton(panel, btnX, utilityY, btnWidth, btnHeight, "Clear All Baseline", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "clearall", {r=0.6, g=0.4, b=0.3, a=1}, {r=0.4, g=0.2, b=0.15, a=1})
     btnX = btnX + btnWidth + btnSpacing
-    
-    local clearAllBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Clear All Baseline", self, BurdJournals.UI.DebugPanel.onBaselineCmd)
-    clearAllBtn:initialise()
-    clearAllBtn:instantiate()
-    clearAllBtn.font = UIFont.Small
-    clearAllBtn.internal = "clearall"
-    clearAllBtn.textColor = {r=1, g=1, b=1, a=1}
-    clearAllBtn.borderColor = {r=0.6, g=0.4, b=0.3, a=1}
-    clearAllBtn.backgroundColor = {r=0.4, g=0.2, b=0.15, a=1}
-    panel:addChild(clearAllBtn)
+    createDebugButton(panel, btnX, utilityY, btnWidth, btnHeight, "Dump to Console", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "dumpbaseline")
     btnX = btnX + btnWidth + btnSpacing
-    
-    local dumpBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Dump to Console", self, BurdJournals.UI.DebugPanel.onBaselineCmd)
-    dumpBtn:initialise()
-    dumpBtn:instantiate()
-    dumpBtn.font = UIFont.Small
-    dumpBtn.internal = "dumpbaseline"
-    dumpBtn.textColor = {r=1, g=1, b=1, a=1}
-    dumpBtn.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
-    dumpBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
-    panel:addChild(dumpBtn)
+    createDebugButton(panel, btnX, utilityY, btnWidth, btnHeight, "Migrate Journals", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "migratejournals", {r=0.35, g=0.55, b=0.65, a=1}, {r=0.16, g=0.26, b=0.32, a=1})
     btnX = btnX + btnWidth + btnSpacing
+    createDebugButton(panel, btnX, utilityY, 170, btnHeight, "Dump Spawn Readiness", self, BurdJournals.UI.DebugPanel.onBaselineCmd, "dumpspawnstate", {r=0.35, g=0.55, b=0.65, a=1}, {r=0.16, g=0.28, b=0.34, a=1})
 
-    local migrateBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Migrate Journals", self, BurdJournals.UI.DebugPanel.onBaselineCmd)
-    migrateBtn:initialise()
-    migrateBtn:instantiate()
-    migrateBtn.font = UIFont.Small
-    migrateBtn.internal = "migratejournals"
-    migrateBtn.textColor = {r=1, g=1, b=1, a=1}
-    migrateBtn.borderColor = {r=0.35, g=0.55, b=0.65, a=1}
-    migrateBtn.backgroundColor = {r=0.16, g=0.26, b=0.32, a=1}
-    panel:addChild(migrateBtn)
-
-    y = y + btnHeight + 5
-
-    local spawnDumpBtn = ISButton:new(padding, y, 190, btnHeight, "Dump Spawn Readiness", self, BurdJournals.UI.DebugPanel.onBaselineCmd)
-    spawnDumpBtn:initialise()
-    spawnDumpBtn:instantiate()
-    spawnDumpBtn.font = UIFont.Small
-    spawnDumpBtn.internal = "dumpspawnstate"
-    spawnDumpBtn.textColor = {r=1, g=1, b=1, a=1}
-    spawnDumpBtn.borderColor = {r=0.35, g=0.55, b=0.65, a=1}
-    spawnDumpBtn.backgroundColor = {r=0.16, g=0.28, b=0.34, a=1}
-    panel:addChild(spawnDumpBtn)
+    setDebugSubTabState(panel.baselineTabState, "skills")
 
     -- Store reference
     self.baselinePanel = panel
@@ -4256,6 +7043,30 @@ function BurdJournals.UI.DebugPanel:createBaselinePanel(startY, height)
     -- Initial population
     self:populateBaselinePlayerList()
     self:refreshBaselineData()
+end
+
+function BurdJournals.UI.DebugPanel:onBaselineSubTab(button)
+    local panel = self.baselinePanel
+    if not (panel and panel.baselineTabState and button and button.internal) then
+        return
+    end
+    setDebugSubTabState(panel.baselineTabState, tostring(button.internal))
+end
+
+function BurdJournals.UI.DebugPanel:onJournalSubTab(button)
+    local panel = self.journalPanel
+    if not (panel and panel.journalTabState and button and button.internal) then
+        return
+    end
+    setDebugSubTabState(panel.journalTabState, tostring(button.internal))
+end
+
+function BurdJournals.UI.DebugPanel:onSpawnSubTab(button)
+    local panel = self.spawnPanel
+    if not (panel and panel.spawnTabState and button and button.internal) then
+        return
+    end
+    setDebugSubTabState(panel.spawnTabState, tostring(button.internal))
 end
 
 function BurdJournals.UI.DebugPanel.onSpawnProfileChange(self)
@@ -4320,7 +7131,7 @@ function BurdJournals.UI.DebugPanel:createSnapshotsPanel(startY, height)
         padding,
         y + 2,
         16,
-        getText("UI_BurdJournals_SnapshotTargetPlayer") or "Target Player:",
+        getText("UI_BurdJournals_SnapshotTargetPlayer") or "Selected Player:",
         1,
         1,
         1,
@@ -4630,77 +7441,39 @@ end
 function BurdJournals.UI.DebugPanel:populateBaselinePlayerList()
     local panel = self.baselinePanel
     if not panel or not panel.targetPlayerCombo then return end
-    
-    local selectedName = panel.targetPlayer and panel.targetPlayer.getUsername and panel.targetPlayer:getUsername() or nil
+
+    local selectedPlayer = panel.targetPlayer or self:getSharedTargetPlayer() or self.player
+    local selectedName = getDebugTargetPlayerName(selectedPlayer)
     panel.targetPlayerCombo:clear()
-    
-    -- Always add current player first
-    local currentName = self.player and self.player:getUsername() or "You"
-    panel.targetPlayerCombo:addOptionWithData(currentName, self.player)
-    
-    -- In multiplayer, only admins can target other online players.
-    if self:canTargetOtherPlayers() then
-        local onlinePlayers = getOnlinePlayers()
-        if onlinePlayers then
-            for i = 0, onlinePlayers:size() - 1 do
-                local otherPlayer = onlinePlayers:get(i)
-                if otherPlayer and otherPlayer ~= self.player then
-                    local name = otherPlayer:getUsername() or "Unknown"
-                    panel.targetPlayerCombo:addOptionWithData(name, otherPlayer)
-                end
-            end
-        end
+
+    local targetablePlayers = collectDebugTargetablePlayers(self)
+    for _, playerObj in ipairs(targetablePlayers) do
+        panel.targetPlayerCombo:addOptionWithData(getDebugTargetPlayerName(playerObj), playerObj)
     end
     
     if selectedName and selectedName ~= "" then
         panel.targetPlayerCombo:select(selectedName)
     else
-        panel.targetPlayerCombo:select(currentName)
+        panel.targetPlayerCombo:select(getDebugTargetPlayerName(self.player))
     end
-    if not panel.targetPlayer then
-        panel.targetPlayer = self.player
-    end
+    panel.targetPlayer = selectedPlayer
 end
 
 -- Handler for player selection change
 function BurdJournals.UI.DebugPanel:onBaselineTargetPlayerChange(combo)
+    if self.suppressTargetSync then
+        return
+    end
+
     local panel = self.baselinePanel
     if not panel then return end
     
     local selected = combo:getSelectedIndex()
     local data = combo.options[selected + 1]
     if data and data.data then
-        if data.data ~= self.player and not self:canTargetOtherPlayers() then
-            local currentName = self.player and self.player:getUsername() or "You"
-            combo:select(currentName)
-            panel.targetPlayer = self.player
-            self:setStatus(getText("UI_BurdJournals_AdminOnly") or "This command requires admin access.", {r=1, g=0.6, b=0.3})
-            return
-        end
-        local previousPlayer = panel.targetPlayer or self.player
-        local function applyTargetSelection()
-            panel.targetPlayer = data.data
-            self:refreshBaselineData()
-            self:setStatus("Viewing baseline for: " .. (panel.targetPlayer:getUsername() or "Unknown"), {r=0.5, g=0.8, b=1})
-        end
-
-        if previousPlayer ~= data.data and self:hasUnsavedBaselineDraft() then
-            local previousName = previousPlayer and previousPlayer.getUsername and previousPlayer:getUsername()
-            self:confirmDiscardBaselineDraft(
-                getText("UI_BurdJournals_BaselineDraftActionChangeTarget") or "change target player",
-                function()
-                    applyTargetSelection()
-                end,
-                function()
-                    if previousName and combo and combo.select then
-                        combo:select(previousName)
-                    end
-                end
-            )
-            return
-        end
-
-        applyTargetSelection()
+        self:applySharedTargetPlayer(data.data, {
+            statusText = BurdJournals.formatText(getText("UI_BurdJournals_DebugViewingStartingData"), getDebugTargetPlayerName(data.data)),
+        })
     end
 end
 
@@ -4863,7 +7636,7 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
                 
                 -- Get current XP
                 if xpObj and xpObj.getXP then
-                    local xp = xpObj:getXP(perk)
+                    local xp = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(targetPlayer, perk, skillName) or xpObj:getXP(perk)
                     if type(xp) == "number" then
                         currentXP = xp
                     end
@@ -4894,8 +7667,6 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
                 if lvl and type(lvl) == "number" then 
                     baselineLevel = lvl 
                 end
-            elseif isPassive then
-                baselineLevel = 5  -- Default for passive skills
             end
 
             -- Calculate baseline XP from baseline level
@@ -4903,7 +7674,7 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
             local baselineXP = 0
             if baselineLevel > 0 then
                 if isPassive then
-                    baselineXP = BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[baselineLevel] or 37500
+                    baselineXP = BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[baselineLevel] or 0
                 else
                     baselineXP = BurdJournals.STANDARD_XP_THRESHOLDS and BurdJournals.STANDARD_XP_THRESHOLDS[baselineLevel] or 0
                 end
@@ -4924,7 +7695,9 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
                 baselineXP = baselineXP,
                 isPassive = isPassive,
                 category = category,
-                isModded = isModded
+                isModded = isModded,
+                source = BurdJournals.getSkillModSource and BurdJournals.getSkillModSource(skillName) or (isModded and "Modded" or "Vanilla"),
+                sourceId = BurdJournals.getSkillModId and BurdJournals.getSkillModId(skillName) or (isModded and "modded" or "vanilla"),
             })
         end
     end
@@ -4994,14 +7767,17 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
                     -- Prefer non-"2" variants (e.g., prefer AdrenalineJunkie over adrenalinejunkie2)
                 else
                     -- Determine polarity from cost
-                    local cost = traitCostLookup[traitIdLower] or 0
-                    local isPositive = cost >= 0  -- positive or neutral
+                    local isPositive = BurdJournals.UI.DebugPanel.resolveTraitIsPositive(traitId, nil, traitCostLookup)
+                    local traitSource = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitId) or "Vanilla"
+                    local traitSourceId = BurdJournals.getTraitModId and BurdJournals.getTraitModId(traitId) or traitSource
                     
                     table.insert(sortedTraits, {
                         id = traitId,
                         displayName = displayName,
                         isPositive = isPositive,
-                        isModded = false  -- Will be refined if needed
+                        isModded = traitSource ~= "Vanilla",
+                        source = traitSource,
+                        sourceId = traitSourceId,
                     })
                     addedTraits[traitIdLower] = true
                     addedDisplayNames[displayNameLower] = traitId  -- Track by display name
@@ -5038,6 +7814,7 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
             
             -- Check if this trait is in baseline (case-insensitive)
             local isInBaseline = traitBaseline[traitId] or traitBaselineLower[string.lower(traitId)] or false
+            local hasTrait = BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(targetPlayer, traitId) or false
             
             panel.baselineTraitList:addItem(itemLabel, {
                 id = traitId,
@@ -5045,10 +7822,32 @@ function BurdJournals.UI.DebugPanel:refreshBaselineData()
                 isBaseline = isInBaseline,
                 isPassiveSkillTrait = isPassiveSkillTrait,
                 isPositive = traitData.isPositive,
-                isModded = traitData.isModded or false
+                isModded = traitData.isModded or false,
+                hasTrait = hasTrait,
+                traitTexture = getDebugTraitTexture(traitId),
+                source = traitData.source,
+                sourceId = traitData.sourceId,
             })
         end
     end
+
+    if panel.baselineRecipeList and panel.baselineRecipeList.clear then
+        panel.baselineRecipeList:clear()
+        local recipeRows = buildDebugRecipeRows(targetPlayer, true, true)
+        for _, row in ipairs(recipeRows) do
+            row.recipeTexture = getDebugRecipeTexture()
+            row.magazineTexture = getDebugMagazineTexture(row.magazineSource)
+            row.magazineDisplayName = row.magazineDisplayName or (row.magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(row.magazineSource) or nil)
+            panel.baselineRecipeList:addItem(row.displayName, row)
+        end
+    end
+    refreshDebugSourceFilterStrip(panel.baselineSkillSourceFilter, panel.baselineSkillList and panel.baselineSkillList.items or nil)
+    refreshDebugSourceFilterStrip(panel.baselineTraitSourceFilter, panel.baselineTraitList and panel.baselineTraitList.items or nil)
+    refreshDebugSourceFilterStrip(panel.baselineRecipeSourceFilter, panel.baselineRecipeList and panel.baselineRecipeList.items or nil)
+
+    BurdJournals.UI.DebugPanel.filterBaselineSkillList(self)
+    BurdJournals.UI.DebugPanel.filterBaselineTraitList(self)
+    BurdJournals.UI.DebugPanel.filterBaselineRecipeList(self)
 
 end
 
@@ -5109,9 +7908,20 @@ function BurdJournals.UI.DebugPanel:buildBaselineDraftPayload()
         end
     end
 
+    local recipeBaseline = {}
+    if panel.baselineRecipeList and panel.baselineRecipeList.items then
+        for _, row in ipairs(panel.baselineRecipeList.items) do
+            local data = row and row.item
+            if data and data.name and data.isBaseline then
+                recipeBaseline[tostring(data.name)] = true
+            end
+        end
+    end
+
     return {
         skillBaseline = skillBaseline,
         traitBaseline = traitBaseline,
+        recipeBaseline = recipeBaseline,
     }
 end
 
@@ -5135,7 +7945,7 @@ end
 
 -- Draw function for skill items (read-only mode when baseline is disabled)
 function BurdJournals.UI.DebugPanel.drawBaselineSkillItemReadOnly(self, y, item, alt)
-    local h = self.itemheight
+    local h = getDebugListRowHeight(self, item, self.itemheight or 24)
     local data = item.item
     
     -- Skip hidden items (filtered by search)
@@ -5204,14 +8014,13 @@ function BurdJournals.UI.DebugPanel.filterBaselineSkillList(self)
     if panel.baselineSkillSearch and panel.baselineSkillSearch.getText then
         searchText = panel.baselineSkillSearch:getText()
     end
+    local selectedSourceId = panel.baselineSkillSourceFilter and panel.baselineSkillSourceFilter.selectedSourceId or "all"
     
-    for _, item in ipairs(panel.baselineSkillList.items) do
-        if searchText == "" then
-            item.item.hidden = false
-        else
-            item.item.hidden = not debugSearchMatches(searchText, item.item.displayName, item.item.name, item.item.category)
-        end
-    end
+    applyDebugRowFilter(panel.baselineSkillList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.category, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
 function BurdJournals.UI.DebugPanel.filterBaselineTraitList(self)
@@ -5222,19 +8031,35 @@ function BurdJournals.UI.DebugPanel.filterBaselineTraitList(self)
     if panel.baselineTraitSearch and panel.baselineTraitSearch.getText then
         searchText = panel.baselineTraitSearch:getText()
     end
+    local selectedSourceId = panel.baselineTraitSourceFilter and panel.baselineTraitSourceFilter.selectedSourceId or "all"
     
-    for _, item in ipairs(panel.baselineTraitList.items) do
-        if searchText == "" then
-            item.item.hidden = false
-        else
-            item.item.hidden = not debugSearchMatches(searchText, item.item.displayName, item.item.id)
-        end
+    applyDebugRowFilter(panel.baselineTraitList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.id, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
+end
+
+function BurdJournals.UI.DebugPanel.filterBaselineRecipeList(self)
+    local panel = self.baselinePanel
+    if not panel or not panel.baselineRecipeList then return end
+
+    local searchText = ""
+    if panel.baselineRecipeSearch and panel.baselineRecipeSearch.getText then
+        searchText = panel.baselineRecipeSearch:getText()
     end
+    local selectedSourceId = panel.baselineRecipeSourceFilter and panel.baselineRecipeSourceFilter.selectedSourceId or "all"
+
+    applyDebugRowFilter(panel.baselineRecipeList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.magazineSource, row.magazineDisplayName, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
 -- Draw function for baseline skill items with interactive squares
 function BurdJournals.UI.DebugPanel.drawBaselineSkillItem(self, y, item, alt)
-    local h = self.itemheight
+    local h = getDebugListRowHeight(self, item, self.itemheight or 24)
     local data = item.item
     
     -- Skip hidden items (filtered by search)
@@ -5388,7 +8213,7 @@ function BurdJournals.UI.DebugPanel.onBaselineSkillListClick(self, x, y)
         if clickedLevel > 0 then
             local isPassive = (data.name == "Fitness" or data.name == "Strength")
             if isPassive then
-                baselineXP = BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[clickedLevel] or 37500
+                baselineXP = BurdJournals.PASSIVE_XP_THRESHOLDS and BurdJournals.PASSIVE_XP_THRESHOLDS[clickedLevel] or 0
             else
                 baselineXP = BurdJournals.STANDARD_XP_THRESHOLDS and BurdJournals.STANDARD_XP_THRESHOLDS[clickedLevel] or 0
             end
@@ -5407,7 +8232,7 @@ end
 
 -- Draw function for baseline trait items with checkbox
 function BurdJournals.UI.DebugPanel.drawBaselineTraitItem(self, y, item, alt)
-    local h = self.itemheight
+    local h = getDebugListRowHeight(self, item, self.itemheight or 22)
     local data = item.item
     
     -- Skip hidden items (filtered by search)
@@ -5420,28 +8245,25 @@ function BurdJournals.UI.DebugPanel.drawBaselineTraitItem(self, y, item, alt)
         self:drawRect(0, y, self.width, h, 0.2, 0.2, 0.3, 0.3)
     end
     
-    -- Checkbox
     local checkX = 8
+    local parentPanel = self.parentPanel
+    local baselinePanel = parentPanel and parentPanel.baselinePanel
+    local isReadOnly = baselinePanel and baselinePanel.baselineEnabled == false
     if data.isPassiveSkillTrait then
-        -- Passive skill traits show as locked
         self:drawText("[~]", checkX, y + 2, 0.4, 0.4, 0.4, 1, UIFont.Small)
     elseif data.isBaseline then
         self:drawText("[X]", checkX, y + 2, 0.4, 0.7, 0.4, 1, UIFont.Small)
     else
         self:drawText("[ ]", checkX, y + 2, 0.5, 0.5, 0.5, 1, UIFont.Small)
     end
-    
-    -- Trait name
-    local textX = 35
-    local nameColor
-    if data.isPassiveSkillTrait then
-        nameColor = {0.5, 0.5, 0.5}  -- Dimmed for passive skill traits
-    elseif data.isBaseline then
+
+    local iconSize = drawDebugListIcon(self, data.traitTexture or getDebugTraitTexture(data.id), 28, y, h, 0.95, 13)
+    local textX = 28 + math.max(iconSize, 13) + 6
+    local nameColor = BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    if data.isBaseline then
         nameColor = {0.8, 1, 0.8}
-    else
-        nameColor = {0.7, 0.7, 0.7}
     end
-    self:drawText(data.displayName, textX, y + 2, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
+    self:drawText(BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown"), textX, y + 2, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
     
     -- Status indicator (account for scrollbar)
     local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH
@@ -5449,6 +8271,10 @@ function BurdJournals.UI.DebugPanel.drawBaselineTraitItem(self, y, item, alt)
         self:drawText("(auto)", self.width - 50 - scrollOffset, y + 2, 0.4, 0.4, 0.4, 1, UIFont.Small)
     elseif data.isBaseline then
         self:drawText("Starting", self.width - 55 - scrollOffset, y + 2, 0.5, 0.65, 0.5, 1, UIFont.Small)
+    elseif data.hasTrait then
+        self:drawText(isReadOnly and "Current" or "Owned", self.width - 55 - scrollOffset, y + 2, 0.55, 0.65, 0.82, 1, UIFont.Small)
+    else
+        self:drawText(BurdJournals.UI.DebugPanel.getTraitPolarityText(data), self.width - 62 - scrollOffset, y + 2, nameColor[1], nameColor[2], nameColor[3], 0.95, UIFont.Small)
     end
     
     return y + h
@@ -5472,6 +8298,10 @@ function BurdJournals.UI.DebugPanel.onBaselineTraitListClick(self, x, y)
         parentPanel:setStatus("Passive skill traits cannot be modified", {r=1, g=0.6, b=0.3})
         return
     end
+    if baselinePanel and baselinePanel.baselineEnabled == false then
+        parentPanel:setStatus("Baseline editing is disabled in this sandbox.", {r=1, g=0.6, b=0.3})
+        return
+    end
     
     -- Toggle baseline status
     local newStatus = not data.isBaseline
@@ -5484,6 +8314,80 @@ function BurdJournals.UI.DebugPanel.onBaselineTraitListClick(self, x, y)
     if parentPanel.markBaselineDraftDirty then
         local statusText = newStatus and "added to" or "removed from"
         parentPanel:markBaselineDraftDirty("Draft: " .. data.displayName .. " " .. statusText .. " baseline. Save to apply.")
+    end
+end
+
+function BurdJournals.UI.DebugPanel.drawBaselineRecipeItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 30)
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data or data.hidden then return y + h end
+
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH
+    local parentPanel = self.parentPanel
+    local baselinePanel = parentPanel and parentPanel.baselinePanel
+    local isReadOnly = baselinePanel and baselinePanel.baselineEnabled == false
+
+    if data.isBaseline then
+        self:drawRect(0, y, w, h, 0.12, 0.2, 0.12, 0.28)
+    elseif self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
+    end
+
+    if data.isBaseline then
+        self:drawText("[X]", 8, y + 2, 0.4, 0.7, 0.4, 1, UIFont.Small)
+    else
+        self:drawText("[ ]", 8, y + 2, 0.5, 0.5, 0.5, 1, UIFont.Small)
+    end
+
+    local iconX = 28
+    local recipeIcon = data.recipeTexture or getDebugRecipeTexture()
+    local recipeSize = drawDebugListIcon(self, recipeIcon, iconX, y, h, 0.95, 13)
+    local textX = iconX + math.max(recipeSize, 13) + 6
+    if data.magazineSource then
+        local magSize = drawDebugListIcon(self, data.magazineTexture or getDebugMagazineTexture(data.magazineSource), textX, y, h, 0.9, 13)
+        if magSize > 0 then
+            textX = textX + magSize + 6
+        end
+    end
+
+    self:drawText(tostring(data.displayName or data.name or "Unknown Recipe"), textX, y + 2, data.isBaseline and 0.82 or 0.74, data.isBaseline and 1 or 0.74, data.isBaseline and 0.82 or 0.74, 1, UIFont.Small)
+    local sourceText = getDebugRecipeSourceText(data, 22)
+    local sourceColor = data.magazineDisplayName and {0.5, 0.7, 0.75}
+        or ((data.source and data.source ~= "Vanilla" and data.source ~= "Runtime" and data.source ~= "Unknown")
+            and {0.82, 0.72, 0.5}
+            or {0.55, 0.65, 0.78})
+    self:drawText(sourceText, textX, y + 15, sourceColor[1], sourceColor[2], sourceColor[3], 0.9, UIFont.Small)
+    local rightText = data.isBaseline and "Starting" or (data.isKnown and (isReadOnly and "Current" or "Known") or "")
+    if rightText ~= "" then
+        self:drawText(rightText, w - 56 - scrollOffset, y + 2, 0.55, 0.68, 0.82, 1, UIFont.Small)
+    end
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel.onBaselineRecipeListClick(self, x, y)
+    ISScrollingListBox.onMouseDown(self, x, y)
+
+    local row = self:rowAt(x, y)
+    if row <= 0 or row > #self.items then return end
+
+    local item = self.items[row]
+    local data = item and item.item or nil
+    local parentPanel = self.parentPanel
+    local baselinePanel = parentPanel and parentPanel.baselinePanel
+    if not (data and parentPanel and baselinePanel) then return end
+    if baselinePanel.baselineEnabled == false then
+        parentPanel:setStatus("Baseline editing is disabled in this sandbox.", {r=1, g=0.6, b=0.3})
+        return
+    end
+
+    data.isBaseline = not data.isBaseline
+    baselinePanel.baselineDraftRecipes = baselinePanel.baselineDraftRecipes or {}
+    baselinePanel.baselineDraftRecipes[tostring(data.name)] = data.isBaseline == true
+    local statusText = data.isBaseline and "added to" or "removed from"
+    if parentPanel.markBaselineDraftDirty then
+        parentPanel:markBaselineDraftDirty("Draft: " .. tostring(data.displayName or data.name) .. " " .. statusText .. " baseline recipes. Save to apply.")
     end
 end
 
@@ -5569,35 +8473,27 @@ function BurdJournals.UI.DebugPanel:populateSnapshotPlayerList()
         return
     end
 
-    local selectedName = panel.targetPlayer and panel.targetPlayer.getUsername and panel.targetPlayer:getUsername() or nil
+    local selectedPlayer = panel.targetPlayer or self:getSharedTargetPlayer() or self.player
+    local selectedName = getDebugTargetPlayerName(selectedPlayer)
     panel.snapshotTargetCombo:clear()
-    local currentName = self.player and self.player:getUsername() or "You"
-    panel.snapshotTargetCombo:addOptionWithData(currentName, self.player)
-
-    if self:canTargetOtherPlayers() then
-        local onlinePlayers = getOnlinePlayers()
-        if onlinePlayers then
-            for i = 0, onlinePlayers:size() - 1 do
-                local otherPlayer = onlinePlayers:get(i)
-                if otherPlayer and otherPlayer ~= self.player then
-                    local name = otherPlayer:getUsername() or "Unknown"
-                    panel.snapshotTargetCombo:addOptionWithData(name, otherPlayer)
-                end
-            end
-        end
+    local targetablePlayers = collectDebugTargetablePlayers(self)
+    for _, playerObj in ipairs(targetablePlayers) do
+        panel.snapshotTargetCombo:addOptionWithData(getDebugTargetPlayerName(playerObj), playerObj)
     end
 
     if selectedName and selectedName ~= "" then
         panel.snapshotTargetCombo:select(selectedName)
     else
-        panel.snapshotTargetCombo:select(currentName)
+        panel.snapshotTargetCombo:select(getDebugTargetPlayerName(self.player))
     end
-    if not panel.targetPlayer then
-        panel.targetPlayer = self.player
-    end
+    panel.targetPlayer = selectedPlayer
 end
 
 function BurdJournals.UI.DebugPanel:onSnapshotTargetPlayerChange(combo)
+    if self.suppressTargetSync then
+        return
+    end
+
     local panel = getSnapshotPanel(self)
     if not panel then
         return
@@ -5606,16 +8502,9 @@ function BurdJournals.UI.DebugPanel:onSnapshotTargetPlayerChange(combo)
     local selected = combo:getSelectedIndex()
     local data = combo.options[selected + 1]
     if data and data.data then
-        if data.data ~= self.player and not self:canTargetOtherPlayers() then
-            local currentName = self.player and self.player:getUsername() or "You"
-            combo:select(currentName)
-            panel.targetPlayer = self.player
-            self:setStatus(getText("UI_BurdJournals_AdminOnly") or "This command requires admin access.", {r=1, g=0.6, b=0.3})
-            return
-        end
-        panel.targetPlayer = data.data
-        self:refreshSnapshotPanelData()
-        self:setStatus("Viewing snapshots for: " .. (panel.targetPlayer:getUsername() or "Unknown"), {r=0.5, g=0.8, b=1})
+        self:applySharedTargetPlayer(data.data, {
+            statusText = BurdJournals.formatText(getText("UI_BurdJournals_DebugViewingSnapshots"), getDebugTargetPlayerName(data.data)),
+        })
     end
 end
 
@@ -6323,7 +9212,9 @@ function BurdJournals.UI.DebugPanel:runSnapshotCommand(cmd)
                     BurdJournals.Client.Debug.applyBaselineSnapshot({
                         targetUsername = targetName,
                         snapshotId = snapshotId,
-                        restoreMode = BurdJournals.BASELINE_SNAPSHOT_RESTORE_UNLOCKED,
+                        restoreMode = BurdJournals.getDefaultBaselineRestoreMode
+                            and BurdJournals.getDefaultBaselineRestoreMode()
+                            or BurdJournals.BASELINE_SNAPSHOT_RESTORE_UNLOCKED,
                     }, selfRef.player)
                     selfRef:setStatus("Applying snapshot " .. snapshotId .. "...", {r=0.5, g=0.8, b=1})
                 end
@@ -6350,7 +9241,9 @@ function BurdJournals.UI.DebugPanel:runSnapshotCommand(cmd)
             BurdJournals.Client.Debug.applyBaselineSnapshot({
                 targetUsername = targetName,
                 snapshotId = snapshotId,
-                restoreMode = BurdJournals.BASELINE_SNAPSHOT_RESTORE_UNLOCKED,
+                restoreMode = BurdJournals.getDefaultBaselineRestoreMode
+                    and BurdJournals.getDefaultBaselineRestoreMode()
+                    or BurdJournals.BASELINE_SNAPSHOT_RESTORE_UNLOCKED,
             }, self.player)
             self:setStatus("Applying snapshot " .. snapshotId .. "...", {r=0.5, g=0.8, b=1})
         end
@@ -6460,6 +9353,7 @@ function BurdJournals.UI.DebugPanel:onBaselineCmd(button)
                 targetUsername = targetPlayer:getUsername(),
                 skillBaseline = payload.skillBaseline,
                 traitBaseline = payload.traitBaseline,
+                recipeBaseline = payload.recipeBaseline,
             }, self.player)
             self:setStatus(getText("UI_BurdJournals_BaselineDraftSaving") or "Saving baseline snapshot...", {r=0.5, g=0.8, b=1})
         else
@@ -6484,10 +9378,12 @@ function BurdJournals.UI.DebugPanel:onBaselineCmd(button)
         if panel then
             local changedSkillCount = 0
             local changedTraitCount = 0
+            local changedRecipeCount = 0
             local changedAny = false
 
             panel.baselineDraftSkills = panel.baselineDraftSkills or {}
             panel.baselineDraftTraits = panel.baselineDraftTraits or {}
+            panel.baselineDraftRecipes = panel.baselineDraftRecipes or {}
 
             if panel.baselineSkillList and panel.baselineSkillList.items then
                 for _, row in ipairs(panel.baselineSkillList.items) do
@@ -6520,13 +9416,28 @@ function BurdJournals.UI.DebugPanel:onBaselineCmd(button)
                 end
             end
 
+            if panel.baselineRecipeList and panel.baselineRecipeList.items then
+                for _, row in ipairs(panel.baselineRecipeList.items) do
+                    local data = row and row.item
+                    if data and data.name then
+                        if data.isBaseline == true then
+                            changedAny = true
+                            changedRecipeCount = changedRecipeCount + 1
+                        end
+                        data.isBaseline = false
+                        panel.baselineDraftRecipes[tostring(data.name)] = false
+                    end
+                end
+            end
+
             if changedAny then
                 if self.markBaselineDraftDirty then
                     self:markBaselineDraftDirty(
                         BurdJournals.formatText(
-                            "Draft cleared: %d skills and %d traits reset. Save to apply.",
+                            "Draft cleared: %d skills, %d traits, %d recipes reset. Save to apply.",
                             changedSkillCount,
-                            changedTraitCount
+                            changedTraitCount,
+                            changedRecipeCount
                         )
                     )
                 else
@@ -6586,6 +9497,52 @@ function BurdJournals.UI.DebugPanel:onBaselineCmd(button)
                 end
             else
                 self:setStatus("Baseline skill draft already matches current skills.", {r=0.9, g=0.75, b=0.4})
+            end
+        end
+    elseif cmd == "copycurrenttraits" then
+        if panel and panel.baselineTraitList and panel.baselineTraitList.items then
+            panel.baselineDraftTraits = panel.baselineDraftTraits or {}
+            local changedCount = 0
+            local changedAny = false
+            for _, row in ipairs(panel.baselineTraitList.items) do
+                local data = row and row.item
+                if data and data.id and not data.isPassiveSkillTrait then
+                    local newStatus = data.hasTrait == true
+                    if data.isBaseline ~= newStatus then
+                        changedAny = true
+                        changedCount = changedCount + 1
+                    end
+                    data.isBaseline = newStatus
+                    panel.baselineDraftTraits[tostring(data.id)] = newStatus
+                end
+            end
+            if changedAny then
+                self:markBaselineDraftDirty(BurdJournals.formatText("Draft set to current traits: %d entries updated. Save to apply.", changedCount))
+            else
+                self:setStatus("Trait baseline draft already matches current traits.", {r=0.9, g=0.75, b=0.4})
+            end
+        end
+    elseif cmd == "copycurrentrecipes" then
+        if panel and panel.baselineRecipeList and panel.baselineRecipeList.items then
+            panel.baselineDraftRecipes = panel.baselineDraftRecipes or {}
+            local changedCount = 0
+            local changedAny = false
+            for _, row in ipairs(panel.baselineRecipeList.items) do
+                local data = row and row.item
+                if data and data.name then
+                    local newStatus = data.isKnown == true
+                    if data.isBaseline ~= newStatus then
+                        changedAny = true
+                        changedCount = changedCount + 1
+                    end
+                    data.isBaseline = newStatus
+                    panel.baselineDraftRecipes[tostring(data.name)] = newStatus
+                end
+            end
+            if changedAny then
+                self:markBaselineDraftDirty(BurdJournals.formatText("Draft set to current recipes: %d entries updated. Save to apply.", changedCount))
+            else
+                self:setStatus("Recipe baseline draft already matches current known recipes.", {r=0.9, g=0.75, b=0.4})
             end
         end
     elseif cmd == "migratejournals" then
@@ -6821,7 +9778,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel:addChild(panel.journalHeaderLabel)
     
     -- Select Journal button (for when no journal is selected via context menu)
-    local selectBtn = ISButton:new(fullWidth - 100, y - 2, 110, 22, "Select from Inv", self, BurdJournals.UI.DebugPanel.onJournalSelectFromInventory)
+    local selectBtn = ISButton:new(fullWidth - 100, y - 2, 110, 22, "Pick from Inv", self, BurdJournals.UI.DebugPanel.onJournalSelectFromInventory)
     selectBtn:initialise()
     selectBtn:instantiate()
     selectBtn.font = UIFont.Small
@@ -6832,7 +9789,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     y = y + 28
 
     -- Journal picker dropdown: Name | Author | UUID
-    local pickerLabel = ISLabel:new(padding, y + 2, 16, "Journal:", 0.8, 0.8, 0.9, 1, UIFont.Small, true)
+    local pickerLabel = ISLabel:new(padding, y + 2, 16, "Nearby:", 0.8, 0.8, 0.9, 1, UIFont.Small, true)
     pickerLabel:initialise()
     pickerLabel:instantiate()
     panel:addChild(pickerLabel)
@@ -6847,7 +9804,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel:addChild(panel.journalSelectCombo)
 
     local pickerBtnX = pickerX + pickerWidth + 5
-    local refreshListBtn = ISButton:new(pickerBtnX, y - 2, 56, 22, "Refresh", self, BurdJournals.UI.DebugPanel.onJournalRefreshList)
+    local refreshListBtn = ISButton:new(pickerBtnX, y - 2, 56, 22, "Reload", self, BurdJournals.UI.DebugPanel.onJournalRefreshList)
     refreshListBtn:initialise()
     refreshListBtn:instantiate()
     refreshListBtn.font = UIFont.Small
@@ -6856,7 +9813,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     refreshListBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
     panel:addChild(refreshListBtn)
 
-    local useSelectedBtn = ISButton:new(pickerBtnX + 60, y - 2, 52, 22, "Use", self, BurdJournals.UI.DebugPanel.onJournalUseDropdownSelection)
+    local useSelectedBtn = ISButton:new(pickerBtnX + 60, y - 2, 52, 22, "Open", self, BurdJournals.UI.DebugPanel.onJournalUseDropdownSelection)
     useSelectedBtn:initialise()
     useSelectedBtn:instantiate()
     useSelectedBtn.font = UIFont.Small
@@ -6882,7 +9839,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel:addChild(panel.journalServerIndexCombo)
 
     local serverBtnX = serverPickerX + serverPickerWidth + 5
-    local refreshServerListBtn = ISButton:new(serverBtnX, y - 2, 56, 22, "Fetch", self, BurdJournals.UI.DebugPanel.onJournalRefreshServerIndex)
+    local refreshServerListBtn = ISButton:new(serverBtnX, y - 2, 56, 22, "Load", self, BurdJournals.UI.DebugPanel.onJournalRefreshServerIndex)
     refreshServerListBtn:initialise()
     refreshServerListBtn:instantiate()
     refreshServerListBtn.font = UIFont.Small
@@ -6891,7 +9848,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     refreshServerListBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
     panel:addChild(refreshServerListBtn)
 
-    local useServerSelectedBtn = ISButton:new(serverBtnX + 60, y - 2, 52, 22, "Use", self, BurdJournals.UI.DebugPanel.onJournalUseServerIndexSelection)
+    local useServerSelectedBtn = ISButton:new(serverBtnX + 60, y - 2, 52, 22, "Open", self, BurdJournals.UI.DebugPanel.onJournalUseServerIndexSelection)
     useServerSelectedBtn:initialise()
     useServerSelectedBtn:instantiate()
     useServerSelectedBtn.font = UIFont.Small
@@ -6906,6 +9863,18 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel.journalInfoLabel:initialise()
     panel.journalInfoLabel:instantiate()
     panel:addChild(panel.journalInfoLabel)
+    y = y + 20
+
+    panel.journalTargetSummaryLabel = ISLabel:new(padding, y, 16, "", 0.82, 0.88, 0.98, 1, UIFont.Small, true)
+    panel.journalTargetSummaryLabel:initialise()
+    panel.journalTargetSummaryLabel:instantiate()
+    panel:addChild(panel.journalTargetSummaryLabel)
+    y = y + 18
+
+    panel.journalTargetHelpLabel = ISLabel:new(padding, y, 16, "", 0.62, 0.74, 0.86, 1, UIFont.Small, true)
+    panel.journalTargetHelpLabel:initialise()
+    panel.journalTargetHelpLabel:instantiate()
+    panel:addChild(panel.journalTargetHelpLabel)
     y = y + 22
 
     -- Metadata controls (type/profile/origin + author/flavor/age) in a compact block.
@@ -6930,7 +9899,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel.journalTypeCombo:addOptionWithData("Worn", "worn")
     panel.journalTypeCombo:addOptionWithData("Bloody", "bloody")
     panel.journalTypeCombo:addOptionWithData("Cursed", "cursed")
-    panel.journalTypeCombo:setSelected(2)
+    setComboSelectedCompat(panel.journalTypeCombo, 2)
     panel:addChild(panel.journalTypeCombo)
     panel.journalEditType = "filled"
 
@@ -6962,7 +9931,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
             or "Debug (Legacy)",
         "debug"
     )
-    panel.journalProfileCombo:setSelected(1)
+    setComboSelectedCompat(panel.journalProfileCombo, 1)
     panel:addChild(panel.journalProfileCombo)
     panel.journalProfile = "normal"
 
@@ -7003,7 +9972,7 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
             or "Recovered from Zombie",
         "zombie"
     )
-    panel.journalOriginCombo:setSelected(2)
+    setComboSelectedCompat(panel.journalOriginCombo, 2)
     panel:addChild(panel.journalOriginCombo)
     panel.journalOriginMode = "found"
     y = row1Y + 26
@@ -7151,15 +10120,40 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     deleteUuidBtn:setTooltip("Delete live journal item by UUID and purge debug/index cache records.")
     panel:addChild(deleteUuidBtn)
     y = y + 48
-    
-    -- Skills section header with search field and Add Skill button
-    local skillsLabel = ISLabel:new(padding, y, 18, "Skills (Click squares to set level):", 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+
+    panel.journalFocusedSkill = nil
+    panel.journalTabState = {buttons = {}, panels = {}, current = "skills"}
+
+    local journalTabWidth = 84
+    local journalTabHeight = 22
+    local journalTabSpacing = 6
+    local journalTabX = padding
+    panel.journalTabState.buttons.skills = createDebugButton(panel, journalTabX, y, journalTabWidth, journalTabHeight, getText("UI_BurdJournals_TabSkills") or "Skills", self, BurdJournals.UI.DebugPanel.onJournalSubTab, "skills")
+    journalTabX = journalTabX + journalTabWidth + journalTabSpacing
+    panel.journalTabState.buttons.traits = createDebugButton(panel, journalTabX, y, journalTabWidth, journalTabHeight, getText("UI_BurdJournals_TabTraits") or "Traits", self, BurdJournals.UI.DebugPanel.onJournalSubTab, "traits")
+    journalTabX = journalTabX + journalTabWidth + journalTabSpacing
+    panel.journalTabState.buttons.recipes = createDebugButton(panel, journalTabX, y, journalTabWidth, journalTabHeight, getText("UI_BurdJournals_TabRecipes") or "Recipes", self, BurdJournals.UI.DebugPanel.onJournalSubTab, "recipes")
+    y = y + journalTabHeight + 8
+
+    local utilityY = panel.height - padding - btnHeight
+    local sectionHeight = math.max(220, utilityY - y - 8)
+    local sectionPadding = 8
+    local contentWidth = fullWidth - sectionPadding * 2
+    local searchWidth = 150
+
+    local skillsSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.journalTabState.panels.skills = skillsSection
+    local sy = sectionPadding
+    local journalSkillsLabelText = (getText("UI_BurdJournals_TabSkills") or "Skills") .. " (Click squares to set level):"
+    local skillsLabel = ISLabel:new(sectionPadding, sy + 2, 18, journalSkillsLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
     skillsLabel:initialise()
     skillsLabel:instantiate()
-    panel:addChild(skillsLabel)
-    
-    -- Skill search field
-    panel.journalSkillSearchEntry = ISTextEntryBox:new("", padding + 200, y - 2, 120, 20)
+    skillsSection:addChild(skillsLabel)
+
+    local addSkillWidth = 76
+    local searchGap = 6
+    local journalSkillSearchX = math.max(300, contentWidth - (searchWidth + addSkillWidth + searchGap))
+    panel.journalSkillSearchEntry = ISTextEntryBox:new("", journalSkillSearchX, sy, searchWidth, 20)
     panel.journalSkillSearchEntry:initialise()
     panel.journalSkillSearchEntry:instantiate()
     panel.journalSkillSearchEntry.font = UIFont.Small
@@ -7167,22 +10161,15 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel.journalSkillSearchEntry.onTextChange = function()
         BurdJournals.UI.DebugPanel.filterJournalSkillList(self)
     end
-    panel:addChild(panel.journalSkillSearchEntry)
-    
-    -- Add Skill button
-    local addSkillBtn = ISButton:new(padding + 325, y - 2, 70, 20, "+ Add Skill", self, BurdJournals.UI.DebugPanel.onJournalAddSkillPopup)
-    addSkillBtn:initialise()
-    addSkillBtn:instantiate()
+    skillsSection:addChild(panel.journalSkillSearchEntry)
+
+    local addSkillBtn = createDebugButton(skillsSection, journalSkillSearchX + searchWidth + searchGap, sy, addSkillWidth, 20, "+ Add", self, BurdJournals.UI.DebugPanel.onJournalAddSkillPopup, nil, {r=0.3, g=0.5, b=0.4, a=1}, {r=0.2, g=0.35, b=0.25, a=1}, "Add a new skill to the selected journal.")
     addSkillBtn.font = UIFont.Small
-    addSkillBtn.textColor = {r=1, g=1, b=1, a=1}
-    addSkillBtn.borderColor = {r=0.3, g=0.5, b=0.4, a=1}
-    addSkillBtn.backgroundColor = {r=0.2, g=0.35, b=0.25, a=1}
-    panel:addChild(addSkillBtn)
-    y = y + 22
-    
-    -- Skill list (scrollable) with interactive level visualizers
-    local skillListHeight = 120
-    panel.journalSkillList = ISScrollingListBox:new(padding, y, fullWidth, skillListHeight)
+    panel.journalSkillSourceFilter = createSectionSourceFilterStrip(skillsSection, self, journalSkillsLabelText, journalSkillSearchX, sy, sectionPadding, BurdJournals.UI.DebugPanel.filterJournalSkillList, "Filter journal skills by source.")
+    sy = sy + 24
+
+    local skillListHeight = math.max(96, sectionHeight - 116)
+    panel.journalSkillList = ISScrollingListBox:new(sectionPadding, sy, contentWidth, skillListHeight)
     panel.journalSkillList:initialise()
     panel.journalSkillList:instantiate()
     panel.journalSkillList.itemheight = 24
@@ -7191,228 +10178,207 @@ function BurdJournals.UI.DebugPanel:createJournalPanel(startY, height)
     panel.journalSkillList.doDrawItem = BurdJournals.UI.DebugPanel.drawJournalSkillItem
     panel.journalSkillList.onMouseDown = BurdJournals.UI.DebugPanel.onJournalSkillListClick
     panel.journalSkillList.parentPanel = self
-    panel:addChild(panel.journalSkillList)
-    y = y + skillListHeight + 5
-    
-    -- XP input row for focused skill
-    panel.journalFocusedSkill = nil  -- Track which skill is selected for XP modification
-    
-    panel.journalXPLabel = ISLabel:new(padding, y, 18, "Set XP:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.journalSkillList)
+    sy = sy + skillListHeight + 6
+
+    panel.journalXPLabel = ISLabel:new(sectionPadding, sy, 18, "Set XP:", 0.8, 0.8, 0.8, 1, UIFont.Small, true)
     panel.journalXPLabel:initialise()
     panel.journalXPLabel:instantiate()
-    panel:addChild(panel.journalXPLabel)
-    
-    panel.journalXPEntry = ISTextEntryBox:new("0", padding + 50, y - 2, 70, 20)
+    skillsSection:addChild(panel.journalXPLabel)
+
+    panel.journalXPEntry = ISTextEntryBox:new("0", sectionPadding + 50, sy - 2, 70, 20)
     panel.journalXPEntry:initialise()
     panel.journalXPEntry:instantiate()
     panel.journalXPEntry.font = UIFont.Small
     panel.journalXPEntry:setOnlyNumbers(true)
     panel.journalXPEntry.backgroundColor = {r=0.15, g=0.15, b=0.18, a=1}
     panel.journalXPEntry.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    panel:addChild(panel.journalXPEntry)
-    
-    panel.journalSkillNameLabel = ISLabel:new(padding + 125, y, 18, "Click skill row to select", 0.5, 0.6, 0.7, 1, UIFont.Small, true)
+    skillsSection:addChild(panel.journalXPEntry)
+
+    panel.journalSkillNameLabel = ISLabel:new(sectionPadding + 125, sy, 18, "Select a skill below", 0.5, 0.6, 0.7, 1, UIFont.Small, true)
     panel.journalSkillNameLabel:initialise()
     panel.journalSkillNameLabel:instantiate()
-    panel:addChild(panel.journalSkillNameLabel)
+    skillsSection:addChild(panel.journalSkillNameLabel)
 
-    panel.journalDRLabel = ISLabel:new(padding + 125, y + 12, 16, "DR: --", 0.55, 0.62, 0.72, 1, UIFont.Small, true)
+    panel.journalDRLabel = ISLabel:new(sectionPadding + 125, sy + 12, 16, "Recovery: --", 0.55, 0.62, 0.72, 1, UIFont.Small, true)
     panel.journalDRLabel:initialise()
     panel.journalDRLabel:instantiate()
-    panel:addChild(panel.journalDRLabel)
-    
-    local setXPBtn = ISButton:new(fullWidth - 100, y - 2, 50, 20, "Set", self, BurdJournals.UI.DebugPanel.onJournalSetXP)
+    skillsSection:addChild(panel.journalDRLabel)
+
+    local skillActionSpacing = 6
+    local setXPBtnWidth = 50
+    local removeSkillBtnWidth = 55
+    local skillActionX = contentWidth - (setXPBtnWidth + removeSkillBtnWidth + skillActionSpacing)
+
+    local setXPBtn = ISButton:new(skillActionX, sy - 2, setXPBtnWidth, 20, "Set", self, BurdJournals.UI.DebugPanel.onJournalSetXP)
     setXPBtn:initialise()
     setXPBtn:instantiate()
     setXPBtn.font = UIFont.Small
     setXPBtn.textColor = {r=1, g=1, b=1, a=1}
     setXPBtn.borderColor = {r=0.3, g=0.5, b=0.4, a=1}
     setXPBtn.backgroundColor = {r=0.2, g=0.3, b=0.25, a=1}
-    panel:addChild(setXPBtn)
-    
-    local removeSkillBtn = ISButton:new(fullWidth - 45, y - 2, 55, 20, "Remove", self, BurdJournals.UI.DebugPanel.onJournalRemoveSkill)
+    skillsSection:addChild(setXPBtn)
+
+    local removeSkillBtn = ISButton:new(skillActionX + setXPBtnWidth + skillActionSpacing, sy - 2, removeSkillBtnWidth, 20, "Remove", self, BurdJournals.UI.DebugPanel.onJournalRemoveSkill)
     removeSkillBtn:initialise()
     removeSkillBtn:instantiate()
     removeSkillBtn.font = UIFont.Small
     removeSkillBtn.textColor = {r=1, g=1, b=1, a=1}
     removeSkillBtn.borderColor = {r=0.5, g=0.3, b=0.3, a=1}
     removeSkillBtn.backgroundColor = {r=0.35, g=0.15, b=0.15, a=1}
-    panel:addChild(removeSkillBtn)
-    y = y + 28
+    skillsSection:addChild(removeSkillBtn)
+    sy = sy + 28
 
-    -- Diminishing Returns inspector/edit controls
-    panel.journalDRStepLabel = ISLabel:new(padding, y, 16, "DR Step:", 0.75, 0.8, 0.9, 1, UIFont.Small, true)
+    panel.journalDRStepLabel = ISLabel:new(sectionPadding, sy, 16, "Times Reclaimed:", 0.75, 0.8, 0.9, 1, UIFont.Small, true)
     panel.journalDRStepLabel:initialise()
     panel.journalDRStepLabel:instantiate()
-    panel:addChild(panel.journalDRStepLabel)
+    skillsSection:addChild(panel.journalDRStepLabel)
 
-    panel.journalDRStepEntry = ISTextEntryBox:new("0", padding + 58, y - 2, 60, 20)
+    panel.journalDRStepEntry = ISTextEntryBox:new("0", sectionPadding + 96, sy - 2, 60, 20)
     panel.journalDRStepEntry:initialise()
     panel.journalDRStepEntry:instantiate()
     panel.journalDRStepEntry.font = UIFont.Small
     panel.journalDRStepEntry:setOnlyNumbers(true)
     panel.journalDRStepEntry.backgroundColor = {r=0.15, g=0.15, b=0.18, a=1}
     panel.journalDRStepEntry.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    panel:addChild(panel.journalDRStepEntry)
+    skillsSection:addChild(panel.journalDRStepEntry)
 
-    local setDRStepBtn = ISButton:new(padding + 122, y - 2, 44, 20, "Set", self, BurdJournals.UI.DebugPanel.onJournalSetDRStep)
+    local setDRStepBtn = ISButton:new(sectionPadding + 160, sy - 2, 52, 20, "Apply", self, BurdJournals.UI.DebugPanel.onJournalSetDRStep)
     setDRStepBtn:initialise()
     setDRStepBtn:instantiate()
     setDRStepBtn.font = UIFont.Small
     setDRStepBtn.textColor = {r=1, g=1, b=1, a=1}
     setDRStepBtn.borderColor = {r=0.3, g=0.5, b=0.4, a=1}
     setDRStepBtn.backgroundColor = {r=0.2, g=0.3, b=0.25, a=1}
-    panel:addChild(setDRStepBtn)
+    skillsSection:addChild(setDRStepBtn)
     panel.journalDRSetBtn = setDRStepBtn
 
-    local decDRBtn = ISButton:new(padding + 170, y - 2, 36, 20, "-1", self, BurdJournals.UI.DebugPanel.onJournalDecrementDRStep)
+    local decDRBtn = ISButton:new(sectionPadding + 216, sy - 2, 36, 20, "-1", self, BurdJournals.UI.DebugPanel.onJournalDecrementDRStep)
     decDRBtn:initialise()
     decDRBtn:instantiate()
     decDRBtn.font = UIFont.Small
     decDRBtn.textColor = {r=1, g=1, b=1, a=1}
     decDRBtn.borderColor = {r=0.55, g=0.42, b=0.35, a=1}
     decDRBtn.backgroundColor = {r=0.34, g=0.23, b=0.2, a=1}
-    panel:addChild(decDRBtn)
+    skillsSection:addChild(decDRBtn)
     panel.journalDRDecBtn = decDRBtn
 
-    local incDRBtn = ISButton:new(padding + 210, y - 2, 36, 20, "+1", self, BurdJournals.UI.DebugPanel.onJournalIncrementDRStep)
+    local incDRBtn = ISButton:new(sectionPadding + 256, sy - 2, 36, 20, "+1", self, BurdJournals.UI.DebugPanel.onJournalIncrementDRStep)
     incDRBtn:initialise()
     incDRBtn:instantiate()
     incDRBtn.font = UIFont.Small
     incDRBtn.textColor = {r=1, g=1, b=1, a=1}
     incDRBtn.borderColor = {r=0.35, g=0.45, b=0.55, a=1}
     incDRBtn.backgroundColor = {r=0.2, g=0.26, b=0.34, a=1}
-    panel:addChild(incDRBtn)
+    skillsSection:addChild(incDRBtn)
     panel.journalDRIncBtn = incDRBtn
 
-    local resetDRBtn = ISButton:new(padding + 250, y - 2, 56, 20, "Reset", self, BurdJournals.UI.DebugPanel.onJournalResetDR)
+    local resetDRBtn = ISButton:new(sectionPadding + 296, sy - 2, 88, 20, "Reset History", self, BurdJournals.UI.DebugPanel.onJournalResetDR)
     resetDRBtn:initialise()
     resetDRBtn:instantiate()
     resetDRBtn.font = UIFont.Small
     resetDRBtn.textColor = {r=1, g=1, b=1, a=1}
     resetDRBtn.borderColor = {r=0.5, g=0.35, b=0.25, a=1}
     resetDRBtn.backgroundColor = {r=0.3, g=0.2, b=0.12, a=1}
-    panel:addChild(resetDRBtn)
+    skillsSection:addChild(resetDRBtn)
     panel.journalDRResetBtn = resetDRBtn
 
-    panel.journalDRHintLabel = ISLabel:new(padding + 312, y, 16, "", 0.55, 0.62, 0.72, 1, UIFont.Small, true)
+    panel.journalDRHintLabel = ISLabel:new(sectionPadding + 390, sy, 16, "", 0.55, 0.62, 0.72, 1, UIFont.Small, true)
     panel.journalDRHintLabel:initialise()
     panel.journalDRHintLabel:instantiate()
-    panel:addChild(panel.journalDRHintLabel)
-    y = y + 26
+    skillsSection:addChild(panel.journalDRHintLabel)
+    sy = sy + 26
 
-    panel.journalDRPreviewLabel = ISLabel:new(padding + 125, y - 2, 16, "N1 -- | N2 -- | N3 --", 0.65, 0.75, 0.85, 1, UIFont.Small, true)
+    panel.journalDRPreviewLabel = ISLabel:new(sectionPadding + 125, sy - 2, 16, getText("UI_BurdJournals_DebugReclaimPreviewEmpty"), 0.65, 0.75, 0.85, 1, UIFont.Small, true)
     panel.journalDRPreviewLabel:initialise()
     panel.journalDRPreviewLabel:instantiate()
-    panel:addChild(panel.journalDRPreviewLabel)
-    y = y + 20
-    
-    -- =============================================
-    -- TRAITS SECTION - Two columns
-    -- =============================================
-    
-    -- Left column: Available Traits (to add)
-    local availTraitsLabel = ISLabel:new(padding, y, 18, "Available Traits:", 0.9, 0.9, 0.7, 1, UIFont.Small, true)
-    availTraitsLabel:initialise()
-    availTraitsLabel:instantiate()
-    panel:addChild(availTraitsLabel)
-    
-    -- Left column search field
-    panel.journalAvailTraitSearchEntry = ISTextEntryBox:new("", padding + 105, y - 2, halfWidth - 115, 20)
-    panel.journalAvailTraitSearchEntry:initialise()
-    panel.journalAvailTraitSearchEntry:instantiate()
-    panel.journalAvailTraitSearchEntry.font = UIFont.Small
-    panel.journalAvailTraitSearchEntry:setTooltip("Filter available traits...")
-    panel.journalAvailTraitSearchEntry.onTextChange = function()
-        BurdJournals.UI.DebugPanel.filterJournalAvailTraitList(self)
+    skillsSection:addChild(panel.journalDRPreviewLabel)
+
+    local traitsSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.journalTabState.panels.traits = traitsSection
+    local ty = sectionPadding
+    local journalTraitsLabelText = getText("UI_BurdJournals_TabTraits") or "Traits"
+    local traitsLabel = ISLabel:new(sectionPadding, ty + 2, 18, journalTraitsLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    traitsLabel:initialise()
+    traitsLabel:instantiate()
+    traitsSection:addChild(traitsLabel)
+
+    local journalTraitSearchX = math.max(220, contentWidth - 156)
+    panel.journalTraitSearchEntry = ISTextEntryBox:new("", journalTraitSearchX, ty, 150, 20)
+    panel.journalTraitSearchEntry:initialise()
+    panel.journalTraitSearchEntry:instantiate()
+    panel.journalTraitSearchEntry.font = UIFont.Small
+    panel.journalTraitSearchEntry:setTooltip("Filter traits...")
+    panel.journalTraitSearchEntry.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterJournalTraitList(self)
     end
-    panel:addChild(panel.journalAvailTraitSearchEntry)
-    
-    -- Right column: Journal Traits (to remove)
-    local journalTraitsLabel = ISLabel:new(padding + halfWidth + padding, y, 18, "In Journal:", 0.9, 0.9, 0.7, 1, UIFont.Small, true)
-    journalTraitsLabel:initialise()
-    journalTraitsLabel:instantiate()
-    panel:addChild(journalTraitsLabel)
-    
-    -- Right column search field
-    panel.journalInTraitSearchEntry = ISTextEntryBox:new("", padding + halfWidth + padding + 70, y - 2, halfWidth - 80, 20)
-    panel.journalInTraitSearchEntry:initialise()
-    panel.journalInTraitSearchEntry:instantiate()
-    panel.journalInTraitSearchEntry.font = UIFont.Small
-    panel.journalInTraitSearchEntry:setTooltip("Filter journal traits...")
-    panel.journalInTraitSearchEntry.onTextChange = function()
-        BurdJournals.UI.DebugPanel.filterJournalInTraitList(self)
+    traitsSection:addChild(panel.journalTraitSearchEntry)
+    panel.journalTraitSourceFilter = createSectionSourceFilterStrip(traitsSection, self, journalTraitsLabelText, journalTraitSearchX, ty, sectionPadding, BurdJournals.UI.DebugPanel.filterJournalTraitList, "Filter journal traits by source.")
+    ty = ty + 24
+
+    local traitListHeight = math.max(120, sectionHeight - 32)
+    panel.journalTraitList = ISScrollingListBox:new(sectionPadding, ty, contentWidth, traitListHeight)
+    panel.journalTraitList:initialise()
+    panel.journalTraitList:instantiate()
+    panel.journalTraitList.itemheight = 24
+    panel.journalTraitList.backgroundColor = {r=0.08, g=0.08, b=0.1, a=1}
+    panel.journalTraitList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    panel.journalTraitList.doDrawItem = BurdJournals.UI.DebugPanel.drawJournalTraitItem
+    panel.journalTraitList.onMouseDown = BurdJournals.UI.DebugPanel.onJournalTraitListClick
+    panel.journalTraitList.parentPanel = self
+    traitsSection:addChild(panel.journalTraitList)
+
+    local recipesSection = createDebugSectionPanel(panel, padding, y, fullWidth, sectionHeight)
+    panel.journalTabState.panels.recipes = recipesSection
+    local ry = sectionPadding
+    local journalRecipesLabelText = getText("UI_BurdJournals_TabRecipes") or "Recipes"
+    local recipesLabel = ISLabel:new(sectionPadding, ry + 2, 18, journalRecipesLabelText, 0.9, 0.9, 0.7, 1, UIFont.Small, true)
+    recipesLabel:initialise()
+    recipesLabel:instantiate()
+    recipesSection:addChild(recipesLabel)
+
+    local journalRecipeSearchX = math.max(220, contentWidth - 156)
+    panel.journalRecipeSearchEntry = ISTextEntryBox:new("", journalRecipeSearchX, ry, 150, 20)
+    panel.journalRecipeSearchEntry:initialise()
+    panel.journalRecipeSearchEntry:instantiate()
+    panel.journalRecipeSearchEntry.font = UIFont.Small
+    panel.journalRecipeSearchEntry:setTooltip("Filter recipes...")
+    panel.journalRecipeSearchEntry.onTextChange = function()
+        BurdJournals.UI.DebugPanel.filterJournalRecipeList(self)
     end
-    panel:addChild(panel.journalInTraitSearchEntry)
-    y = y + 22
-    
-    -- Trait lists - two columns
-    local traitListHeight = 90
-    
-    -- Left column: Available traits list
-    panel.journalAvailTraitList = ISScrollingListBox:new(padding, y, halfWidth, traitListHeight)
-    panel.journalAvailTraitList:initialise()
-    panel.journalAvailTraitList:instantiate()
-    panel.journalAvailTraitList.itemheight = 22
-    panel.journalAvailTraitList.backgroundColor = {r=0.08, g=0.08, b=0.1, a=1}
-    panel.journalAvailTraitList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    panel.journalAvailTraitList.doDrawItem = BurdJournals.UI.DebugPanel.drawJournalAvailTraitItem
-    panel.journalAvailTraitList.onMouseDown = BurdJournals.UI.DebugPanel.onJournalAvailTraitListClick
-    panel.journalAvailTraitList.parentPanel = self
-    panel:addChild(panel.journalAvailTraitList)
-    
-    -- Right column: Journal traits list
-    panel.journalInTraitList = ISScrollingListBox:new(padding + halfWidth + padding, y, halfWidth, traitListHeight)
-    panel.journalInTraitList:initialise()
-    panel.journalInTraitList:instantiate()
-    panel.journalInTraitList.itemheight = 22
-    panel.journalInTraitList.backgroundColor = {r=0.08, g=0.08, b=0.1, a=1}
-    panel.journalInTraitList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
-    panel.journalInTraitList.doDrawItem = BurdJournals.UI.DebugPanel.drawJournalInTraitItem
-    panel.journalInTraitList.onMouseDown = BurdJournals.UI.DebugPanel.onJournalInTraitListClick
-    panel.journalInTraitList.parentPanel = self
-    panel:addChild(panel.journalInTraitList)
-    y = y + traitListHeight + 10
-    
-    -- Action buttons row
-    local btnWidth = 100
-    local btnSpacing = 6
-    local btnX = padding
-    
-    local clearSkillsBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Clear All Skills", self, BurdJournals.UI.DebugPanel.onJournalCmd)
-    clearSkillsBtn:initialise()
-    clearSkillsBtn:instantiate()
-    clearSkillsBtn.font = UIFont.Small
-    clearSkillsBtn.internal = "clearskills"
-    clearSkillsBtn.textColor = {r=1, g=1, b=1, a=1}
-    clearSkillsBtn.borderColor = {r=0.5, g=0.3, b=0.3, a=1}
-    clearSkillsBtn.backgroundColor = {r=0.35, g=0.15, b=0.15, a=1}
-    panel:addChild(clearSkillsBtn)
-    btnX = btnX + btnWidth + btnSpacing
-    
-    local clearTraitsBtn = ISButton:new(btnX, y, btnWidth, btnHeight, "Clear All Traits", self, BurdJournals.UI.DebugPanel.onJournalCmd)
-    clearTraitsBtn:initialise()
-    clearTraitsBtn:instantiate()
-    clearTraitsBtn.font = UIFont.Small
-    clearTraitsBtn.internal = "cleartraits"
-    clearTraitsBtn.textColor = {r=1, g=1, b=1, a=1}
-    clearTraitsBtn.borderColor = {r=0.5, g=0.3, b=0.3, a=1}
-    clearTraitsBtn.backgroundColor = {r=0.35, g=0.15, b=0.15, a=1}
-    panel:addChild(clearTraitsBtn)
-    btnX = btnX + btnWidth + btnSpacing
-    
-    local refreshBtn = ISButton:new(btnX, y, 70, btnHeight, "Refresh", self, BurdJournals.UI.DebugPanel.onJournalRefresh)
-    refreshBtn:initialise()
-    refreshBtn:instantiate()
-    refreshBtn.font = UIFont.Small
-    refreshBtn.textColor = {r=1, g=1, b=1, a=1}
-    refreshBtn.borderColor = {r=0.4, g=0.5, b=0.6, a=1}
-    refreshBtn.backgroundColor = {r=0.2, g=0.25, b=0.3, a=1}
-    panel:addChild(refreshBtn)
+    recipesSection:addChild(panel.journalRecipeSearchEntry)
+    panel.journalRecipeSourceFilter = createSectionSourceFilterStrip(recipesSection, self, journalRecipesLabelText, journalRecipeSearchX, ry, sectionPadding, BurdJournals.UI.DebugPanel.filterJournalRecipeList, "Filter journal recipes by source.")
+    ry = ry + 24
+
+    local recipeListHeight = math.max(120, sectionHeight - 32)
+    panel.journalRecipeList = ISScrollingListBox:new(sectionPadding, ry, contentWidth, recipeListHeight)
+    panel.journalRecipeList:initialise()
+    panel.journalRecipeList:instantiate()
+    panel.journalRecipeList.itemheight = 30
+    panel.journalRecipeList.backgroundColor = {r=0.08, g=0.08, b=0.1, a=1}
+    panel.journalRecipeList.borderColor = {r=0.3, g=0.4, b=0.5, a=1}
+    panel.journalRecipeList.doDrawItem = BurdJournals.UI.DebugPanel.drawJournalRecipeItem
+    panel.journalRecipeList.onMouseDown = BurdJournals.UI.DebugPanel.onJournalRecipeListClick
+    panel.journalRecipeList.parentPanel = self
+    recipesSection:addChild(panel.journalRecipeList)
+
+    local editorBtnWidth = 112
+    local editorBtnSpacing = 6
+    local editorBtnX = padding
+    createDebugButton(panel, editorBtnX, utilityY, editorBtnWidth, btnHeight, "Clear " .. (getText("UI_BurdJournals_TabSkills") or "Skills"), self, BurdJournals.UI.DebugPanel.onJournalCmd, "clearskills", {r=0.5, g=0.3, b=0.3, a=1}, {r=0.35, g=0.15, b=0.15, a=1})
+    editorBtnX = editorBtnX + editorBtnWidth + editorBtnSpacing
+    createDebugButton(panel, editorBtnX, utilityY, editorBtnWidth, btnHeight, "Clear " .. (getText("UI_BurdJournals_TabTraits") or "Traits"), self, BurdJournals.UI.DebugPanel.onJournalCmd, "cleartraits", {r=0.5, g=0.3, b=0.3, a=1}, {r=0.35, g=0.15, b=0.15, a=1})
+    editorBtnX = editorBtnX + editorBtnWidth + editorBtnSpacing
+    createDebugButton(panel, editorBtnX, utilityY, editorBtnWidth, btnHeight, "Clear " .. (getText("UI_BurdJournals_TabRecipes") or "Recipes"), self, BurdJournals.UI.DebugPanel.onJournalCmd, "clearrecipes", {r=0.5, g=0.3, b=0.3, a=1}, {r=0.35, g=0.15, b=0.15, a=1})
+    editorBtnX = editorBtnX + editorBtnWidth + editorBtnSpacing
+    createDebugButton(panel, editorBtnX, utilityY, 74, btnHeight, "Refresh", self, BurdJournals.UI.DebugPanel.onJournalRefresh)
+
+    setDebugSubTabState(panel.journalTabState, "skills")
 
     -- Store reference
     self.journalPanel = panel
     self:updateJournalEditorMetaVisibility()
+    self:updateJournalTargetSummary()
 end
 
 local function getSelectedJournalOwnerData(panel)
@@ -7672,43 +10638,41 @@ function BurdJournals.UI.DebugPanel.filterJournalSkillList(self)
     if not panel or not panel.journalSkillSearchEntry or not panel.journalSkillList then return end
     
     local searchText = panel.journalSkillSearchEntry:getText() or ""
+    local selectedSourceId = panel.journalSkillSourceFilter and panel.journalSkillSourceFilter.selectedSourceId or "all"
     
-    for _, itemData in ipairs(panel.journalSkillList.items) do
-        if itemData.item then
-            itemData.item.hidden = searchText ~= "" and
-                not debugSearchMatches(searchText, itemData.item.displayName, itemData.item.name)
-        end
-    end
+    applyDebugRowFilter(panel.journalSkillList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.category, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
--- Filter available trait list (left column) by search text
-function BurdJournals.UI.DebugPanel.filterJournalAvailTraitList(self)
+function BurdJournals.UI.DebugPanel.filterJournalTraitList(self)
     local panel = self.journalPanel
-    if not panel or not panel.journalAvailTraitSearchEntry or not panel.journalAvailTraitList then return end
+    if not panel or not panel.journalTraitSearchEntry or not panel.journalTraitList then return end
     
-    local searchText = panel.journalAvailTraitSearchEntry:getText() or ""
+    local searchText = panel.journalTraitSearchEntry:getText() or ""
+    local selectedSourceId = panel.journalTraitSourceFilter and panel.journalTraitSourceFilter.selectedSourceId or "all"
     
-    for _, itemData in ipairs(panel.journalAvailTraitList.items) do
-        if itemData.item then
-            itemData.item.hidden = searchText ~= "" and
-                not debugSearchMatches(searchText, itemData.item.displayName, itemData.item.id)
-        end
-    end
+    applyDebugRowFilter(panel.journalTraitList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.id, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
--- Filter journal trait list (right column) by search text
-function BurdJournals.UI.DebugPanel.filterJournalInTraitList(self)
+function BurdJournals.UI.DebugPanel.filterJournalRecipeList(self)
     local panel = self.journalPanel
-    if not panel or not panel.journalInTraitSearchEntry or not panel.journalInTraitList then return end
+    if not panel or not panel.journalRecipeSearchEntry or not panel.journalRecipeList then return end
     
-    local searchText = panel.journalInTraitSearchEntry:getText() or ""
+    local searchText = panel.journalRecipeSearchEntry:getText() or ""
+    local selectedSourceId = panel.journalRecipeSourceFilter and panel.journalRecipeSourceFilter.selectedSourceId or "all"
     
-    for _, itemData in ipairs(panel.journalInTraitList.items) do
-        if itemData.item then
-            itemData.item.hidden = searchText ~= "" and
-                not debugSearchMatches(searchText, itemData.item.displayName, itemData.item.id)
-        end
-    end
+    applyDebugRowFilter(panel.journalRecipeList, function(row)
+        local matchesSearch = searchText == "" or debugSearchMatches(searchText, row.displayName, row.name, row.magazineSource, row.magazineDisplayName, row.source)
+        local matchesSource = debugRowMatchesSourceFilter(row, selectedSourceId)
+        return matchesSearch and matchesSource
+    end)
 end
 
 local function getJournalAuthorForPicker(journalData)
@@ -7941,13 +10905,13 @@ local function getServerIndexDisplayName(entry)
 
     local itemType = tostring(entry and entry.itemType or "")
     if itemType:find("_Bloody") or entry.wasFromBloody then
-        return "Bloody Journal"
+        return getText("Tooltip_BurdJournals_BloodyJournal")
     end
     if itemType:find("_Worn") or entry.wasFromWorn then
-        return "Worn Journal"
+        return getText("Tooltip_BurdJournals_WornJournal")
     end
     if entry and entry.isPlayerCreated == true then
-        return "Personal Journal"
+        return getText("Tooltip_BurdJournals_PersonalJournal")
     end
     if itemType ~= "" then
         local short = itemType:match("^.+%.(.+)$")
@@ -7955,7 +10919,7 @@ local function getServerIndexDisplayName(entry)
             return short
         end
     end
-    return "Journal"
+    return getText("UI_BurdJournals_DebugJournalTypeGeneric")
 end
 
 local function getServerIndexDisplayText(entry)
@@ -8273,7 +11237,7 @@ local function normalizeDebugJournalXPMode(data, player)
                 local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
                 if perk then
                     sampledSkills = sampledSkills + 1
-                    local actualXP = player:getXp():getXP(perk)
+                    local actualXP = BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or player:getXp():getXP(perk)
                     local baselineXP = math.max(0, tonumber(BurdJournals.getSkillBaseline and BurdJournals.getSkillBaseline(player, skillName) or 0) or 0)
                     local earnedXP = math.max(0, actualXP - baselineXP)
                     if storedXP > (earnedXP + 0.001) and storedXP <= (actualXP + 0.001) then
@@ -8544,9 +11508,7 @@ function BurdJournals.UI.DebugPanel:onJournalDeleteByUUIDPrompt()
         return
     end
 
-    local text = "Delete journal UUID:\n" .. tostring(uuid)
-        .. "\n\nThis permanently removes the live journal item (if found) and purges cached UUID records."
-        .. "\n\nAre you sure?"
+    local text = BurdJournals.formatText(getText("UI_BurdJournals_DebugDeleteJournalUUID"), tostring(uuid))
 
     local panel = self
     local callback = function(_target, button)
@@ -8615,11 +11577,44 @@ function BurdJournals.UI.DebugPanel.resolveSkillKey(skillsTable, skillName)
     return skillName
 end
 
+function BurdJournals.UI.DebugPanel.resolveRecipeKey(recipesTable, recipeName)
+    local wanted = string.lower(tostring(recipeName or ""))
+    if wanted == "" then
+        return nil
+    end
+
+    if type(recipesTable) == "table" then
+        for key, _ in pairs(recipesTable) do
+            if string.lower(tostring(key or "")) == wanted then
+                return key
+            end
+        end
+    end
+
+    if BurdJournals.normalizeTable then
+        local normalized = BurdJournals.normalizeTable(recipesTable)
+        if type(normalized) == "table" then
+            for key, _ in pairs(normalized) do
+                if string.lower(tostring(key or "")) == wanted then
+                    return key
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
 -- Helper: safely call base list mouse down without pcall
 function BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
+    local resolvedRow = getDebugListRowAt(self, x, y)
     if ISScrollingListBox and ISScrollingListBox.onMouseDown then
         ISScrollingListBox.onMouseDown(self, x, y)
     end
+    if resolvedRow > 0 and self.items and self.items[resolvedRow] then
+        self.selected = resolvedRow
+    end
+    return resolvedRow
 end
 
 -- Helper: build lookup of trait costs (positive/negative/neutral)
@@ -8630,10 +11625,494 @@ function BurdJournals.UI.DebugPanel.buildTraitCostLookup()
     return {}
 end
 
+local function getDebugTraitLookupCost(traitId, costLookup)
+    local normalized = BurdJournals.UI.DebugPanel.normalizeTraitId(traitId) or traitId
+    normalized = string.gsub(tostring(normalized or ""), "^base:", "")
+    if normalized == "" then
+        return nil, normalized
+    end
+
+    local lookup = costLookup or BurdJournals.UI.DebugPanel.buildTraitCostLookup()
+    return tonumber(lookup[string.lower(normalized)]), normalized
+end
+
+local function resolveDebugTraitBucket(traitId, costLookup)
+    local traitData = BurdJournals and BurdJournals.getTraitMetadata and BurdJournals.getTraitMetadata(traitId) or nil
+    if traitData and traitData.isPositive ~= nil then
+        return traitData.isPositive and "positive" or "negative"
+    end
+
+    local cost, normalized = getDebugTraitLookupCost(traitId, costLookup)
+    if normalized == "" then
+        return nil
+    end
+
+    if cost ~= nil and cost > 0 then
+        return "positive"
+    end
+    if cost ~= nil and cost < 0 then
+        return "negative"
+    end
+
+    if BurdJournals and BurdJournals.buildKnownTraitSets then
+        BurdJournals.buildKnownTraitSets()
+    end
+
+    local positiveSet = BurdJournals and BurdJournals._knownPositiveTraitsSet or nil
+    local negativeSet = BurdJournals and BurdJournals._knownNegativeTraitsSet or nil
+    local lower = string.lower(normalized)
+
+    if positiveSet and positiveSet[lower] then
+        return "positive"
+    end
+    if negativeSet and negativeSet[lower] then
+        return "negative"
+    end
+
+    local aliases = BurdJournals and BurdJournals.getTraitAliases and BurdJournals.getTraitAliases(normalized) or {}
+    for _, alias in ipairs(aliases) do
+        local aliasLower = string.lower(tostring(alias or ""))
+        if positiveSet and positiveSet[aliasLower] then
+            return "positive"
+        end
+        if negativeSet and negativeSet[aliasLower] then
+            return "negative"
+        end
+    end
+
+    if BurdJournals and BurdJournals.determineTraitPolarity then
+        local polarity = BurdJournals.determineTraitPolarity(normalized, cost)
+        if polarity == false then
+            return "negative"
+        end
+        if polarity == true then
+            return "positive"
+        end
+    end
+
+    return "neutral"
+end
+
+function BurdJournals.UI.DebugPanel.resolveTraitIsPositive(traitId, traitData, costLookup)
+    if traitData and traitData.isPositive ~= nil then
+        return traitData.isPositive
+    end
+
+    return resolveDebugTraitBucket(traitId, costLookup) ~= "negative"
+end
+
+function BurdJournals.UI.DebugPanel.getDebugBulkTraitActionSpec(action)
+    local specs = {
+        addalltraits = {
+            isAdd = true,
+            pendingMessage = "Adding all traits...",
+            resultLabel = "traits",
+        },
+        addallpositivetraits = {
+            isAdd = true,
+            pendingMessage = "Adding all positive traits...",
+            resultLabel = "positive traits",
+        },
+        addallnegativetraits = {
+            isAdd = true,
+            pendingMessage = "Adding all negative traits...",
+            resultLabel = "negative traits",
+        },
+        removealltraits = {
+            isAdd = false,
+            pendingMessage = "Removing all traits...",
+            resultLabel = "traits",
+        },
+        removeallpositivetraits = {
+            isAdd = false,
+            pendingMessage = "Removing all positive traits...",
+            resultLabel = "positive traits",
+        },
+        removeallnegativetraits = {
+            isAdd = false,
+            pendingMessage = "Removing all negative traits...",
+            resultLabel = "negative traits",
+        },
+    }
+
+    return specs[string.lower(tostring(action or ""))]
+end
+
+function BurdJournals.UI.DebugPanel.getBulkTraitBucket(traitId)
+    return resolveDebugTraitBucket(traitId)
+end
+
+function BurdJournals.UI.DebugPanel.matchesBulkTraitAction(action, traitId)
+    local spec = BurdJournals.UI.DebugPanel.getDebugBulkTraitActionSpec(action)
+    if not spec then
+        return false
+    end
+
+    if spec.resultLabel == "traits" then
+        return true
+    end
+
+    local normalized = BurdJournals.UI.DebugPanel.normalizeTraitId(traitId) or traitId
+    normalized = string.gsub(tostring(normalized or ""), "^base:", "")
+    if normalized == "" then
+        return false
+    end
+
+    local bucket = BurdJournals.UI.DebugPanel.getBulkTraitBucket(normalized)
+
+    if spec.resultLabel == "positive traits" then
+        return bucket == "positive"
+    end
+
+    if spec.resultLabel == "negative traits" then
+        return bucket == "negative"
+    end
+
+    return false
+end
+
+function BurdJournals.UI.DebugPanel.collectAvailableTraitIdsForBulkAction(action)
+    local out = {}
+    local seen = {}
+    local availableTraits = BurdJournals.UI.DebugPanel.getAvailableTraits and BurdJournals.UI.DebugPanel.getAvailableTraits() or {}
+    if type(availableTraits) ~= "table" then
+        availableTraits = {}
+    end
+
+    for _, rawTraitId in ipairs(availableTraits) do
+        local traitId = BurdJournals.UI.DebugPanel.normalizeTraitId(rawTraitId) or rawTraitId
+        traitId = string.gsub(tostring(traitId or ""), "^base:", "")
+        if traitId ~= ""
+            and not (BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(traitId))
+            and BurdJournals.UI.DebugPanel.matchesBulkTraitAction(action, traitId) then
+            local key = string.lower(traitId)
+            if not seen[key] then
+                seen[key] = true
+                out[#out + 1] = traitId
+            end
+        end
+    end
+
+    table.sort(out)
+    return out
+end
+
+function BurdJournals.UI.DebugPanel.collectOwnedTraitIdsForBulkAction(targetPlayer, action)
+    local traitsToApply = {}
+    local seenTraitIds = {}
+
+    local function extractTraitId(candidate)
+        if candidate == nil then
+            return nil
+        end
+        if type(candidate) == "string" then
+            return candidate
+        end
+        if candidate.getResourceLocation then
+            local location = candidate:getResourceLocation()
+            if location ~= nil and tostring(location) ~= "" then
+                return tostring(location)
+            end
+        end
+        if candidate.getName then
+            local name = candidate:getName()
+            if name ~= nil and tostring(name) ~= "" then
+                return tostring(name)
+            end
+        end
+        return nil
+    end
+
+    local function queueTraitId(rawTraitId)
+        local traitId = BurdJournals.UI.DebugPanel.normalizeTraitId(rawTraitId) or rawTraitId
+        traitId = string.gsub(tostring(traitId or ""), "^base:", "")
+        if traitId == "" then
+            return
+        end
+        if BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(traitId) then
+            return
+        end
+        if not BurdJournals.UI.DebugPanel.matchesBulkTraitAction(action, traitId) then
+            return
+        end
+
+        local seenKey = string.lower(traitId)
+        if seenTraitIds[seenKey] then
+            return
+        end
+
+        seenTraitIds[seenKey] = true
+        traitsToApply[#traitsToApply + 1] = traitId
+    end
+
+    if targetPlayer and BurdJournals.collectPlayerTraits then
+        local collectedTraits = BurdJournals.collectPlayerTraits(targetPlayer, false) or {}
+        for key, value in pairs(collectedTraits) do
+            if type(key) == "string" then
+                queueTraitId(key)
+            elseif type(value) == "string" then
+                queueTraitId(value)
+            elseif type(value) == "table" then
+                queueTraitId(value.id or value.type or value.name)
+            end
+        end
+    end
+
+    if targetPlayer then
+        local function queueTraitLike(traitLike)
+            local traitId = extractTraitId(traitLike)
+            if not traitId and traitLike and traitLike.getType then
+                traitId = extractTraitId(traitLike:getType())
+            end
+            if not traitId and traitLike and traitLike.getTrait then
+                traitId = extractTraitId(traitLike:getTrait())
+            end
+            if traitId then
+                queueTraitId(traitId)
+            end
+        end
+
+        if targetPlayer.getTraits then
+            local traits = targetPlayer:getTraits()
+            if traits and traits.size and traits.get then
+                for i = 0, traits:size() - 1 do
+                    queueTraitLike(traits:get(i))
+                end
+            end
+        end
+
+        if targetPlayer.getCharacterTraits then
+            local charTraits = targetPlayer:getCharacterTraits()
+            if charTraits and charTraits.size and charTraits.get then
+                for i = 0, charTraits:size() - 1 do
+                    queueTraitLike(charTraits:get(i))
+                end
+            end
+        end
+
+        if CharacterTraitDefinition and CharacterTraitDefinition.getTraits and targetPlayer.hasTrait then
+            local allDefs = CharacterTraitDefinition.getTraits()
+            if allDefs then
+                for i = 0, allDefs:size() - 1 do
+                    local def = allDefs:get(i)
+                    if def then
+                        local probeTrait = (def.getType and def:getType())
+                            or (def.getTrait and def:getTrait())
+                            or nil
+                        if probeTrait and targetPlayer:hasTrait(probeTrait) then
+                            queueTraitLike(probeTrait)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(traitsToApply)
+    return traitsToApply
+end
+
+local function removeDebugTraitCompletelyLocally(targetPlayer, traitId)
+    if not targetPlayer or not traitId then
+        return 0, false
+    end
+
+    local removedCount = 0
+    local remainingPasses = 32
+
+    while remainingPasses > 0 do
+        local hasTrait = BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(targetPlayer, traitId) == true
+        if not hasTrait then
+            break
+        end
+
+        local okRemove, removed = pcall(function()
+            return BurdJournals.safeRemoveTrait and BurdJournals.safeRemoveTrait(targetPlayer, traitId, { skipSyncXp = true }) == true
+        end)
+        if not okRemove then
+            return removedCount, false, tostring(removed)
+        end
+        if not removed then
+            break
+        end
+
+        removedCount = removedCount + 1
+        remainingPasses = remainingPasses - 1
+    end
+
+    local stillHas = BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(targetPlayer, traitId) == true
+    return removedCount, not stillHas, stillHas and "trait still present after bulk removal" or nil
+end
+
+function BurdJournals.UI.DebugPanel.applyBulkTraitActionLocally(targetPlayer, action, addOpts)
+    local actionSpec = BurdJournals.UI.DebugPanel.getDebugBulkTraitActionSpec(action)
+    if not actionSpec or not targetPlayer then
+        return 0, 0, 0
+    end
+
+    local appliedCount = 0
+    local skippedCount = 0
+    local failedCount = 0
+    local traitIds = actionSpec.isAdd
+        and BurdJournals.UI.DebugPanel.collectAvailableTraitIdsForBulkAction(action)
+        or BurdJournals.UI.DebugPanel.collectOwnedTraitIdsForBulkAction(targetPlayer, action)
+
+    for _, traitId in ipairs(traitIds) do
+        if actionSpec.isAdd then
+            local hadBefore = BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(targetPlayer, traitId) == true
+            if hadBefore then
+                skippedCount = skippedCount + 1
+            else
+                local okAdd, added = pcall(function()
+                    local traitAddOpts = BurdJournals.UI.DebugPanel.buildDebugTraitAddOptions(
+                        BurdJournals.UI.DebugPanel.instance,
+                        addOpts or { skipSyncXp = true }
+                    )
+                    traitAddOpts.skipSyncXp = true
+                    local traitAdded = BurdJournals.safeAddTrait and BurdJournals.safeAddTrait(targetPlayer, traitId, traitAddOpts) or false
+                    if traitAdded
+                        and not (traitAddOpts and traitAddOpts.skipTraitReconciliation == true)
+                        and BurdJournals.Server
+                        and BurdJournals.Server.resolveAndRemoveTraitConflicts then
+                        BurdJournals.Server.resolveAndRemoveTraitConflicts(targetPlayer, traitId, { skipSyncXp = true })
+                    end
+                    return traitAdded
+                end)
+                if okAdd then
+                    local hasAfter = BurdJournals.playerHasTrait and BurdJournals.playerHasTrait(targetPlayer, traitId) == true
+                    if added or hasAfter then
+                        appliedCount = appliedCount + 1
+                    else
+                        failedCount = failedCount + 1
+                    end
+                else
+                    failedCount = failedCount + 1
+                    if BurdJournals.writeLogLine then
+                        BurdJournals.writeLogLine("[BurdJournals] DebugPanel.applyBulkTraitActionLocally: add failed for '" .. tostring(traitId) .. "' during '" .. tostring(action) .. "': " .. tostring(added))
+                    end
+                end
+            end
+        else
+            local failedSeen = {}
+            local removalPassesRemaining = 8
+            while removalPassesRemaining > 0 do
+                local removedAnyThisPass = false
+                local pendingTraitIds = BurdJournals.UI.DebugPanel.collectOwnedTraitIdsForBulkAction(targetPlayer, action)
+                if #pendingTraitIds == 0 then
+                    break
+                end
+
+                for _, pendingTraitId in ipairs(pendingTraitIds) do
+                    local removedPasses, cleared, removeErr = removeDebugTraitCompletelyLocally(targetPlayer, pendingTraitId)
+                    if removedPasses > 0 and cleared then
+                        appliedCount = appliedCount + removedPasses
+                        removedAnyThisPass = true
+                    else
+                        local failKey = string.lower(tostring(pendingTraitId or ""))
+                        if failKey ~= "" and not failedSeen[failKey] then
+                            failedSeen[failKey] = true
+                            failedCount = failedCount + 1
+                            if BurdJournals.writeLogLine then
+                                BurdJournals.writeLogLine("[BurdJournals] DebugPanel.applyBulkTraitActionLocally: remove failed for '" .. tostring(pendingTraitId) .. "' during '" .. tostring(action) .. "': " .. tostring(removeErr))
+                            end
+                        end
+                    end
+                end
+
+                if not removedAnyThisPass then
+                    break
+                end
+                removalPassesRemaining = removalPassesRemaining - 1
+            end
+            break
+        end
+    end
+
+    if appliedCount > 0 and SyncXp then
+        pcall(function()
+            SyncXp(targetPlayer)
+        end)
+    end
+
+    return appliedCount, skippedCount, failedCount
+end
+
+function BurdJournals.UI.DebugPanel.formatBulkTraitActionMessage(action, count, skippedCount, failedCount)
+    local spec = BurdJournals.UI.DebugPanel.getDebugBulkTraitActionSpec(action)
+    if not spec then
+        return getText("UI_BurdJournals_DebugTraitsUpdated") or "Traits updated."
+    end
+
+    count = tonumber(count) or 0
+    skippedCount = tonumber(skippedCount) or 0
+    failedCount = tonumber(failedCount) or 0
+
+    local parts = {}
+    local verb = spec.isAdd and "Added " or "Removed "
+    if count > 0 or skippedCount > 0 or failedCount > 0 then
+        parts[#parts + 1] = verb .. tostring(count) .. " " .. spec.resultLabel
+    else
+        parts[#parts + 1] = "No matching " .. spec.resultLabel .. " found."
+    end
+    if skippedCount > 0 then
+        parts[#parts + 1] = tostring(skippedCount) .. " already present"
+    end
+    if failedCount > 0 then
+        parts[#parts + 1] = tostring(failedCount) .. " failed"
+    end
+
+    return table.concat(parts, " | ")
+end
+
+function BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data)
+    if data and data.isPassiveSkillTrait then
+        return "[~]"
+    end
+    if data and data.isPositive == false then
+        return "[-]"
+    end
+    return "[+]"
+end
+
+function BurdJournals.UI.DebugPanel.getTraitPolarityText(data)
+    if data and data.isPassiveSkillTrait then
+        return "Passive"
+    end
+    if data and data.isPositive == false then
+        return "Negative"
+    end
+    return "Positive"
+end
+
+function BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    if data and data.isPassiveSkillTrait then
+        return {0.5, 0.5, 0.5}
+    end
+    if data and data.isPositive == false then
+        return {0.8, 0.5, 0.5}
+    end
+    return {0.5, 0.8, 0.5}
+end
+
+function BurdJournals.UI.DebugPanel.getTraitSourceLine(data)
+    local polarity = BurdJournals.UI.DebugPanel.getTraitPolarityText(data)
+    local source = data and tostring(data.source or "") or ""
+    if source ~= "" then
+        return polarity .. " Trait | " .. source
+    end
+    return polarity .. " Trait"
+end
+
 -- Refresh journal editor data
 function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
     local panel = self.journalPanel
     if not panel then return end
+    if self.updateCharacterSummary then
+        self:updateCharacterSummary()
+    end
+    if self.updateJournalTargetSummary then
+        self:updateJournalTargetSummary()
+    end
     local previousFocusedSkill = panel.journalFocusedSkill and tostring(panel.journalFocusedSkill) or nil
 
     -- Clear existing lists safely (ensure borderColor stays valid during clear)
@@ -8651,8 +12130,8 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
     end
 
     safeClearList(panel.journalSkillList)
-    safeClearList(panel.journalAvailTraitList)
-    safeClearList(panel.journalInTraitList)
+    safeClearList(panel.journalTraitList)
+    safeClearList(panel.journalRecipeList)
     
     local journal = self.editingJournal
     if not journal then
@@ -8666,6 +12145,9 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
         if panel.journalAgeEntry then panel.journalAgeEntry:setText("0") end
         self:updateJournalEditorMetaVisibility()
         panel.journalFocusedSkill = nil
+        refreshDebugSourceFilterStrip(panel.journalSkillSourceFilter, panel.journalSkillList and panel.journalSkillList.items or nil)
+        refreshDebugSourceFilterStrip(panel.journalTraitSourceFilter, panel.journalTraitList and panel.journalTraitList.items or nil)
+        refreshDebugSourceFilterStrip(panel.journalRecipeSourceFilter, panel.journalRecipeList and panel.journalRecipeList.items or nil)
         BurdJournals.UI.DebugPanel.updateJournalSkillLabel(self)
         return
     end
@@ -8689,6 +12171,9 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
         if panel.journalAgeEntry then panel.journalAgeEntry:setText("0") end
         self:updateJournalEditorMetaVisibility()
         panel.journalFocusedSkill = nil
+        refreshDebugSourceFilterStrip(panel.journalSkillSourceFilter, panel.journalSkillList and panel.journalSkillList.items or nil)
+        refreshDebugSourceFilterStrip(panel.journalTraitSourceFilter, panel.journalTraitList and panel.journalTraitList.items or nil)
+        refreshDebugSourceFilterStrip(panel.journalRecipeSourceFilter, panel.journalRecipeList and panel.journalRecipeList.items or nil)
         BurdJournals.UI.DebugPanel.updateJournalSkillLabel(self)
         return
     end
@@ -8833,6 +12318,7 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
     local normalized = BurdJournals.normalizeJournalData(journalData) or journalData
     local skillTable = normalized.skills or {}
     local focusedSkillFound = false
+    local journalSkillCount = 0
     if skillTable then
         local sortedSkills = {}
         for skillName, skillData in pairs(skillTable) do
@@ -8842,13 +12328,16 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
                 local isPassive = BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(skillName) or false
                 local xp = (type(skillData) == "table" and tonumber(skillData.xp)) or 0
                 local level = (type(skillData) == "table" and tonumber(skillData.level)) or 0
+                local skillSource = BurdJournals.getSkillModSource and BurdJournals.getSkillModSource(skillName) or (isPassive and "Vanilla" or "Unknown")
 
                 table.insert(sortedSkills, {
                     name = skillName,
                     displayName = displayName,
                     xp = xp,
                     level = level,
-                    isPassive = isPassive
+                    isPassive = isPassive,
+                    source = skillSource,
+                    sourceId = BurdJournals.getSkillModId and BurdJournals.getSkillModId(skillName) or skillSource,
                 })
             end
         end
@@ -8860,6 +12349,7 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
         
         for _, skill in ipairs(sortedSkills) do
             panel.journalSkillList:addItem(skill.displayName, skill)
+            journalSkillCount = journalSkillCount + 1
             if previousFocusedSkill and string.lower(tostring(skill.name)) == string.lower(previousFocusedSkill) then
                 panel.journalFocusedSkill = skill.name
                 focusedSkillFound = true
@@ -8867,74 +12357,116 @@ function BurdJournals.UI.DebugPanel:refreshJournalEditorData()
         end
     end
     
-    -- Build a safe lookup table for journal traits (including aliases)
+    -- Build journal trait rows with add/remove controls and source metadata.
     local journalTraits = normalized.traits or {}
     local journalTraitLookup = BurdJournals.UI.DebugPanel.buildTraitLookup(journalTraits)
-    
-    -- Get all available traits
+    local traitCostLookup = BurdJournals.UI.DebugPanel.buildTraitCostLookup()
     local allTraits = BurdJournals.UI.DebugPanel.getAvailableTraits()
-    
-    -- Populate LEFT column: Available traits (NOT in journal) - for adding
-    -- Deduplicate by display name to handle B42 trait variants (e.g., Outdoorsman vs Outdoorsman_B42)
-    local availableTraits = {}
-    local addedDisplayNames = {}  -- Track display names to prevent visual duplicates
-    for _, traitId in ipairs(allTraits) do
-        if not BurdJournals.UI.DebugPanel.isTraitInLookup(journalTraitLookup, traitId) then
-            local displayName = BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(traitId) or tostring(traitId)
-            local displayNameLower = string.lower(displayName)
+    local combinedTraits = {}
+    local addedTraitDisplayNames = {}
 
-            -- Only add if we haven't already added a trait with this display name
-            if not addedDisplayNames[displayNameLower] then
-                addedDisplayNames[displayNameLower] = true
-                table.insert(availableTraits, {
-                    id = traitId,
-                    displayName = displayName
-                })
-            end
+    for _, traitId in ipairs(allTraits) do
+        local displayName = BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(traitId) or tostring(traitId)
+        local displayNameLower = string.lower(displayName)
+        if not addedTraitDisplayNames[displayNameLower] then
+            local traitSource = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(traitId) or "Vanilla"
+            combinedTraits[#combinedTraits + 1] = {
+                id = traitId,
+                displayName = displayName,
+                inJournal = BurdJournals.UI.DebugPanel.isTraitInLookup(journalTraitLookup, traitId),
+                isPositive = BurdJournals.UI.DebugPanel.resolveTraitIsPositive(traitId, nil, traitCostLookup),
+                isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(traitId) or false,
+                traitTexture = getDebugTraitTexture(traitId),
+                source = traitSource,
+                sourceId = BurdJournals.getTraitModId and BurdJournals.getTraitModId(traitId) or traitSource,
+            }
+            addedTraitDisplayNames[displayNameLower] = true
         end
     end
-    
-    -- Sort available traits alphabetically
-    table.sort(availableTraits, function(a, b)
-        return a.displayName < b.displayName
-    end)
-    
-    for _, trait in ipairs(availableTraits) do
-        panel.journalAvailTraitList:addItem(trait.displayName, trait)
-    end
-    
-    -- Populate RIGHT column: Journal traits (IN journal) - for removing
-    local inJournalTraits = {}
-    local addedTraitAliases = {}
+
     for traitId, _ in pairs(journalTraits) do
         local normalizedId = BurdJournals.UI.DebugPanel.normalizeTraitId(traitId) or traitId
-        local normalizedLower = string.lower(tostring(normalizedId))
-        if not addedTraitAliases[normalizedLower] then
-            -- Mark all aliases as seen to prevent duplicates
-            if BurdJournals.getTraitAliases then
-                for _, alias in ipairs(BurdJournals.getTraitAliases(normalizedId)) do
-                    local aliasNorm = BurdJournals.UI.DebugPanel.normalizeTraitId(alias) or alias
-                    addedTraitAliases[string.lower(tostring(aliasNorm))] = true
-                end
-            end
-            addedTraitAliases[normalizedLower] = true
-
-            local displayName = BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(normalizedId) or tostring(normalizedId)
-            table.insert(inJournalTraits, {
+        local displayName = BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(normalizedId) or tostring(normalizedId)
+        local displayNameLower = string.lower(displayName)
+        if not addedTraitDisplayNames[displayNameLower] then
+            local traitSource = BurdJournals.getTraitModSource and BurdJournals.getTraitModSource(normalizedId) or "Unknown"
+            combinedTraits[#combinedTraits + 1] = {
                 id = normalizedId,
-                displayName = displayName
-            })
+                displayName = displayName,
+                inJournal = true,
+                isPositive = BurdJournals.UI.DebugPanel.resolveTraitIsPositive(normalizedId, nil, traitCostLookup),
+                isPassiveSkillTrait = BurdJournals.isPassiveSkillTrait and BurdJournals.isPassiveSkillTrait(normalizedId) or false,
+                traitTexture = getDebugTraitTexture(normalizedId),
+                source = traitSource,
+                sourceId = BurdJournals.getTraitModId and BurdJournals.getTraitModId(normalizedId) or traitSource,
+            }
+            addedTraitDisplayNames[displayNameLower] = true
         end
     end
-    
-    -- Sort journal traits alphabetically
-    table.sort(inJournalTraits, function(a, b)
-        return a.displayName < b.displayName
+
+    table.sort(combinedTraits, function(a, b)
+        local left = string.lower(tostring((a and a.displayName) or (a and a.id) or ""))
+        local right = string.lower(tostring((b and b.displayName) or (b and b.id) or ""))
+        if left == right then
+            return string.lower(tostring((a and a.id) or "")) < string.lower(tostring((b and b.id) or ""))
+        end
+        return left < right
     end)
-    
-    for _, trait in ipairs(inJournalTraits) do
-        panel.journalInTraitList:addItem(trait.displayName, trait)
+
+    for _, trait in ipairs(combinedTraits) do
+        panel.journalTraitList:addItem(trait.displayName, trait)
     end
+
+    -- Build journal recipe rows using the same runtime catalog as the other editors,
+    -- while preserving any recipe names already stored in this journal.
+    local targetPlayer = self.getSharedTargetPlayer and self:getSharedTargetPlayer() or self.player
+    local journalRecipes = normalized.recipes or {}
+    local recipeRows = buildDebugRecipeRows(targetPlayer, true, false)
+    local recipeRowLookup = {}
+    for _, row in ipairs(recipeRows) do
+        local key = string.lower(tostring(row.name or ""))
+        local storedRecipeKey = BurdJournals.UI.DebugPanel.resolveRecipeKey(journalRecipes, row.name)
+        row.inJournal = storedRecipeKey ~= nil and journalRecipes[storedRecipeKey] == true
+        row.recipeTexture = getDebugRecipeTexture()
+        row.magazineTexture = getDebugMagazineTexture(row.magazineSource)
+        row.magazineDisplayName = row.magazineDisplayName or (row.magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(row.magazineSource) or nil)
+        recipeRowLookup[key] = row
+    end
+
+    for recipeName, isStored in pairs(journalRecipes) do
+        local normalizedRecipeName = tostring(recipeName or "")
+        local key = string.lower(normalizedRecipeName)
+        if isStored == true and not recipeRowLookup[key] then
+            local magazineSource = BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(normalizedRecipeName) or nil
+            recipeRows[#recipeRows + 1] = {
+                name = normalizedRecipeName,
+                displayName = BurdJournals.getRecipeDisplayName and BurdJournals.getRecipeDisplayName(normalizedRecipeName) or normalizedRecipeName,
+                source = BurdJournals.getRecipeModSource and BurdJournals.getRecipeModSource(normalizedRecipeName, magazineSource) or tostring(magazineSource or "Unknown"),
+                sourceId = BurdJournals.getRecipeModId and BurdJournals.getRecipeModId(normalizedRecipeName, magazineSource) or tostring(magazineSource or "unknown"),
+                magazineSource = magazineSource,
+                magazineDisplayName = magazineSource and BurdJournals.getMagazineDisplayName and BurdJournals.getMagazineDisplayName(magazineSource) or nil,
+                isKnown = false,
+                hasMagazine = magazineSource ~= nil and tostring(magazineSource) ~= "",
+                inJournal = true,
+                recipeTexture = getDebugRecipeTexture(),
+                magazineTexture = getDebugMagazineTexture(magazineSource),
+            }
+        elseif recipeRowLookup[key] then
+            recipeRowLookup[key].inJournal = true
+        end
+    end
+
+    sortDebugRecipeRows(recipeRows)
+    for _, row in ipairs(recipeRows) do
+        panel.journalRecipeList:addItem(row.displayName, row)
+    end
+
+    refreshDebugSourceFilterStrip(panel.journalSkillSourceFilter, panel.journalSkillList and panel.journalSkillList.items or nil)
+    refreshDebugSourceFilterStrip(panel.journalTraitSourceFilter, panel.journalTraitList and panel.journalTraitList.items or nil)
+    refreshDebugSourceFilterStrip(panel.journalRecipeSourceFilter, panel.journalRecipeList and panel.journalRecipeList.items or nil)
+    BurdJournals.UI.DebugPanel.filterJournalSkillList(self)
+    BurdJournals.UI.DebugPanel.filterJournalTraitList(self)
+    BurdJournals.UI.DebugPanel.filterJournalRecipeList(self)
     
     if not focusedSkillFound then
         panel.journalFocusedSkill = nil
@@ -8964,7 +12496,7 @@ end
 
 -- Draw function for journal skill items
 function BurdJournals.UI.DebugPanel.drawJournalSkillItem(self, y, item, alt)
-    local h = tonumber(self.itemheight) or 24
+    local h = getDebugListRowHeight(self, item, 24)
 
     -- CRITICAL: y must be a valid number for ISScrollingListBox to work correctly
     -- Return y + h (not just h) to maintain proper list positioning
@@ -9090,10 +12622,9 @@ end
 
 -- Click handler for journal skill list
 function BurdJournals.UI.DebugPanel.onJournalSkillListClick(self, x, y)
-    BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
+    local row = BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
     
     if not self.items then return end
-    local row = self:rowAt(x, y)
     if not row or row <= 0 or row > #self.items then return end
     
     local item = self.items[row]
@@ -9200,11 +12731,40 @@ function BurdJournals.UI.DebugPanel.updateJournalSkillLabel(self)
         end
     end
     
-    panel.journalSkillNameLabel:setName("Click skill row to select")
+    panel.journalSkillNameLabel:setName("Select a skill below")
     panel.journalSkillNameLabel.r = 0.5
     panel.journalSkillNameLabel.g = 0.6
     panel.journalSkillNameLabel.b = 0.7
     BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
+end
+
+function BurdJournals.UI.DebugPanel:updateJournalTargetSummary()
+    local panel = self.journalPanel
+    if not panel then
+        return
+    end
+
+    local targetPlayer = self:getSharedTargetPlayer() or self.player
+    local targetName = getDebugTargetPlayerName(targetPlayer)
+    local journalName = self.editingJournal and self.editingJournal.getName and self.editingJournal:getName() or nil
+
+    if panel.journalTargetSummaryLabel then
+        if journalName and journalName ~= "" then
+            panel.journalTargetSummaryLabel:setName(BurdJournals.formatText(getText("UI_BurdJournals_DebugReclaimPreviewForJournal"), targetName, journalName))
+        else
+            panel.journalTargetSummaryLabel:setName(BurdJournals.formatText(getText("UI_BurdJournals_DebugReclaimPreviewFor"), targetName))
+        end
+    end
+
+    if panel.journalTargetHelpLabel then
+        local helpText
+        if not BurdJournals.UI.DebugPanel.isDiminishingEnabled() then
+            helpText = getText("UI_BurdJournals_DebugReclaimHelpDisabled")
+        else
+            helpText = getText("UI_BurdJournals_DebugReclaimHelpSelect")
+        end
+        panel.journalTargetHelpLabel:setName(helpText)
+    end
 end
 
 function BurdJournals.UI.DebugPanel.getDiminishingModeName()
@@ -9242,14 +12802,14 @@ function BurdJournals.UI.DebugPanel.updateJournalDiminishingControlsVisibility(s
     end
 end
 
-function BurdJournals.UI.DebugPanel.getJournalDRPreviewPercents(journalData, focusedSkill)
+function BurdJournals.UI.DebugPanel.getJournalDRPreviewPercents(journalData, focusedSkill, player)
     if not journalData or not BurdJournals.getJournalClaimMultiplier then
         return nil
     end
 
     local percents = {}
     for readOffset = 0, 2 do
-        local multiplier = BurdJournals.getJournalClaimMultiplier(journalData, readOffset, focusedSkill, nil)
+        local multiplier = BurdJournals.getJournalClaimMultiplier(journalData, readOffset, focusedSkill, nil, player)
         local percent = math.floor((math.max(0, tonumber(multiplier) or 0) * 100) + 0.5)
         percents[#percents + 1] = percent
     end
@@ -9260,14 +12820,20 @@ end
 function BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
     local panel = self and self.journalPanel
     if not panel or not panel.journalDRLabel then return end
+    if self and self.updateJournalTargetSummary then
+        self:updateJournalTargetSummary()
+    end
 
     local drEnabled = BurdJournals.UI.DebugPanel.isDiminishingEnabled()
     BurdJournals.UI.DebugPanel.updateJournalDiminishingControlsVisibility(self, drEnabled)
     if not drEnabled then
-        panel.journalDRLabel:setName("DR: " .. tostring(getText("Sandbox_BurdJournals_XPRecoveryMode_option1")))
+        panel.journalDRLabel:setName(BurdJournals.formatText(getText("UI_BurdJournals_DebugRecoveryLabel"), tostring(getText("Sandbox_BurdJournals_XPRecoveryMode_option1"))))
         panel.journalDRLabel.r = 0.55
         panel.journalDRLabel.g = 0.62
         panel.journalDRLabel.b = 0.72
+        if panel.journalDRPreviewLabel then
+            panel.journalDRPreviewLabel:setName(getText("UI_BurdJournals_DebugReclaimPreviewEmpty"))
+        end
         return
     end
 
@@ -9276,19 +12842,20 @@ function BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
     local journal = self and self.editingJournal
     local journalData = journal and BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
     local focusedSkill = panel.journalFocusedSkill
+    local previewPlayer = self and self.getSharedTargetPlayer and self:getSharedTargetPlayer() or nil
 
     local suffix = "--"
-    local previewText = "N1 -- | N2 -- | N3 --"
+    local previewText = getText("UI_BurdJournals_DebugReclaimPreviewEmpty")
     local stepValue = 0
-    local stepHint = "readCount"
+    local stepHint = getText("UI_BurdJournals_DebugReclaimStepAllReads")
     if mode == 1 then
-        stepHint = "readCount"
+        stepHint = getText("UI_BurdJournals_DebugReclaimStepAllReads")
         stepValue = tonumber(journalData and journalData.readCount) or 0
     elseif mode == 2 then
-        stepHint = "readSessionCount"
+        stepHint = getText("UI_BurdJournals_DebugReclaimStepSessions")
         stepValue = tonumber(journalData and journalData.readSessionCount) or 0
     else
-        stepHint = "skillReadCounts[skill]"
+        stepHint = getText("UI_BurdJournals_DebugReclaimStepSkillReads")
         stepValue = 0
         local skillReadCounts = journalData and journalData.skillReadCounts
         if type(skillReadCounts) ~= "table" and BurdJournals.normalizeTable then
@@ -9308,25 +12875,25 @@ function BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
     end
 
     if mode == 3 and not focusedSkill then
-        suffix = "(select skill)"
+        suffix = getText("UI_BurdJournals_DebugReclaimSelectSkill")
     end
 
     local claimPercent = nil
     local canPreview = journalData and BurdJournals.getJournalClaimMultiplier and (mode ~= 3 or focusedSkill ~= nil)
     if canPreview then
-        local previewPercents = BurdJournals.UI.DebugPanel.getJournalDRPreviewPercents(journalData, focusedSkill)
+        local previewPercents = BurdJournals.UI.DebugPanel.getJournalDRPreviewPercents(journalData, focusedSkill, previewPlayer)
         if previewPercents and #previewPercents >= 3 then
             claimPercent = previewPercents[1]
-            previewText = "N1 " .. tostring(previewPercents[1]) .. "% | N2 " .. tostring(previewPercents[2]) .. "% | N3 " .. tostring(previewPercents[3]) .. "%"
+            previewText = BurdJournals.formatText(getText("UI_BurdJournals_DebugReclaimPreviewFormat"), previewPercents[1], previewPercents[2], previewPercents[3])
         end
         claimPercent = claimPercent or 0
         suffix = tostring(claimPercent) .. "%"
         if mode == 1 then
             local readCount = tonumber(journalData.readCount) or 0
-            suffix = suffix .. " [reads " .. tostring(readCount) .. "]"
+            suffix = BurdJournals.formatText(getText("UI_BurdJournals_DebugReclaimReadsSuffix"), suffix, readCount)
         elseif mode == 2 then
             local sessionCount = tonumber(journalData.readSessionCount) or 0
-            suffix = suffix .. " [session " .. tostring(sessionCount + 1) .. "]"
+            suffix = BurdJournals.formatText(getText("UI_BurdJournals_DebugReclaimSessionSuffix"), suffix, sessionCount + 1)
         else
             local skillReads = 0
             local skillReadCounts = journalData and journalData.skillReadCounts
@@ -9337,7 +12904,7 @@ function BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
                 local resolvedKey = BurdJournals.resolveSkillKey and BurdJournals.resolveSkillKey(skillReadCounts, focusedSkill) or focusedSkill
                 skillReads = tonumber(skillReadCounts[resolvedKey or focusedSkill]) or 0
             end
-            suffix = suffix .. " [skill reads " .. tostring(skillReads) .. "]"
+            suffix = BurdJournals.formatText(getText("UI_BurdJournals_DebugReclaimSkillReadsSuffix"), suffix, skillReads)
         end
     elseif not journalData then
         suffix = "--"
@@ -9347,7 +12914,7 @@ function BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
         panel.journalDRPreviewLabel:setName(previewText)
     end
 
-    panel.journalDRLabel:setName("DR: " .. modeName .. " | Next: " .. suffix)
+    panel.journalDRLabel:setName("Recovery: " .. modeName .. " | Next reclaim: " .. suffix)
     if claimPercent and claimPercent < 100 then
         panel.journalDRLabel.r = 1
         panel.journalDRLabel.g = 0.85
@@ -10126,7 +13693,8 @@ function BurdJournals.UI.DebugPanel:onJournalPreviewDRClaims()
     end
 
     local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
-    local previewPercents = BurdJournals.UI.DebugPanel.getJournalDRPreviewPercents(journalData, focusedSkill)
+    local previewPlayer = self.getSharedTargetPlayer and self:getSharedTargetPlayer() or nil
+    local previewPercents = BurdJournals.UI.DebugPanel.getJournalDRPreviewPercents(journalData, focusedSkill, previewPlayer)
     BurdJournals.UI.DebugPanel.updateJournalDiminishingLabel(self)
 
     if not previewPercents or #previewPercents < 3 then
@@ -10216,7 +13784,7 @@ end
 
 -- Draw function for AVAILABLE traits (left column - traits to add)
 function BurdJournals.UI.DebugPanel.drawJournalAvailTraitItem(self, y, item, alt)
-    local h = tonumber(self.itemheight) or 22
+    local h = getDebugListRowHeight(self, item, 22)
 
     -- CRITICAL: y must be a valid number for ISScrollingListBox to work correctly
     -- Return y + h (not just h) to maintain proper list positioning
@@ -10232,7 +13800,7 @@ function BurdJournals.UI.DebugPanel.drawJournalAvailTraitItem(self, y, item, alt
     local w = tonumber(self.width) or 200
     if w <= 0 then w = 200 end
     local scrollOffset = tonumber(BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH) or 15
-    local displayName = tostring(data.displayName or data.id or "Unknown")
+    local displayName = BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown")
 
     -- Background on hover (check item.index exists)
     local itemIndex = tonumber(item.index)
@@ -10241,7 +13809,8 @@ function BurdJournals.UI.DebugPanel.drawJournalAvailTraitItem(self, y, item, alt
     end
 
     -- Trait name
-    self:drawText(displayName, 6, y + 3, 0.7, 0.7, 0.7, 1, UIFont.Small)
+    local nameColor = BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    self:drawText(displayName, 6, y + 3, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
 
     -- Add button
     local btnX = w - 40 - scrollOffset
@@ -10260,7 +13829,7 @@ end
 
 -- Draw function for IN JOURNAL traits (right column - traits to remove)
 function BurdJournals.UI.DebugPanel.drawJournalInTraitItem(self, y, item, alt)
-    local h = tonumber(self.itemheight) or 22
+    local h = getDebugListRowHeight(self, item, 22)
 
     -- CRITICAL: y must be a valid number for ISScrollingListBox to work correctly
     -- Return y + h (not just h) to maintain proper list positioning
@@ -10276,7 +13845,7 @@ function BurdJournals.UI.DebugPanel.drawJournalInTraitItem(self, y, item, alt)
     local w = tonumber(self.width) or 200
     if w <= 0 then w = 200 end
     local scrollOffset = tonumber(BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH) or 15
-    local displayName = tostring(data.displayName or data.id or "Unknown")
+    local displayName = BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown")
 
     -- Green background to show it's in journal
     self:drawRect(0, y, w, h, 0.1, 0.2, 0.1, 0.4)
@@ -10288,7 +13857,311 @@ function BurdJournals.UI.DebugPanel.drawJournalInTraitItem(self, y, item, alt)
     end
 
     -- Trait name
-    self:drawText(displayName, 6, y + 3, 0.9, 1, 0.9, 1, UIFont.Small)
+    local nameColor = data.isPositive == false and {1, 0.82, 0.82} or {0.9, 1, 0.9}
+    self:drawText(displayName, 6, y + 3, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
+
+    -- Remove button
+    local btnX = w - 40 - scrollOffset
+    local btnW = 35
+    local btnY = y + 2
+    local btnH = h - 4
+
+    if btnX > 0 and btnW > 0 and btnH > 0 then
+        self:drawRect(btnX, btnY, btnW, btnH, 0.7, 0.3, 0.2, 0.3)
+        self:drawRectBorder(btnX, btnY, btnW, btnH, 0.8, 0.4, 0.3, 0.8)
+        self:drawTextCentre("-", btnX + btnW / 2, y + 3, 1, 0.5, 0.4, 1, UIFont.Small)
+    end
+
+    return y + h
+end
+
+-- Click handler for AVAILABLE traits list (add trait to journal)
+function BurdJournals.UI.DebugPanel.drawJournalTraitItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 24)
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data or data.hidden then return y + h end
+
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+
+    if data.isPassiveSkillTrait then
+        self:drawRect(0, y, w, h, 0.15, 0.15, 0.15, 0.16)
+    elseif data.inJournal then
+        self:drawRect(0, y, w, h, 0.12, 0.2, 0.12, 0.3)
+    elseif self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
+    end
+
+    local iconSize = drawDebugListIcon(self, data.traitTexture or getDebugTraitTexture(data.id), 6, y, h, 0.95, 14)
+    local textX = 10 + math.max(iconSize, 14) + 6
+
+    local nameColor = BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    if data.inJournal then
+        nameColor = {0.9, 1, 0.9}
+    end
+    self:drawText(BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown"), textX, y + 4, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
+
+    local statusX = w - 142 - scrollOffset
+    if data.isPassiveSkillTrait then
+        self:drawText("Passive", statusX, y + 4, 0.45, 0.45, 0.45, 0.85, UIFont.Small)
+    elseif data.inJournal then
+        self:drawText("Stored", statusX, y + 4, 0.52, 0.82, 0.52, 1, UIFont.Small)
+    else
+        self:drawText(BurdJournals.UI.DebugPanel.getTraitPolarityText(data), statusX, y + 4, nameColor[1], nameColor[2], nameColor[3], 0.95, UIFont.Small)
+    end
+
+    local btnWidth = 45
+    local btnHeight = 18
+    local btnY = y + (h - btnHeight) / 2
+    local addBtnX = w - btnWidth * 2 - 12 - scrollOffset
+    local removeBtnX = w - btnWidth - 6 - scrollOffset
+    local addEnabled = not data.isPassiveSkillTrait and not data.inJournal
+    local removeEnabled = not data.isPassiveSkillTrait and data.inJournal == true
+
+    self:drawRect(addBtnX, btnY, btnWidth, btnHeight, 1, addEnabled and 0.15 or 0.1, addEnabled and 0.3 or 0.16, addEnabled and 0.15 or 0.16)
+    self:drawRectBorder(addBtnX, btnY, btnWidth, btnHeight, 0.8, addEnabled and 0.3 or 0.22, addEnabled and 0.5 or 0.28, addEnabled and 0.3 or 0.28)
+    self:drawTextCentre("+Add", addBtnX + btnWidth / 2, btnY + 2, addEnabled and 0.5 or 0.6, addEnabled and 1 or 0.65, addEnabled and 0.5 or 0.65, 1, UIFont.Small)
+
+    self:drawRect(removeBtnX, btnY, btnWidth, btnHeight, 1, removeEnabled and 0.3 or 0.1, removeEnabled and 0.15 or 0.16, removeEnabled and 0.15 or 0.16)
+    self:drawRectBorder(removeBtnX, btnY, btnWidth, btnHeight, 0.8, removeEnabled and 0.5 or 0.28, removeEnabled and 0.3 or 0.22, removeEnabled and 0.3 or 0.28)
+    self:drawTextCentre("-Rem", removeBtnX + btnWidth / 2, btnY + 2, removeEnabled and 1 or 0.65, removeEnabled and 0.5 or 0.55, removeEnabled and 0.5 or 0.55, 1, UIFont.Small)
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel.onJournalTraitListClick(self, x, y)
+    local row = BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
+
+    if not self.items then return end
+    if not row or row <= 0 or row > #self.items then return end
+
+    local item = self.items[row]
+    local data = item and item.item or nil
+    local parentPanel = self.parentPanel
+    local journal = parentPanel and parentPanel.editingJournal or nil
+    if not (data and parentPanel and journal) then return end
+
+    if data.isPassiveSkillTrait then
+        parentPanel:setStatus("Passive skill traits cannot be modified in journals", {r=1, g=0.6, b=0.3})
+        return
+    end
+
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+    local btnWidth = 45
+    local addBtnX = self.width - btnWidth * 2 - 12 - scrollOffset
+    local removeBtnX = self.width - btnWidth - 6 - scrollOffset
+
+    BurdJournals.UI.DebugPanel.markJournalAsDebugEdited(journal)
+    local modData = journal:getModData()
+    modData.BurdJournals = modData.BurdJournals or {}
+    modData.BurdJournals.traits = modData.BurdJournals.traits or {}
+    local traitsTable = modData.BurdJournals.traits
+
+    if x >= addBtnX and x < addBtnX + btnWidth then
+        if data.inJournal then
+            parentPanel:setStatus("Journal already stores: " .. tostring(data.displayName or data.id), {r=0.95, g=0.78, b=0.45})
+            return
+        end
+
+        traitsTable[tostring(data.id)] = true
+        BurdJournals.UI.DebugPanel.finalizeJournalEdit(journal)
+        parentPanel:refreshJournalEditorData()
+        parentPanel:setStatus("Added trait: " .. tostring(data.displayName or data.id), {r=0.3, g=1, b=0.5})
+    elseif x >= removeBtnX and x < removeBtnX + btnWidth then
+        if not data.inJournal then
+            parentPanel:setStatus("Journal doesn't store: " .. tostring(data.displayName or data.id), {r=1, g=0.6, b=0.3})
+            return
+        end
+
+        BurdJournals.UI.DebugPanel.removeTraitFromTable(traitsTable, data.id)
+        BurdJournals.UI.DebugPanel.finalizeJournalEdit(journal)
+        parentPanel:refreshJournalEditorData()
+        parentPanel:setStatus("Removed trait: " .. tostring(data.displayName or data.id), {r=1, g=0.7, b=0.3})
+    end
+end
+
+function BurdJournals.UI.DebugPanel.drawJournalRecipeItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 30)
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data or data.hidden then return y + h end
+
+    local w = self.width or 300
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+
+    if data.inJournal then
+        self:drawRect(0, y, w, h, 0.12, 0.2, 0.12, 0.28)
+    elseif self.mouseoverselected == item.index then
+        self:drawRect(0, y, w, h, 0.2, 0.2, 0.3, 0.3)
+    end
+
+    local iconX = 6
+    local recipeIcon = data.recipeTexture or getDebugRecipeTexture()
+    local recipeIconSize = drawDebugListIcon(self, recipeIcon, iconX, y, h, 0.95, 14)
+    local textX = iconX + math.max(recipeIconSize, 14) + 6
+    if data.magazineSource then
+        local magazineIcon = data.magazineTexture or getDebugMagazineTexture(data.magazineSource)
+        local magSize = drawDebugListIcon(self, magazineIcon, textX, y, h, 0.9, 14)
+        if magSize > 0 then
+            textX = textX + magSize + 6
+        end
+    end
+
+    self:drawText(tostring(data.displayName or data.name or "Unknown Recipe"), textX, y + 2, data.inJournal and 0.82 or 0.92, data.inJournal and 1 or 0.92, data.inJournal and 0.82 or 0.92, 1, UIFont.Small)
+    local sourceText = getDebugRecipeSourceText(data, 22)
+    local sourceColor = data.magazineDisplayName and {0.5, 0.7, 0.75}
+        or ((data.source and data.source ~= "Vanilla" and data.source ~= "Runtime" and data.source ~= "Unknown")
+            and {0.82, 0.72, 0.5}
+            or {0.55, 0.65, 0.78})
+    self:drawText(sourceText, textX, y + 15, sourceColor[1], sourceColor[2], sourceColor[3], 0.9, UIFont.Small)
+
+    local rightLabel = data.inJournal and "Stored" or (data.isKnown and "Known" or (data.hasMagazine and "Available" or "Piped"))
+    self:drawText(rightLabel, w - 148 - scrollOffset, y + 2, 0.68, 0.82, 0.95, 0.9, UIFont.Small)
+
+    local btnWidth = 45
+    local btnHeight = 18
+    local btnY = y + (h - btnHeight) / 2
+    local addBtnX = w - btnWidth * 2 - 12 - scrollOffset
+    local removeBtnX = w - btnWidth - 6 - scrollOffset
+    local addEnabled = not data.inJournal
+    local removeEnabled = data.inJournal == true
+
+    self:drawRect(addBtnX, btnY, btnWidth, btnHeight, 1, addEnabled and 0.15 or 0.1, addEnabled and 0.3 or 0.16, addEnabled and 0.15 or 0.16)
+    self:drawRectBorder(addBtnX, btnY, btnWidth, btnHeight, 0.8, addEnabled and 0.3 or 0.22, addEnabled and 0.5 or 0.28, addEnabled and 0.3 or 0.28)
+    self:drawTextCentre("+Add", addBtnX + btnWidth / 2, btnY + 2, addEnabled and 0.5 or 0.6, addEnabled and 1 or 0.65, addEnabled and 0.5 or 0.65, 1, UIFont.Small)
+
+    self:drawRect(removeBtnX, btnY, btnWidth, btnHeight, 1, removeEnabled and 0.3 or 0.1, removeEnabled and 0.15 or 0.16, removeEnabled and 0.15 or 0.16)
+    self:drawRectBorder(removeBtnX, btnY, btnWidth, btnHeight, 0.8, removeEnabled and 0.5 or 0.28, removeEnabled and 0.3 or 0.22, removeEnabled and 0.3 or 0.28)
+    self:drawTextCentre("-Rem", removeBtnX + btnWidth / 2, btnY + 2, removeEnabled and 1 or 0.65, removeEnabled and 0.5 or 0.55, removeEnabled and 0.5 or 0.55, 1, UIFont.Small)
+    return y + h
+end
+
+function BurdJournals.UI.DebugPanel.onJournalRecipeListClick(self, x, y)
+    local row = BurdJournals.UI.DebugPanel.safeListMouseDown(self, x, y)
+
+    if not self.items then return end
+    if not row or row <= 0 or row > #self.items then return end
+
+    local item = self.items[row]
+    local data = item and item.item or nil
+    local parentPanel = self.parentPanel
+    local journal = parentPanel and parentPanel.editingJournal or nil
+    if not (data and parentPanel and journal and data.name) then return end
+
+    local scrollOffset = BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH or 15
+    local btnWidth = 45
+    local addBtnX = self.width - btnWidth * 2 - 12 - scrollOffset
+    local removeBtnX = self.width - btnWidth - 6 - scrollOffset
+
+    BurdJournals.UI.DebugPanel.markJournalAsDebugEdited(journal)
+    local modData = journal:getModData()
+    modData.BurdJournals = modData.BurdJournals or {}
+    modData.BurdJournals.recipes = modData.BurdJournals.recipes or {}
+    local recipesTable = modData.BurdJournals.recipes
+
+    if x >= addBtnX and x < addBtnX + btnWidth then
+        if data.inJournal then
+            parentPanel:setStatus("Journal already stores: " .. tostring(data.displayName or data.name), {r=0.95, g=0.78, b=0.45})
+            return
+        end
+
+        recipesTable[tostring(data.name)] = true
+        BurdJournals.UI.DebugPanel.finalizeJournalEdit(journal)
+        parentPanel:refreshJournalEditorData()
+        parentPanel:setStatus("Added recipe: " .. tostring(data.displayName or data.name), {r=0.3, g=1, b=0.5})
+    elseif x >= removeBtnX and x < removeBtnX + btnWidth then
+        if not data.inJournal then
+            parentPanel:setStatus("Journal doesn't store: " .. tostring(data.displayName or data.name), {r=1, g=0.6, b=0.3})
+            return
+        end
+
+        local recipeKey = BurdJournals.UI.DebugPanel.resolveRecipeKey(recipesTable, data.name)
+        if recipeKey then
+            recipesTable[recipeKey] = nil
+        end
+        BurdJournals.UI.DebugPanel.finalizeJournalEdit(journal)
+        parentPanel:refreshJournalEditorData()
+        parentPanel:setStatus("Removed recipe: " .. tostring(data.displayName or data.name), {r=1, g=0.7, b=0.3})
+    end
+end
+
+-- Draw function for AVAILABLE traits (left column - traits to add)
+function BurdJournals.UI.DebugPanel.drawJournalAvailTraitItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 22)
+
+    -- CRITICAL: y must be a valid number for ISScrollingListBox to work correctly
+    -- Return y + h (not just h) to maintain proper list positioning
+    y = tonumber(y) or 0
+    if y ~= y then y = 0 end  -- NaN check
+
+    -- Item validation - return valid y + h even for invalid items
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data then return y + h end
+    if data.hidden then return y + h end
+
+    local w = tonumber(self.width) or 200
+    if w <= 0 then w = 200 end
+    local scrollOffset = tonumber(BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH) or 15
+    local displayName = BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown")
+
+    -- Background on hover (check item.index exists)
+    local itemIndex = tonumber(item.index)
+    if itemIndex and self.mouseoverselected == itemIndex then
+        self:drawRect(0, y, w, h, 0.15, 0.2, 0.15, 0.3)
+    end
+
+    -- Trait name
+    local nameColor = BurdJournals.UI.DebugPanel.getTraitPolarityColor(data)
+    self:drawText(displayName, 6, y + 3, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
+
+    -- Add button
+    local btnX = w - 40 - scrollOffset
+    local btnW = 35
+    local btnY = y + 2
+    local btnH = h - 4
+
+    if btnX > 0 and btnW > 0 and btnH > 0 then
+        self:drawRect(btnX, btnY, btnW, btnH, 0.5, 0.2, 0.4, 0.2)
+        self:drawRectBorder(btnX, btnY, btnW, btnH, 0.5, 0.7, 0.5, 0.8)
+        self:drawTextCentre("+", btnX + btnW / 2, y + 3, 0.4, 0.9, 0.4, 1, UIFont.Small)
+    end
+
+    return y + h
+end
+
+-- Draw function for IN JOURNAL traits (right column - traits to remove)
+function BurdJournals.UI.DebugPanel.drawJournalInTraitItem(self, y, item, alt)
+    local h = getDebugListRowHeight(self, item, 22)
+
+    -- CRITICAL: y must be a valid number for ISScrollingListBox to work correctly
+    -- Return y + h (not just h) to maintain proper list positioning
+    y = tonumber(y) or 0
+    if y ~= y then y = 0 end  -- NaN check
+
+    -- Item validation - return valid y + h even for invalid items
+    if not item or not item.item then return y + h end
+    local data = item.item
+    if not data then return y + h end
+    if data.hidden then return y + h end
+
+    local w = tonumber(self.width) or 200
+    if w <= 0 then w = 200 end
+    local scrollOffset = tonumber(BurdJournals.UI.DebugPanel.SCROLLBAR_WIDTH) or 15
+    local displayName = BurdJournals.UI.DebugPanel.getTraitPolarityPrefix(data) .. " " .. tostring(data.displayName or data.id or "Unknown")
+
+    -- Green background to show it's in journal
+    self:drawRect(0, y, w, h, 0.1, 0.2, 0.1, 0.4)
+
+    -- Hover highlight (check item.index exists)
+    local itemIndex = tonumber(item.index)
+    if itemIndex and self.mouseoverselected == itemIndex then
+        self:drawRect(0, y, w, h, 0.2, 0.15, 0.15, 0.3)
+    end
+
+    -- Trait name
+    local nameColor = data.isPositive == false and {1, 0.82, 0.82} or {0.9, 1, 0.9}
+    self:drawText(displayName, 6, y + 3, nameColor[1], nameColor[2], nameColor[3], 1, UIFont.Small)
 
     -- Remove button
     local btnX = w - 40 - scrollOffset
@@ -10604,17 +14477,14 @@ function BurdJournals.UI.DebugPanel.filterAddSkillPopupList(self, popup)
     
     local searchText = popup.skillSearchEntry:getText() or ""
     
-    for _, itemData in ipairs(popup.skillList.items) do
-        if itemData.item then
-            itemData.item.hidden = searchText ~= "" and
-                not debugSearchMatches(searchText, itemData.item.displayName, itemData.item.name)
-        end
-    end
+    applyDebugRowFilter(popup.skillList, function(row)
+        return searchText == "" or debugSearchMatches(searchText, row.displayName, row.name)
+    end)
 end
 
 -- Draw item for Add Skill popup
 function BurdJournals.UI.DebugPanel.drawAddSkillPopupItem(self, y, item, alt)
-    local h = tonumber(self.itemheight) or 24
+    local h = getDebugListRowHeight(self, item, 24)
 
     -- Defensive checks for all parameters
     y = tonumber(y) or 0
@@ -10776,8 +14646,41 @@ function BurdJournals.UI.DebugPanel:createDiagnosticsPanel(startY, height)
         panel:addChild(btn)
         y = y + btnHeight + 5
     end
-    
-    y = y + 20
+
+    y = y + 8
+
+    local browseLabel = ISLabel:new(padding, y, 20, "Browse Discoverable Data:", 1, 1, 1, 1, UIFont.Small, true)
+    browseLabel:initialise()
+    browseLabel:instantiate()
+    panel:addChild(browseLabel)
+    y = y + 25
+
+    local browseDefs = {
+        {name = "Browse Skills", cmd = "browseskills", tooltip = "Lists every skill the mod can currently discover and shows whether it came from dynamic runtime data, a runtime fallback, or a hardcoded fallback."},
+        {name = "Browse Traits", cmd = "browsetraits", tooltip = "Lists every trait the mod can currently discover and shows whether it came from dynamic runtime data, a runtime fallback, or a hardcoded fallback."},
+        {name = "Browse Recipes", cmd = "browserecipes", tooltip = "Lists every recipe the mod can currently discover from the journal recipe cache and shows the source it was derived from."},
+    }
+    local browseBtnWidth = 150
+    local browseX = padding
+    for _, btnDef in ipairs(browseDefs) do
+        local btn = ISButton:new(browseX, y, browseBtnWidth, btnHeight, btnDef.name, self, BurdJournals.UI.DebugPanel.onDiagCmd)
+        btn:initialise()
+        btn:instantiate()
+        btn.font = UIFont.Small
+        btn.internal = btnDef.cmd
+        btn.textColor = {r=1, g=1, b=1, a=1}
+        btn.borderColor = {r=0.35, g=0.5, b=0.7, a=1}
+        btn.backgroundColor = {r=0.16, g=0.24, b=0.34, a=1}
+        if btn.setTooltip then
+            btn:setTooltip(btnDef.tooltip)
+        else
+            btn.tooltip = btnDef.tooltip
+        end
+        panel:addChild(btn)
+        browseX = browseX + browseBtnWidth + 6
+    end
+
+    y = y + btnHeight + 20
     
     -- Verbose logging toggle
     local verboseLabel = ISLabel:new(padding, y, 20, "Verbose Logging:", 1, 1, 1, 1, UIFont.Small, true)
@@ -10869,8 +14772,17 @@ end
 
 function BurdJournals.UI.DebugPanel:onDiagCmd(button)
     local cmd = button.internal
-    
-    if cmd == "fulldiag" then
+
+    if cmd == "browseskills" then
+        self:openDiscoveryBrowser("skills")
+        self:setStatus("Opened skill discovery browser", {r=0.5, g=0.8, b=1})
+    elseif cmd == "browsetraits" then
+        self:openDiscoveryBrowser("traits")
+        self:setStatus("Opened trait discovery browser", {r=0.5, g=0.8, b=1})
+    elseif cmd == "browserecipes" then
+        self:openDiscoveryBrowser("recipes")
+        self:setStatus("Opened recipe discovery browser", {r=0.5, g=0.8, b=1})
+    elseif cmd == "fulldiag" then
         BurdJournals.debugPrint("[BSJ DEBUG] === FULL DIAGNOSTICS ===")
         BurdJournals.debugPrint("--- Environment ---")
         BurdJournals.debugPrint("  Player: " .. (self.player and self.player:getUsername() or "nil"))
@@ -10975,7 +14887,8 @@ function BurdJournals.UI.DebugPanel:onDiagCmd(button)
                 local perk = BurdJournals.getPerkByName and BurdJournals.getPerkByName(skillName)
                 if perk then
                     local xpObj = self.player.getXp and self.player:getXp() or nil
-                    local currentXP = (xpObj and xpObj.getXP and xpObj:getXP(perk)) or 0
+                    local currentXP = (BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(self.player, perk, skillName))
+                        or ((xpObj and xpObj.getXP and xpObj:getXP(perk)) or 0)
                     local currentLevel = (self.player.getPerkLevel and self.player:getPerkLevel(perk)) or 0
                     if currentXP > 0 or currentLevel > 0 then
                         appendUnknownSourceDiagnostics(rows, "skills", skillName)
@@ -11227,12 +15140,15 @@ end
 
 function BurdJournals.UI.DebugPanel.Open(player)
     if BurdJournals.UI.DebugPanel.instance then
+        local activePlayer = player or BurdJournals.UI.DebugPanel.instance.player or getPlayer()
+        closePlayerInventoryPanelsForController(activePlayer)
         BurdJournals.UI.DebugPanel.instance:setVisible(true)
         return BurdJournals.UI.DebugPanel.instance
     end
     
     player = player or getPlayer()
     if not player then return nil end
+    closePlayerInventoryPanelsForController(player)
     
     local screenW = getCore():getScreenWidth()
     local screenH = getCore():getScreenHeight()

@@ -58,7 +58,5 @@
     "UI_BurdJournals_JournalErased": "Conteúdo do diário apagado.",
     "UI_BurdJournals_JournalCleaned": "O diário foi limpo e agora está legível.",
     "UI_BurdJournals_JournalUpdated": "Habilidades do diário atualizadas.",
-    "UI_BurdJournals_JournalRenamed": "Diário renomeado.",
-    "Tooltip_BurdJournals_IlliterateDesc": "Você não sabe ler nem escrever. Diários são inúteis para você.",
-    "Tooltip_BurdJournals_IlliterateName": "Analfabeto"
+    "UI_BurdJournals_JournalRenamed": "Diário renomeado."
 }

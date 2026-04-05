@@ -58,6 +58,96 @@ local function isCurrentPlayerOwner(journalData)
     return false
 end
 
+local function getTooltipViewerPlayer()
+    return getPlayer and getPlayer() or nil
+end
+
+local function hasTooltipCharacterClaim(journalData, player, claimType, claimId)
+    if type(journalData) ~= "table" or claimId == nil then
+        return false
+    end
+
+    if player then
+        if claimType == "skills" and BurdJournals.hasCharacterClaimedSkill then
+            return BurdJournals.hasCharacterClaimedSkill(journalData, player, claimId) == true
+        elseif claimType == "traits" and BurdJournals.hasCharacterClaimedTrait then
+            return BurdJournals.hasCharacterClaimedTrait(journalData, player, claimId) == true
+        elseif claimType == "recipes" and BurdJournals.hasCharacterClaimedRecipe then
+            return BurdJournals.hasCharacterClaimedRecipe(journalData, player, claimId) == true
+        elseif claimType == "stats" and BurdJournals.hasCharacterClaimedStat then
+            return BurdJournals.hasCharacterClaimedStat(journalData, player, claimId) == true
+        end
+    end
+
+    local legacyClaims = nil
+    if claimType == "skills" then
+        legacyClaims = journalData.claimedSkills
+    elseif claimType == "traits" then
+        legacyClaims = journalData.claimedTraits
+    elseif claimType == "recipes" then
+        legacyClaims = journalData.claimedRecipes
+    elseif claimType == "stats" then
+        legacyClaims = journalData.claimedStats
+    end
+
+    return type(legacyClaims) == "table" and legacyClaims[claimId] == true
+end
+
+local function isWrappedYuletideTooltipState(item, journalData)
+    if type(journalData) ~= "table" or journalData.isYuletideJournal ~= true then
+        return false
+    end
+    return BurdJournals.getYuletideState
+        and BurdJournals.getYuletideState(item or journalData) == BurdJournals.YULETIDE_STATE_WRAPPED
+        or false
+end
+
+local function shouldPresentRawCursedTooltipAsHidden(item, journalData)
+    if not item then
+        return false
+    end
+    if BurdJournals.isHiddenCursedJournal and BurdJournals.isHiddenCursedJournal(item) then
+        return true
+    end
+    if not (BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("DisguiseCursedJournalsAsBloody") == true) then
+        return false
+    end
+    local fullType = item.getFullType and tostring(item:getFullType() or "") or ""
+    local cursedType = BurdJournals.CURSED_ITEM_TYPE or "BurdJournals.CursedJournal"
+    if fullType ~= cursedType then
+        return false
+    end
+    return type(journalData) ~= "table"
+        or (journalData.isCursedReward ~= true and journalData.cursedState ~= "unleashed")
+end
+
+local function normalizeHiddenCursedPendingRewards(rawPendingRewards)
+    local pendingRewards = rawPendingRewards
+    if pendingRewards ~= nil and BurdJournals.normalizeTable then
+        pendingRewards = BurdJournals.normalizeTable(pendingRewards) or pendingRewards
+    end
+    return type(pendingRewards) == "table" and pendingRewards or nil
+end
+
+local function shouldReplaceHiddenCursedAuthor(author, unknownAuthorText)
+    if type(author) ~= "string" or author == "" then
+        return true
+    end
+    return author == unknownAuthorText or author == "Unknown Survivor"
+end
+
+local function shouldReplaceHiddenCursedProfessionName(journalData, professionName, unknownProfessionText)
+    if type(professionName) ~= "string" or professionName == "" then
+        return true
+    end
+    if professionName == unknownProfessionText or professionName == "Unknown Profession" then
+        return true
+    end
+
+    local professionId = type(journalData) == "table" and tostring(journalData.profession or "") or ""
+    return string.lower(professionId) == "survivor" and professionName == "Survivor"
+end
+
 function BurdJournals.Tooltips.getExtraInfo(item)
     if not item then return nil end
 
@@ -67,15 +157,73 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     end
 
     local modData = item:getModData()
-    local journalData = modData and modData.BurdJournals
+    local journalData = (BurdJournals.getJournalData and BurdJournals.getJournalData(item))
+        or (modData and modData.BurdJournals)
+    if journalData ~= nil and BurdJournals.normalizeTable then
+        journalData = BurdJournals.normalizeTable(journalData) or journalData
+    end
+    if type(journalData) == "table" and BurdJournals.normalizeJournalData then
+        journalData = BurdJournals.normalizeJournalData(journalData) or journalData
+    end
+    local isHiddenCursed = shouldPresentRawCursedTooltipAsHidden(item, journalData)
 
-    if not journalData then
+    if not journalData and not isHiddenCursed then
         return nil
     end
 
-    local lines = {}
+    journalData = type(journalData) == "table" and journalData or {}
 
-    if journalData.ownerUsername then
+    if isHiddenCursed then
+        local pendingRewards = normalizeHiddenCursedPendingRewards(journalData.cursedPendingRewards)
+        local unknownAuthorText = getText("UI_BurdJournals_UnknownSurvivor") or "Unknown Survivor"
+        local unknownProfessionText = getText("UI_BurdJournals_UnknownProfession") or "Unknown Profession"
+        local pendingProfessionName = pendingRewards and BurdJournals.resolveProfessionName
+            and BurdJournals.resolveProfessionName(pendingRewards)
+            or (pendingRewards and pendingRewards.professionName)
+        if BurdJournals.updateJournalName then
+            BurdJournals.updateJournalName(item, true)
+        end
+        if BurdJournals.updateJournalIcon then
+            BurdJournals.updateJournalIcon(item)
+        end
+        if shouldReplaceHiddenCursedAuthor(journalData.author, unknownAuthorText) then
+            journalData.author = (pendingRewards and pendingRewards.author) or unknownAuthorText
+        end
+        if shouldReplaceHiddenCursedProfessionName(journalData, journalData.professionName, unknownProfessionText) then
+            journalData.professionName = pendingProfessionName or unknownProfessionText
+        end
+        if pendingRewards and (not journalData.profession or journalData.profession == "" or string.lower(tostring(journalData.profession or "")) == "survivor") then
+            journalData.profession = pendingRewards.profession or journalData.profession
+        end
+        journalData.sourceType = journalData.sourceType or (pendingRewards and pendingRewards.sourceType) or "zombie"
+    end
+
+    local lines = {}
+    local tooltipPlayer = getTooltipViewerPlayer()
+    local isWrappedYuletide = isWrappedYuletideTooltipState(item, journalData)
+    local rewardsRevealed = BurdJournals.isLootRewardsRevealed
+        and BurdJournals.isLootRewardsRevealed(item)
+        or (journalData.lootRewardsRevealed == true)
+    local hideLootRewardDetails = BurdJournals.shouldHideLootRewardDetails
+        and BurdJournals.shouldHideLootRewardDetails(item)
+        or false
+    if not hideLootRewardDetails then
+        local hasRewardContent = (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.skills))
+            or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.traits))
+            or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.recipes))
+            or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.stats))
+            or journalData.forgetSlot == true
+        local isLootJournal = (BurdJournals.isLootRewardJournal and BurdJournals.isLootRewardJournal(item))
+            or isHiddenCursed
+        if journalData.isPlayerCreated ~= true
+            and not rewardsRevealed
+            and (hasRewardContent or isLootJournal)
+        then
+            hideLootRewardDetails = true
+        end
+    end
+
+    if (not isWrappedYuletide) and journalData.ownerUsername then
         local ownerText = journalData.ownerUsername
         if isCurrentPlayerOwner(journalData) then
             ownerText = ownerText .. " " .. (getText("Tooltip_BurdJournals_OwnerYou") or "(You)")
@@ -87,7 +235,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    if journalData.author then
+    if (not isWrappedYuletide) and journalData.author then
 
         local showAuthor = true
         if journalData.ownerUsername and journalData.author == journalData.ownerUsername then
@@ -99,7 +247,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
         end
     end
 
-    if journalData.contributors then
+    if (not isWrappedYuletide) and journalData.contributors then
         local contributorNames = {}
         for steamId, contribData in pairs(journalData.contributors) do
             if contribData.characterName then
@@ -121,78 +269,80 @@ function BurdJournals.Tooltips.getExtraInfo(item)
 
     -- Resolve profession name (handles translation keys stored by server)
     local resolvedProfessionName = BurdJournals.resolveProfessionName(journalData)
-    if resolvedProfessionName then
+    if (not isWrappedYuletide) and resolvedProfessionName then
         local profLine = BurdJournals.formatText(getText("Tooltip_BurdJournals_Profession") or "Profession: %s", resolvedProfessionName)
         table.insert(lines, {text = profLine, color = {r=0.7, g=0.7, b=0.7}})
     end
 
-    local skillCount = 0
-    local unclaimedSkills = 0
-    local totalXP = 0
-    if journalData.skills then
-        for skillName, skillData in pairs(journalData.skills) do
-            skillCount = skillCount + 1
-            if not journalData.claimedSkills or not journalData.claimedSkills[skillName] then
-                unclaimedSkills = unclaimedSkills + 1
-                totalXP = totalXP + (skillData.xp or 0)
+    if not hideLootRewardDetails then
+        local skillCount = 0
+        local unclaimedSkills = 0
+        local totalXP = 0
+        if journalData.skills then
+            for skillName, skillData in pairs(journalData.skills) do
+                skillCount = skillCount + 1
+                if not hasTooltipCharacterClaim(journalData, tooltipPlayer, "skills", skillName) then
+                    unclaimedSkills = unclaimedSkills + 1
+                    totalXP = totalXP + (skillData.xp or 0)
+                end
             end
         end
-    end
 
-    local traitCount = 0
-    local unclaimedTraits = 0
-    if journalData.traits then
-        for traitId, _ in pairs(journalData.traits) do
-            traitCount = traitCount + 1
-            if not journalData.claimedTraits or not journalData.claimedTraits[traitId] then
-                unclaimedTraits = unclaimedTraits + 1
+        local traitCount = 0
+        local unclaimedTraits = 0
+        if journalData.traits then
+            for traitId, _ in pairs(journalData.traits) do
+                traitCount = traitCount + 1
+                if not hasTooltipCharacterClaim(journalData, tooltipPlayer, "traits", traitId) then
+                    unclaimedTraits = unclaimedTraits + 1
+                end
             end
         end
-    end
 
-    if skillCount > 0 then
-        local skillText
-        if unclaimedSkills > 0 and BurdJournals.formatXP then
-            skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLineXP") or "Skills: %d/%d (%s XP)", unclaimedSkills, skillCount, BurdJournals.formatXP(totalXP))
-            table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
-        elseif unclaimedSkills > 0 then
-            skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
-            table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
-        else
-            skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
-            skillText = skillText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
-            table.insert(lines, {text = skillText, color = {r=0.5, g=0.5, b=0.5}})
-        end
-    end
-
-    if traitCount > 0 then
-        local traitText = BurdJournals.formatText(getText("Tooltip_BurdJournals_TraitsLine") or "Traits: %d/%d", unclaimedTraits, traitCount)
-        if unclaimedTraits > 0 then
-            table.insert(lines, {text = traitText, color = {r=0.9, g=0.7, b=0.3}})
-        else
-            traitText = traitText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
-            table.insert(lines, {text = traitText, color = {r=0.5, g=0.5, b=0.5}})
-        end
-    end
-
-    local recipeCount = 0
-    local unclaimedRecipes = 0
-    if journalData.recipes then
-        for recipeName, _ in pairs(journalData.recipes) do
-            recipeCount = recipeCount + 1
-            if not journalData.claimedRecipes or not journalData.claimedRecipes[recipeName] then
-                unclaimedRecipes = unclaimedRecipes + 1
+        if skillCount > 0 then
+            local skillText
+            if unclaimedSkills > 0 and BurdJournals.formatXP then
+                skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLineXP") or "Skills: %d/%d (%s XP)", unclaimedSkills, skillCount, BurdJournals.formatXP(totalXP))
+                table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
+            elseif unclaimedSkills > 0 then
+                skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
+                table.insert(lines, {text = skillText, color = {r=0.4, g=0.9, b=0.4}})
+            else
+                skillText = BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsLine") or "Skills: %d/%d", unclaimedSkills, skillCount)
+                skillText = skillText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+                table.insert(lines, {text = skillText, color = {r=0.5, g=0.5, b=0.5}})
             end
         end
-    end
 
-    if recipeCount > 0 then
-        local recipeText = BurdJournals.formatText(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
-        if unclaimedRecipes > 0 then
-            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})
-        else
-            recipeText = recipeText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
-            table.insert(lines, {text = recipeText, color = {r=0.5, g=0.5, b=0.5}})
+        if traitCount > 0 then
+            local traitText = BurdJournals.formatText(getText("Tooltip_BurdJournals_TraitsLine") or "Traits: %d/%d", unclaimedTraits, traitCount)
+            if unclaimedTraits > 0 then
+                table.insert(lines, {text = traitText, color = {r=0.9, g=0.7, b=0.3}})
+            else
+                traitText = traitText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+                table.insert(lines, {text = traitText, color = {r=0.5, g=0.5, b=0.5}})
+            end
+        end
+
+        local recipeCount = 0
+        local unclaimedRecipes = 0
+        if journalData.recipes then
+            for recipeName, _ in pairs(journalData.recipes) do
+                recipeCount = recipeCount + 1
+                if not hasTooltipCharacterClaim(journalData, tooltipPlayer, "recipes", recipeName) then
+                    unclaimedRecipes = unclaimedRecipes + 1
+                end
+            end
+        end
+
+        if recipeCount > 0 then
+            local recipeText = BurdJournals.formatText(getText("Tooltip_BurdJournals_RecipesLine") or "Recipes: %d/%d", unclaimedRecipes, recipeCount)
+            if unclaimedRecipes > 0 then
+                table.insert(lines, {text = recipeText, color = {r=0.5, g=0.85, b=0.9}})
+            else
+                recipeText = recipeText .. " " .. (getText("Tooltip_BurdJournals_AllClaimed") or "(all claimed)")
+                table.insert(lines, {text = recipeText, color = {r=0.5, g=0.5, b=0.5}})
+            end
         end
     end
 
@@ -201,10 +351,13 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     local conditionSuffixText = nil
     local conditionSuffixColor = nil
 
-    if journalData.isBloody then
+    local isBloodyState = journalData.isBloody == true
+        or journalData.wasFromBloody == true
+        or isHiddenCursed
+    if isBloodyState then
         conditionText = getText("Tooltip_BurdJournals_ConditionBloody") or "Condition: Bloody"
         conditionColor = {r=0.8, g=0.2, b=0.2}
-        if journalData.isCursedReward == true then
+        if journalData.isCursedReward == true and not isHiddenCursed then
             conditionSuffixText = " " .. getTooltipText("Tooltip_BurdJournals_TagCursed", "[Cursed]")
             conditionSuffixColor = CURSED_TAG_COLOR
         end
@@ -214,7 +367,7 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     elseif journalData.wasRestored then
         conditionText = getText("Tooltip_BurdJournals_ConditionRestored") or "Condition: Restored"
         conditionColor = {r=0.6, g=0.7, b=0.5}
-    else
+    elseif not isWrappedYuletide then
         conditionText = getText("Tooltip_BurdJournals_ConditionClean") or "Condition: Clean"
         conditionColor = {r=0.5, g=0.8, b=0.5}
     end
@@ -281,10 +434,48 @@ function BurdJournals.Tooltips.getExtraInfo(item)
     return lines
 end
 
+local function applyJournalTooltipPresentation(item)
+    if not (item and item.getFullType) then
+        return
+    end
+    local fullType = item:getFullType()
+    if not fullType or not string.find(fullType, "BurdJournals") then
+        return
+    end
+
+    if BurdJournals.updateJournalName then
+        BurdJournals.updateJournalName(item, true)
+    end
+    if BurdJournals.updateJournalIcon then
+        BurdJournals.updateJournalIcon(item)
+    end
+
+    if not item.setTooltip then
+        return
+    end
+
+    local tooltipText = nil
+    if BurdJournals.isWrappedYuletideJournal and BurdJournals.isWrappedYuletideJournal(item) then
+        tooltipText = BurdJournals.safeGetText("Tooltip_BurdJournals_YuletideJournalDesc", "A wrapped holiday journal. Unwrap it to reveal the journal and its bundled supplies.")
+    elseif BurdJournals.isUnwrappedYuletideJournal and BurdJournals.isUnwrappedYuletideJournal(item) then
+        tooltipText = BurdJournals.safeGetText("Tooltip_BurdJournals_YuletideJournalOpenedDesc", "A festive loot journal filled with rewards and notes from Santa.")
+    elseif shouldPresentRawCursedTooltipAsHidden(item, BurdJournals.getJournalData and BurdJournals.getJournalData(item) or nil) then
+        tooltipText = BurdJournals.safeGetText("Tooltip_BurdJournals_BloodyDesc", "Rare find! May contain valuable traits.")
+    elseif BurdJournals.isCursedJournalItem and BurdJournals.isCursedJournalItem(item) then
+        tooltipText = BurdJournals.safeGetText("Tooltip_BurdJournals_CursedJournalDesc", "Breaking the seal marks the first reader, but unlocks a richer bloody reward journal.")
+    elseif BurdJournals.isBloody and BurdJournals.isBloody(item) then
+        tooltipText = BurdJournals.safeGetText("Tooltip_BurdJournals_BloodyJournalDesc", "A journal from a fallen survivor. Contains skills and traits that can be absorbed.")
+    end
+
+    if tooltipText and tooltipText ~= "" then
+        item:setTooltip(tooltipText)
+    end
+end
+
 local originalRender = ISToolTipInv.render
 
 ISToolTipInv.render = function(self)
-
+    applyJournalTooltipPresentation(self.item)
     originalRender(self)
 
     if not self.item then return end

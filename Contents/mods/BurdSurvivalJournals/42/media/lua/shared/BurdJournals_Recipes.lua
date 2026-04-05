@@ -1,9 +1,19 @@
 
 require "BurdJournals_Shared"
 
+local bsjFallbackPrint = print
+
+local function bsjWriteLogLine(msg)
+    if type(BurdJournals) == 'table' and BurdJournals.writeLogLine then
+        BurdJournals.writeLogLine(msg)
+    elseif bsjFallbackPrint then
+        bsjFallbackPrint(msg)
+    end
+end
+
 if type(BurdJournals) ~= "table" then
     BurdJournals = {}
-    print("[BurdJournals] ERROR: BurdJournals_Shared failed to initialize; recipe handlers running in degraded mode")
+    bsjWriteLogLine("[BurdJournals] ERROR: BurdJournals_Shared failed to initialize; recipe handlers running in degraded mode")
 end
 
 -- Build 42 OnTest signature: function(sourceItem, result)
@@ -18,30 +28,95 @@ function BurdJournals_CanCraftPlayerJournal(sourceItem, result)
     return true
 end
 
+local function isEligibleRestoreJournalSource(sourceItem)
+    if not sourceItem or not sourceItem.getFullType then
+        return true
+    end
+
+    local fullType = sourceItem:getFullType() or ""
+    local yuletideType = (BurdJournals and BurdJournals.YULETIDE_ITEM_TYPE) or "BurdJournals.YuletideJournal"
+    if fullType ~= yuletideType then
+        return true
+    end
+
+    local modData = sourceItem.getModData and sourceItem:getModData() or nil
+    local data = modData and modData.BurdJournals or nil
+    return type(data) == "table"
+        and data.isYuletideJournal == true
+        and data.yuletideState == ((BurdJournals and BurdJournals.YULETIDE_STATE_UNWRAPPED) or "unwrapped")
+end
+
+function BurdJournals_CanCraftRestorableJournal(sourceItem, result)
+    if not BurdJournals_CanCraftPlayerJournal(sourceItem, result) then
+        return false
+    end
+    return isEligibleRestoreJournalSource(sourceItem)
+end
+
 local function getItemFromArgs(arg1, arg2, arg3, arg4)
 
-    if arg1 and type(arg1) == "userdata" then
-        if arg1.getAllCreatedItems and arg1.getAllConsumedItems then
+    if arg1 and arg1.getAllCreatedItems and arg1.getAllConsumedItems then
 
-            local createdItems = arg1:getAllCreatedItems()
-            local resultItem = createdItems and createdItems:size() > 0 and createdItems:get(0) or nil
-            local consumedItems = arg1:getAllConsumedItems()
-            return resultItem, arg2, consumedItems
-        end
+        local createdItems = arg1:getAllCreatedItems()
+        local resultItem = createdItems and createdItems:size() > 0 and createdItems:get(0) or nil
+        local consumedItems = arg1:getAllConsumedItems()
+        return resultItem, arg2, consumedItems, createdItems
     end
 
     if arg2 and type(arg2) ~= "nil" then
 
         if arg2.getModData then
-            return arg2, arg3, arg1
+            return arg2, arg3, arg1, nil
         end
     end
 
     if arg1 and arg1.getModData then
-        return arg1, nil, nil
+        return arg1, nil, nil, nil
     end
 
-    return nil, nil, nil
+    return nil, nil, nil, nil
+end
+
+local function normalizeSingleResultRecipeOutput(item, player, createdItems, recipeLabel)
+    if not item then
+        return
+    end
+
+    local logLabel = tostring(recipeLabel or "journal recipe")
+
+    if item.getCount and item.setCount then
+        local count = tonumber(item:getCount()) or 1
+        if count > 1 then
+            item:setCount(1)
+            if BurdJournals and BurdJournals.debugPrint then
+                BurdJournals.debugPrint("[BurdJournals] Normalized stacked output for " .. logLabel .. " from " .. tostring(count) .. " to 1")
+            end
+        end
+    end
+
+    if createdItems and createdItems.size then
+        local createdCount = tonumber(createdItems:size()) or 0
+        if createdCount > 1 then
+            for i = createdCount - 1, 1, -1 do
+                local extraItem = createdItems:get(i)
+                if extraItem and extraItem ~= item then
+                    local container = extraItem.getContainer and extraItem:getContainer() or nil
+                    if container and container.Remove then
+                        container:Remove(extraItem)
+                    elseif player and player.getInventory then
+                        local inventory = player:getInventory()
+                        if inventory and inventory.Remove then
+                            inventory:Remove(extraItem)
+                        end
+                    end
+                end
+            end
+
+            if BurdJournals and BurdJournals.debugPrint then
+                BurdJournals.debugPrint("[BurdJournals] Removed " .. tostring(createdCount - 1) .. " duplicate outputs for " .. logLabel)
+            end
+        end
+    end
 end
 
 local function safeGenerateRandomSkills(minSkills, maxSkills, minXP, maxXP)
@@ -101,8 +176,10 @@ local function safeGenerateUUID()
 end
 
 function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
-    local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+    local item, player, _, createdItems = getItemFromArgs(arg1, arg2, arg3, arg4)
     if not item then return end
+
+    normalizeSingleResultRecipeOutput(item, player, createdItems, "BurdJournals_OnCreateBlankClean")
 
     local modData = item:getModData()
     modData.BurdJournals = {
@@ -123,8 +200,10 @@ function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
 end
 
 function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
-    local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+    local item, player, _, createdItems = getItemFromArgs(arg1, arg2, arg3, arg4)
     if not item then return end
+
+    normalizeSingleResultRecipeOutput(item, player, createdItems, "BurdJournals_OnCreateBlankWorn")
 
     local modData = item:getModData()
     modData.BurdJournals = {
@@ -145,8 +224,10 @@ function BurdJournals_OnCreateBlankWorn(arg1, arg2, arg3, arg4)
 end
 
 function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
-    local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+    local item, player, _, createdItems = getItemFromArgs(arg1, arg2, arg3, arg4)
     if not item then return end
+
+    normalizeSingleResultRecipeOutput(item, player, createdItems, "BurdJournals_OnCreateBlankBloody")
 
     local modData = item:getModData()
     modData.BurdJournals = {
@@ -167,8 +248,10 @@ function BurdJournals_OnCreateBlankBloody(arg1, arg2, arg3, arg4)
 end
 
 function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
-    local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+    local item, player, _, createdItems = getItemFromArgs(arg1, arg2, arg3, arg4)
     if not item then return end
+
+    normalizeSingleResultRecipeOutput(item, player, createdItems, "BurdJournals_OnCreateFilledClean")
 
     local modData = item:getModData()
 
@@ -234,10 +317,12 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
 end
 
 function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
-    local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+    local item, player, _, createdItems = getItemFromArgs(arg1, arg2, arg3, arg4)
     if not item then
         return
     end
+
+    normalizeSingleResultRecipeOutput(item, player, createdItems, "BurdJournals_OnCreateFilledWorn")
 
     local existingData = item:getModData()
     if existingData and existingData.BurdJournals and existingData.BurdJournals.uuid then
@@ -332,8 +417,10 @@ function BurdJournals_OnCreateFilledWorn(arg1, arg2, arg3, arg4)
 end
 
 function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
-    local item, player, _ = getItemFromArgs(arg1, arg2, arg3, arg4)
+    local item, player, _, createdItems = getItemFromArgs(arg1, arg2, arg3, arg4)
     if not item then return end
+
+    normalizeSingleResultRecipeOutput(item, player, createdItems, "BurdJournals_OnCreateFilledBloody")
 
     local existingData = item:getModData()
     if existingData and existingData.BurdJournals and existingData.BurdJournals.uuid then
@@ -371,8 +458,10 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
 
     local traits = {}
     if ZombRand(100) < traitChance then
-        local grantableTraits = (BurdJournals and BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits()) or
-                                (BurdJournals and BurdJournals.GRANTABLE_TRAITS) or {
+        local grantableTraits = (BurdJournals and BurdJournals.getGrantableTraitsForJournal
+            and BurdJournals.getGrantableTraitsForJournal({ isBloody = true, wasFromBloody = true, isPlayerCreated = false }))
+            or (BurdJournals and BurdJournals.getGrantableTraits and BurdJournals.getGrantableTraits())
+            or (BurdJournals and BurdJournals.GRANTABLE_TRAITS) or {
             "brave", "organized", "fastlearner", "needslesssleep",
             "lighteater", "dextrous", "graceful", "inconspicuous", "lowthirst"
         }

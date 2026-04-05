@@ -1,9 +1,10 @@
 {
-    "ItemName_BurdJournals.BlankSurvivalJournal": "Blank Survival Journal",
-    "ItemName_BurdJournals.BlankSurvivalJournal_Worn": "Worn Blank Journal",
-    "ItemName_BurdJournals.BlankSurvivalJournal_Bloody": "Bloody Blank Journal",
-    "ItemName_BurdJournals.FilledSurvivalJournal": "Filled Survival Journal",
-    "ItemName_BurdJournals.FilledSurvivalJournal_Worn": "Worn Survival Journal",
-    "ItemName_BurdJournals.FilledSurvivalJournal_Bloody": "Bloody Survival Journal",
-    "ItemName_BurdJournals.CursedJournal": "Cursed Journal"
+    "ItemName_BurdJournals.BlankSurvivalJournal": "Jurnal Bertahan Hidup Kosong",
+    "ItemName_BurdJournals.BlankSurvivalJournal_Worn": "Jurnal Kosong Lusuh",
+    "ItemName_BurdJournals.BlankSurvivalJournal_Bloody": "Jurnal Kosong Berdarah",
+    "ItemName_BurdJournals.FilledSurvivalJournal": "Jurnal Bertahan Hidup Terisi",
+    "ItemName_BurdJournals.FilledSurvivalJournal_Worn": "Jurnal Bertahan Hidup Lusuh",
+    "ItemName_BurdJournals.FilledSurvivalJournal_Bloody": "Jurnal Bertahan Hidup Berdarah",
+    "ItemName_BurdJournals.CursedJournal": "Jurnal Terkutuk",
+    "ItemName_BurdJournals.YuletideJournal": "Jurnal Natal"
 }

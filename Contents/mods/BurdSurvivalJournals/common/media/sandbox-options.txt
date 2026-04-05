@@ -26,7 +26,7 @@ option BurdJournals.EnablePlayerJournalCrafting = {
     translation = BurdJournals_EnablePlayerJournalCrafting,
 }
 
-/* XP Recovery Mode (Clean Journals - SET mode) */
+/* Journal XP Mode */
 option BurdJournals.XPRecoveryMode = {
     type = enum,
     numValues = 2,
@@ -116,7 +116,7 @@ option BurdJournals.LearningTimePerSkill = {
     type = double,
     min = 0.5,
     max = 30.0,
-    default = 3.0,
+    default = 4.0,
     page = BurdJournals_Player,
     translation = BurdJournals_LearningTimePerSkill,
 }
@@ -499,7 +499,7 @@ option BurdJournals.BloodyJournalRecipeChance = {
     type = integer,
     min = 0,
     max = 100,
-    default = 35,
+    default = 60,
     page = BurdJournals_Loot,
     translation = BurdJournals_BloodyJournalRecipeChance,
 }
@@ -508,17 +508,31 @@ option BurdJournals.BloodyJournalMaxRecipes = {
     type = integer,
     min = 1,
     max = 5,
-    default = 2,
+    default = 3,
     page = BurdJournals_Loot,
     translation = BurdJournals_BloodyJournalMaxRecipes,
+}
+
+option BurdJournals.EnableLootJournalsFun = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_EnableLootJournalsFun,
 }
 
 /* CURSED JOURNALS (Dormant drop -> buffed bloody rewards on first open) */
 option BurdJournals.EnableCursedJournalSpawns = {
     type = boolean,
     default = true,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_EnableCursedJournalSpawns,
+}
+
+option BurdJournals.DisguiseCursedJournalsAsBloody = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_DisguiseCursedJournalsAsBloody,
 }
 
 option BurdJournals.CursedJournalSpawnChance = {
@@ -526,7 +540,7 @@ option BurdJournals.CursedJournalSpawnChance = {
     min = 0.0,
     max = 100.0,
     default = 0.08,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalSpawnChance,
 }
 
@@ -535,7 +549,7 @@ option BurdJournals.CursedJournalMinSkills = {
     min = 1,
     max = 10,
     default = 2,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMinSkills,
 }
 
@@ -544,7 +558,7 @@ option BurdJournals.CursedJournalMaxSkills = {
     min = 1,
     max = 10,
     default = 5,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMaxSkills,
 }
 
@@ -553,7 +567,7 @@ option BurdJournals.CursedJournalMinXP = {
     min = 1,
     max = 5000,
     default = 75,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMinXP,
 }
 
@@ -562,14 +576,14 @@ option BurdJournals.CursedJournalMaxXP = {
     min = 1,
     max = 5000,
     default = 300,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMaxXP,
 }
 
 option BurdJournals.EnableCursedJournalTraits = {
     type = boolean,
     default = true,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_EnableCursedJournalTraits,
 }
 
@@ -578,7 +592,7 @@ option BurdJournals.CursedJournalTraitChance = {
     min = 0,
     max = 100,
     default = 40,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalTraitChance,
 }
 
@@ -587,7 +601,7 @@ option BurdJournals.CursedJournalMinTraits = {
     min = 1,
     max = 5,
     default = 1,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMinTraits,
 }
 
@@ -596,14 +610,14 @@ option BurdJournals.CursedJournalMaxTraits = {
     min = 1,
     max = 5,
     default = 3,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMaxTraits,
 }
 
 option BurdJournals.EnableCursedJournalRecipes = {
     type = boolean,
     default = true,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_EnableCursedJournalRecipes,
 }
 
@@ -612,7 +626,7 @@ option BurdJournals.CursedJournalRecipeChance = {
     min = 0,
     max = 100,
     default = 60,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalRecipeChance,
 }
 
@@ -621,14 +635,14 @@ option BurdJournals.CursedJournalMaxRecipes = {
     min = 1,
     max = 5,
     default = 3,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalMaxRecipes,
 }
 
 option BurdJournals.EnableCursedJournalForgetSlot = {
     type = boolean,
     default = true,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_EnableCursedJournalForgetSlot,
 }
 
@@ -637,8 +651,223 @@ option BurdJournals.CursedJournalForgetChance = {
     min = 0,
     max = 100,
     default = 25,
-    page = BurdJournals_Loot,
+    page = BurdJournals_LootFun,
     translation = BurdJournals_CursedJournalForgetChance,
+}
+
+option BurdJournals.EnableYuletideJournalSpawns = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_EnableYuletideJournalSpawns,
+}
+
+option BurdJournals.YuletideSeasonMode = {
+    type = enum,
+    numValues = 4,
+    default = 1,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideSeasonMode,
+    valueTranslation = BurdJournals_YuletideSeasonMode,
+}
+
+option BurdJournals.EnableYuletideKrampusCursedAuthors = {
+    type = enum,
+    numValues = 4,
+    default = 1,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_EnableYuletideKrampusCursedAuthors,
+    valueTranslation = BurdJournals_EnableYuletideKrampusCursedAuthors,
+}
+
+option BurdJournals.YuletideWornReplacementChance = {
+    type = double,
+    min = 0.0,
+    max = 100.0,
+    default = 8.0,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideWornReplacementChance,
+}
+
+option BurdJournals.YuletideBloodyReplacementChance = {
+    type = double,
+    min = 0.0,
+    max = 100.0,
+    default = 4.0,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideBloodyReplacementChance,
+}
+
+option BurdJournals.YuletideJournalMinSkills = {
+    type = integer,
+    min = 1,
+    max = 10,
+    default = 2,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMinSkills,
+}
+
+option BurdJournals.YuletideJournalMaxSkills = {
+    type = integer,
+    min = 1,
+    max = 10,
+    default = 5,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMaxSkills,
+}
+
+option BurdJournals.YuletideJournalMinXP = {
+    type = integer,
+    min = 1,
+    max = 5000,
+    default = 75,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMinXP,
+}
+
+option BurdJournals.YuletideJournalMaxXP = {
+    type = integer,
+    min = 1,
+    max = 5000,
+    default = 300,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMaxXP,
+}
+
+option BurdJournals.EnableYuletideJournalTraits = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_EnableYuletideJournalTraits,
+}
+
+option BurdJournals.YuletideJournalTraitChance = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 40,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalTraitChance,
+}
+
+option BurdJournals.YuletideJournalMinTraits = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 1,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMinTraits,
+}
+
+option BurdJournals.YuletideJournalMaxTraits = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 3,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMaxTraits,
+}
+
+option BurdJournals.EnableYuletideJournalRecipes = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_EnableYuletideJournalRecipes,
+}
+
+option BurdJournals.YuletideJournalRecipeChance = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 60,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalRecipeChance,
+}
+
+option BurdJournals.YuletideJournalMaxRecipes = {
+    type = integer,
+    min = 1,
+    max = 5,
+    default = 3,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalMaxRecipes,
+}
+
+option BurdJournals.EnableYuletideJournalForgetSlot = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_EnableYuletideJournalForgetSlot,
+}
+
+option BurdJournals.YuletideJournalForgetChance = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 25,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideJournalForgetChance,
+}
+
+option BurdJournals.YuletideGiftPracticalWeight = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 70,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideGiftPracticalWeight,
+}
+
+option BurdJournals.YuletideGiftRareWeight = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 25,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideGiftRareWeight,
+}
+
+option BurdJournals.YuletideGiftJackpotWeight = {
+    type = integer,
+    min = 0,
+    max = 100,
+    default = 5,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideGiftJackpotWeight,
+}
+
+option BurdJournals.YuletideGiftMinItems = {
+    type = integer,
+    min = 1,
+    max = 10,
+    default = 1,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideGiftMinItems,
+}
+
+option BurdJournals.YuletideGiftMaxItems = {
+    type = integer,
+    min = 1,
+    max = 10,
+    default = 2,
+    page = BurdJournals_LootFun,
+    translation = BurdJournals_YuletideGiftMaxItems,
+}
+
+option BurdJournals.EnableLimitedClaimLootJournals = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_EnableLimitedClaimLootJournals,
+}
+
+option BurdJournals.LootJournalMaxClaimsBeforeDissolve = {
+    type = integer,
+    min = 1,
+    max = 25,
+    default = 1,
+    page = BurdJournals_Loot,
+    translation = BurdJournals_LootJournalMaxClaimsBeforeDissolve,
 }
 
 /* ============================================================ */
@@ -705,6 +934,13 @@ option BurdJournals.ConvertTime = {
     default = 15.0,
     page = BurdJournals_Advanced,
     translation = BurdJournals_ConvertTime,
+}
+
+option BurdJournals.EnableAnimatedJournalVisuals = {
+    type = boolean,
+    default = true,
+    page = BurdJournals_Advanced,
+    translation = BurdJournals_EnableAnimatedJournalVisuals,
 }
 
 /* ============================================================ */
@@ -850,6 +1086,22 @@ option BurdJournals.AllowAdaptiveTraitsManagedTraitRecording = {
     default = false,
     page = BurdJournals_OtherMods,
     translation = BurdJournals_AllowAdaptiveTraitsManagedTraitRecording,
+}
+
+/* Evolving Traits World compatibility */
+option BurdJournals.AllowEvolvingTraitsWorldManagedTraitRecording = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_OtherMods,
+    translation = BurdJournals_AllowEvolvingTraitsWorldManagedTraitRecording,
+}
+
+/* Evolving Traits World loot journal compatibility */
+option BurdJournals.AllowEvolvingTraitsWorldManagedTraitLootGeneration = {
+    type = boolean,
+    default = false,
+    page = BurdJournals_OtherMods,
+    translation = BurdJournals_AllowEvolvingTraitsWorldManagedTraitLootGeneration,
 }
 
 /* ============================================================ */
