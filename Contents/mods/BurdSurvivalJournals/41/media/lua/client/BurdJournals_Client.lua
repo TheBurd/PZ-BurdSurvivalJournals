@@ -2586,8 +2586,88 @@ local function normalizeCursedLine(value)
     return text
 end
 
-local function buildFallbackCurseMessage(curseType, focusText, focusType)
-    local focus = normalizeCursedLine(focusText)
+local function getLocalizedBodyPartLabel(bodyPartKey, fallback)
+    local normalizedKey = normalizeCursedLine(bodyPartKey)
+    local fallbackLabel = normalizeCursedLine(fallback)
+    if not normalizedKey then
+        return fallbackLabel
+    end
+    local lowerKey = string.lower(normalizedKey)
+    local translationKey = nil
+    if lowerKey == "hand_l" or lowerKey == "left_hand" or lowerKey == "lefthand" then
+        translationKey = "IGUI_health_Left_Hand"
+    elseif lowerKey == "hand_r" or lowerKey == "right_hand" or lowerKey == "righthand" then
+        translationKey = "IGUI_health_Right_Hand"
+    end
+    if translationKey then
+        local translated = getText(translationKey)
+        if translated and translated ~= "" and translated ~= translationKey then
+            return translated
+        end
+    end
+    return fallbackLabel or normalizedKey
+end
+local function getLocalizedInventoryItemLabel(fullType, fallback)
+    local normalizedType = normalizeCursedLine(fullType)
+    local fallbackLabel = normalizeCursedLine(fallback)
+    local displayName = nil
+    if normalizedType and getItemNameFromFullType then
+        local ok, resolved = pcall(getItemNameFromFullType, normalizedType)
+        if ok then
+            displayName = resolved
+        end
+    end
+    if not normalizeCursedLine(displayName) and normalizedType and getScriptManager then
+        local scriptManager = getScriptManager()
+        local scriptItem = scriptManager and scriptManager.FindItem and scriptManager:FindItem(normalizedType) or nil
+        if scriptItem and scriptItem.getDisplayName then
+            local ok, resolved = pcall(function()
+                return scriptItem:getDisplayName()
+            end)
+            if ok then
+                displayName = resolved
+            end
+        end
+    end
+    return normalizeCursedLine(displayName) or fallbackLabel or normalizedType
+end
+local function getLocalizedCursedFocusText(curseType, focusText, focusType, compatEffect)
+    local normalizedFocus = normalizeCursedLine(focusText)
+    local normalizedType = normalizeCursedLine(focusType)
+    local effect = type(compatEffect) == "table" and compatEffect or nil
+    if normalizedType == "body_part" then
+        return getLocalizedBodyPartLabel(effect and effect.bodyPart or nil, normalizedFocus)
+    end
+    if normalizedType == "trait" or curseType == "gain_negative_trait" or curseType == "lose_positive_trait" then
+        local traitId = effect and effect.traitId or nil
+        local displayName = traitId and BurdJournals.getTraitDisplayName and BurdJournals.getTraitDisplayName(traitId) or nil
+        return normalizeCursedLine(displayName) or normalizedFocus
+    end
+    if normalizedType == "skill" or curseType == "lose_skill_level" then
+        local skillName = effect and effect.skillName or nil
+        local displayName = skillName and BurdJournals.getPerkDisplayName and BurdJournals.getPerkDisplayName(skillName) or nil
+        return normalizeCursedLine(displayName) or normalizedFocus
+    end
+    if normalizedType == "item" or curseType == "hexed_tooling" then
+        return getLocalizedInventoryItemLabel(effect and effect.itemType or nil, (effect and effect.displayName) or normalizedFocus)
+    end
+    if normalizedType == "seasonal_wave" or curseType == "seasonal_wave" then
+        local wave = effect and normalizeCursedLine(effect.wave) or nil
+        local isWarm = effect and effect.warm
+        if wave == "cold" or isWarm == false then
+            return getCursedClientText("UI_BurdJournals_CursedFocusColdWave", "Cold")
+        end
+        if wave == "heat" or isWarm == true then
+            return getCursedClientText("UI_BurdJournals_CursedFocusHeatWave", "Heat")
+        end
+    end
+    if normalizedType == "pantsed" or curseType == "pantsed" then
+        return getCursedClientText("UI_BurdJournals_CursedFocusPantsed", "Pantsed")
+    end
+    return normalizedFocus
+end
+local function buildFallbackCurseMessage(curseType, focusText, focusType, compatEffect)
+    local focus = getLocalizedCursedFocusText(curseType, focusText, focusType, compatEffect)
     if curseType == "barbed_seal" then
         local template = getCursedClientText("UI_BurdJournals_CursedMsgBarbedSeal", "Barbed wire bites your %s as you tear the seal free.")
         if focus then
@@ -2619,11 +2699,10 @@ local function buildFallbackCurseMessage(curseType, focusText, focusType)
         return getCursedClientText("UI_BurdJournals_CursedMsgTornGearGeneric", "Something invisible rakes across your clothes.")
     end
     if curseType == "seasonal_wave" then
-        if focusType == "seasonal_wave" and focus then
-            local lowered = string.lower(focus)
-            if string.find(lowered, "cold", 1, true) then
-                return getCursedClientText("UI_BurdJournals_CursedMsgSeasonalCold", "The air turns hostile in an instant. Cold sinks into your bones.")
-            end
+        local wave = compatEffect and normalizeCursedLine(compatEffect.wave) or nil
+        local isWarm = compatEffect and compatEffect.warm
+        if wave == "cold" or isWarm == false then
+            return getCursedClientText("UI_BurdJournals_CursedMsgSeasonalCold", "The air turns hostile in an instant. Cold sinks into your bones.")
         end
         return getCursedClientText("UI_BurdJournals_CursedMsgSeasonalHeat", "The air turns hostile in an instant. Heat claws at your skin.")
     end
@@ -2669,7 +2748,6 @@ local function buildFallbackCurseMessage(curseType, focusText, focusType)
     end
     return getCursedClientText("UI_BurdJournals_CursedRevealFallback", "A curse takes hold...")
 end
-
 local CURSED_PROMPT_THEME = {
     panelBg = { r = 0.10, g = 0.07, b = 0.06, a = 0.95 },
     panelBorder = { r = 0.64, g = 0.22, b = 0.16, a = 1.0 },
@@ -2881,7 +2959,10 @@ local function normalizeYuletideGiftEntries(gifts)
     for _, gift in ipairs(gifts) do
         if type(gift) == "table" then
             local fullType = type(gift.type) == "string" and gift.type or nil
-            local displayName = gift.displayName
+            local displayName = getLocalizedInventoryItemLabel(fullType, nil)
+            if type(displayName) ~= "string" or displayName == "" then
+                displayName = gift.displayName
+            end
             if type(displayName) ~= "string" or displayName == "" then
                 displayName = resolveYuletideGiftFallbackName(fullType)
             end
@@ -3050,7 +3131,19 @@ local function resolveCursedTraitFallbackTexture(traitId, detailText)
     return resolveCursedUiTexture("media/ui/Skull1.png")
 end
 
-local function resolveCursedBodyPartTexture(focusText)
+local function resolveCursedBodyPartTexture(focusText, bodyPartKey)
+    local normalizedBodyPart = string.lower(tostring(bodyPartKey or ""))
+    if normalizedBodyPart ~= "" then
+        if normalizedBodyPart:find("hand_l", 1, true) or normalizedBodyPart:find("hand_r", 1, true) then
+            return resolveCursedUiTexture("media/ui/Moodles/48/Status_InjuredMinor.png")
+                or resolveCursedUiTexture("media/ui/Moodles/48/Status_Bleeding.png")
+                or resolveCursedUiTexture("media/ui/Moodles/48/Status_InjuredMajor.png")
+        end
+        if normalizedBodyPart:find("torso", 1, true) or normalizedBodyPart:find("chest", 1, true) then
+            return resolveCursedUiTexture("media/ui/Sidebar/48/Heart_Off_48.png")
+                or resolveCursedUiTexture("media/ui/Moodles/48/Status_InjuredMajor.png")
+        end
+    end
     local normalized = string.lower(tostring(focusText or ""))
     if normalized:find("bleed", 1, true) or normalized:find("lacer", 1, true) or normalized:find("cut", 1, true) then
         return resolveCursedUiTexture("media/ui/Moodles/48/Status_Bleeding.png")
@@ -3067,7 +3160,6 @@ local function resolveCursedBodyPartTexture(focusText)
     end
     return resolveCursedUiTexture("media/ui/Moodles/48/Status_InjuredMajor.png")
 end
-
 local function getCursedEffectAccent(curseType)
     if curseType == "gain_negative_trait" or curseType == "lose_positive_trait" then
         return { r = 0.66, g = 0.21, b = 0.25 }, { r = 0.92, g = 0.54, b = 0.38 }
@@ -3096,9 +3188,9 @@ local function buildCursedEffectEntries(args)
     end
 
     local curseType = normalizeCursedLine(args.curseType) or "unknown"
-    local focusText = normalizeCursedLine(args.focusText)
     local focusType = normalizeCursedLine(args.focusType)
     local compatEffect = type(args.compatEffect) == "table" and args.compatEffect or nil
+    local focusText = getLocalizedCursedFocusText(curseType, args.focusText, focusType, compatEffect)
     local entries = {}
 
     local function addEntry(titleKey, titleFallback, detail, opts)
@@ -3256,7 +3348,7 @@ local function buildCursedEffectEntries(args)
             focusText or getCursedClientText("UI_BurdJournals_CursedCardBodyPartFallback", "Marked flesh"),
             {
                 iconText = "HP",
-                texture = resolveCursedBodyPartTexture(focusText)
+                texture = resolveCursedBodyPartTexture(focusText, compatEffect and compatEffect.bodyPart)
             }
         )
     else
@@ -4596,10 +4688,12 @@ function BurdJournals.Client.handleYuletideOpenPrompt(player, args)
         return
     end
 
-    local loreLine = args.loreLine
-        or getYuletideClientText("UI_BurdJournals_YuletidePromptLore", "The wrapping is neat, the paper still bright. A gift waits inside.")
-    local consequenceLine = args.consequenceLine
-        or getYuletideClientText("UI_BurdJournals_YuletidePromptConsequence", "Unwrapping it will reveal the journal and its bundled supplies.")
+    local loreLine = getYuletideClientText("UI_BurdJournals_YuletidePromptLore", nil)
+        or normalizeCursedLine(args.loreLine)
+        or "The wrapping is neat, the paper still bright. A gift waits inside."
+    local consequenceLine = getYuletideClientText("UI_BurdJournals_YuletidePromptConsequence", nil)
+        or normalizeCursedLine(args.consequenceLine)
+        or "Unwrapping it will reveal the journal and its bundled supplies."
     local confirmLine = getYuletideClientText("UI_BurdJournals_YuletidePromptConfirm", "Unwrap it now?")
     local promptText = tostring(loreLine) .. "\n\n" .. tostring(consequenceLine) .. "\n\n" .. tostring(confirmLine)
 
@@ -4645,7 +4739,11 @@ function BurdJournals.Client.handleYuletideOpened(player, args)
         and args.journalUUID
         or nil
     local soundEvent = type(args.soundEvent) == "string" and args.soundEvent ~= "" and args.soundEvent or nil
-    local message = tostring(args.message or getYuletideClientText("UI_BurdJournals_YuletideOpened", "You unwrap the gift and find a journal inside."))
+    local messageKey = normalizeCursedLine(args.messageKey)
+    local message = getYuletideClientText(messageKey, nil)
+        or normalizeCursedLine(args.message)
+        or getYuletideClientText("UI_BurdJournals_YuletideOpened", "You unwrap the gift and find a journal inside.")
+    message = tostring(message)
     local giftEntries = normalizeYuletideGiftEntries(args.gifts)
     local giftSummary = buildYuletideGiftSummary(giftEntries, false)
     local revealGiftLead = buildYuletideGiftSummary(giftEntries, #giftEntries > 0)
@@ -4741,10 +4839,12 @@ function BurdJournals.Client.handleCursedOpenPrompt(player, args)
         return
     end
 
-    local loreLine = args.loreLine
-        or getCursedClientText("UI_BurdJournals_CursedPromptLore", "Ink writhes across the page. Something waits beneath these words.")
-    local consequenceLine = args.consequenceLine
-        or getCursedClientText("UI_BurdJournals_CursedPromptConsequence", "The first soul to read it will be marked.")
+    local loreLine = getCursedClientText("UI_BurdJournals_CursedPromptLore", nil)
+        or normalizeCursedLine(args.loreLine)
+        or "Ink writhes across the page. Something waits beneath these words."
+    local consequenceLine = getCursedClientText("UI_BurdJournals_CursedPromptConsequence", nil)
+        or normalizeCursedLine(args.consequenceLine)
+        or "The first soul to read it will be marked."
     local confirmLine = getCursedClientText("UI_BurdJournals_CursedPromptConfirm", "Open it anyway?")
     local promptText = tostring(loreLine) .. "\n\n" .. tostring(consequenceLine) .. "\n\n" .. tostring(confirmLine)
     local promptRichText = buildLootJournalRichTextWithFallback(
@@ -4791,8 +4891,10 @@ function BurdJournals.Client.handleCursedOpened(player, args)
         or nil
     local curseType = normalizeCursedLine(args.curseType)
     local soundEvent = args.soundEvent
-    local focusText = normalizeCursedLine(args.focusText)
-    local curseMessage = normalizeCursedLine(args.curseMessage)
+    local compatEffect = type(args.compatEffect) == "table" and args.compatEffect or nil
+    local focusType = normalizeCursedLine(args.focusType)
+    local focusText = getLocalizedCursedFocusText(curseType, args.focusText, focusType, compatEffect)
+    local serverCurseMessage = normalizeCursedLine(args.curseMessage)
     if journalId and type(args.journalData) == "table" then
         applyServerJournalUpdate(player, journalId, {
             journalId = journalId,
@@ -4801,23 +4903,24 @@ function BurdJournals.Client.handleCursedOpened(player, args)
         }, "cursedOpened")
     end
     local appliedCompatEffect = false
-    if isNetworkClientMirrorMode() and type(args.compatEffect) == "table" then
-        appliedCompatEffect = applyCursedCompatEffectLocally(player, curseType, args.compatEffect) == true
+    if isNetworkClientMirrorMode() and compatEffect then
+        appliedCompatEffect = applyCursedCompatEffectLocally(player, curseType, compatEffect) == true
     end
-    if curseMessage then
-        local lowerMsg = string.lower(curseMessage)
+    if serverCurseMessage then
+        local lowerMsg = string.lower(serverCurseMessage)
         if string.find(lowerMsg, "a curse takes hold", 1, true) then
-            curseMessage = nil
+            serverCurseMessage = nil
         end
     end
-    if not curseMessage then
-        curseMessage = buildFallbackCurseMessage(curseType, focusText, args.focusType)
+    local curseMessage = buildFallbackCurseMessage(curseType, focusText, focusType, compatEffect)
+        or serverCurseMessage
+        or getCursedClientText("UI_BurdJournals_CursedRevealFallback", "A curse takes hold...")
+    local serverRevealLead = normalizeCursedLine(args.revealLead)
+    local revealLead = nil
+    if serverRevealLead then
+        revealLead = getCursedClientText("UI_BurdJournals_CursedHiddenRevealLead", nil) or serverRevealLead
     end
-    if not curseMessage then
-        curseMessage = getCursedClientText("UI_BurdJournals_CursedRevealFallback", "A curse takes hold...")
-    end
-    local revealLead = normalizeCursedLine(args.revealLead)
-        or getCursedClientText("UI_BurdJournals_CursedRevealLead", "The seal breaks. Something answers.")
+    revealLead = revealLead or getCursedClientText("UI_BurdJournals_CursedRevealLead", "The seal breaks. Something answers.")
     local revealBody = tostring(revealLead) .. "\n\n" .. tostring(curseMessage)
     local revealRichText = buildLootJournalRichTextWithFallback(
         buildCursedRevealRichText,
@@ -4825,7 +4928,7 @@ function BurdJournals.Client.handleCursedOpened(player, args)
         revealLead,
         curseMessage,
         focusText,
-        args.focusType
+        focusType
     )
 
     if curseType == "panic" and not appliedCompatEffect and player and player.getStats then

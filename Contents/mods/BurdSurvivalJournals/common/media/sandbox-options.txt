@@ -111,6 +111,15 @@ option BurdJournals.EnableBaselineRestriction = {
     translation = BurdJournals_EnableBaselineRestriction,
 }
 
+option BurdJournals.BaselineRecordingMode = {
+    type = enum,
+    numValues = 2,
+    default = 1,
+    page = BurdJournals_Player,
+    translation = BurdJournals_BaselineRecordingMode,
+    valueTranslation = BurdJournals_BaselineRecordingMode,
+}
+
 /* Skill Learning (Player Journals) */
 option BurdJournals.LearningTimePerSkill = {
     type = double,

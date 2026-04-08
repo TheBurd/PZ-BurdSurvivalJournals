@@ -4965,6 +4965,7 @@ local function curseSeasonalWave(player)
     local bodyDamage = player.getBodyDamage and player:getBodyDamage() or nil
     local compatEffect = {
         warm = warm,
+        wave = warm and "heat" or "cold",
     }
 
     -- Primary path: drive thermals through CharacterStat.TEMPERATURE for reliable moodle updates.
@@ -5584,6 +5585,9 @@ local function curseLoseSkillLevel(player, _, forcedSkillName)
         ),
         focusText = tostring(skillLabel),
         focusType = "skill",
+        compatEffect = {
+            skillName = chosen.skillName,
+        },
     }
 end
 
@@ -6624,6 +6628,7 @@ function BurdJournals.Server.handleOpenYuletideJournal(player, args)
             journalData = data,
             giftTier = data.yuletideGiftTier or "practical",
             gifts = (#recoveredGifts > 0) and recoveredGifts or sanitizeYuletideGiftList(data.yuletideImmediateGifts),
+            messageKey = "UI_BurdJournals_YuletideAlreadyOpened",
             message = getYuletideServerText("UI_BurdJournals_YuletideAlreadyOpened", "The wrapping is already gone."),
         })
         return
@@ -6684,6 +6689,7 @@ function BurdJournals.Server.handleOpenYuletideJournal(player, args)
             journalData = liveData,
             giftTier = liveData.yuletideGiftTier or "practical",
             gifts = sanitizeYuletideGiftList(liveData.yuletideImmediateGifts),
+            messageKey = "UI_BurdJournals_YuletideAlreadyOpened",
             message = getYuletideServerText("UI_BurdJournals_YuletideAlreadyOpened", "The wrapping is already gone."),
         })
         return
@@ -6731,6 +6737,7 @@ function BurdJournals.Server.handleOpenYuletideJournal(player, args)
         journalData = liveData,
         giftTier = liveData.yuletideGiftTier or "practical",
         gifts = grantedGifts,
+        messageKey = "UI_BurdJournals_YuletideOpened",
         message = getYuletideServerText("UI_BurdJournals_YuletideOpened", "You unwrap the gift and find a journal inside."),
         soundEvent = (BurdJournals.getRandomYuletideUnwrapSoundEvent and BurdJournals.getRandomYuletideUnwrapSoundEvent())
             or BurdJournals.YULETIDE_DEFAULT_UNWRAP_SOUND_EVENT
@@ -6954,7 +6961,7 @@ function BurdJournals.Server.validateSkillPayload(skills, player, useBaselineOve
     if type(useBaselineOverride) == "boolean" then
         useBaseline = useBaselineOverride
     else
-        useBaseline = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
+        useBaseline = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     end
     if useBaseline and BurdJournals.Server.isBaselineDebugModifiedForPlayer and BurdJournals.Server.isBaselineDebugModifiedForPlayer(player) then
         useBaseline = false
@@ -7102,7 +7109,7 @@ function BurdJournals.Server.validateTraitPayload(traits, player, useBaselineOve
     if type(useBaselineOverride) == "boolean" then
         useBaseline = useBaselineOverride
     else
-        useBaseline = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
+        useBaseline = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     end
 
     local playerJournalContext = { isPlayerCreated = true }
@@ -7194,7 +7201,7 @@ function BurdJournals.Server.validateRecipePayload(recipes, player, useBaselineO
     if type(useBaselineOverride) == "boolean" then
         useBaseline = useBaselineOverride
     else
-        useBaseline = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
+        useBaseline = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     end
 
     for recipeName, _ in pairs(recipes) do
@@ -8994,7 +9001,7 @@ function BurdJournals.Server.handleLogSkills(player, args)
         local modData = filledJournal:getModData()
         -- Track whether baseline was enforced when recording
         -- This affects how XP is applied on claim (add mode vs set mode)
-        local baselineEnforced = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
+        local baselineEnforced = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
 
         local inheritedMigrationSchemaVersion = drCarryForward and tonumber(drCarryForward.migrationSchemaVersion) or 0
         local baseMigrationSchemaVersion = tonumber(BurdJournals.MIGRATION_SCHEMA_VERSION) or 0

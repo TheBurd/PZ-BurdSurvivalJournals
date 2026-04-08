@@ -204,6 +204,144 @@ function BurdJournals.applyXPDeltaCompat(player, perk, amount)
     return currentXP > startXP, "none"
 end
 
+local function getPerkTotalXpForLevelCompat(perk, skillName, level)
+    local normalizedLevel = math.max(0, tonumber(level) or 0)
+    if perk and perk.getTotalXpForLevel then
+        local ok, threshold = safePcall(function()
+            return perk:getTotalXpForLevel(normalizedLevel)
+        end)
+        threshold = ok and threshold or nil
+        if threshold ~= nil then
+            return math.max(0, tonumber(threshold) or 0)
+        end
+    end
+    if BurdJournals.getXPThresholdForLevel then
+        return math.max(0, tonumber(BurdJournals.getXPThresholdForLevel(skillName, normalizedLevel)) or 0)
+    end
+    return nil
+end
+
+local function getSkillBookMultiplierEntry(xpObj, perk)
+    if not xpObj or not perk then
+        return nil, nil
+    end
+
+    local multiplierMap = nil
+    if xpObj.getMultiplierMap then
+        local ok, map = safePcall(function()
+            return xpObj:getMultiplierMap()
+        end)
+        multiplierMap = ok and map or nil
+    end
+    if not multiplierMap then
+        local ok, map = safePcall(function()
+            return xpObj.XPMapMultiplier
+        end)
+        multiplierMap = ok and map or nil
+    end
+    if not multiplierMap then
+        return nil, nil
+    end
+
+    local entry = nil
+    if multiplierMap.get then
+        local ok, value = safePcall(function()
+            return multiplierMap:get(perk)
+        end)
+        entry = ok and value or nil
+    end
+    if not entry then
+        local ok, value = safePcall(function()
+            return multiplierMap[perk]
+        end)
+        entry = ok and value or nil
+    end
+
+    return multiplierMap, entry
+end
+
+local function getSkillBookMultiplierEntryField(entry, fieldName)
+    if not entry or type(fieldName) ~= "string" or fieldName == "" then
+        return nil
+    end
+    local ok, value = safePcall(function()
+        return entry[fieldName]
+    end)
+    if ok and value ~= nil then
+        return tonumber(value)
+    end
+    return nil
+end
+
+local function reconcileExactSetSkillBookMultiplier(player, perk, skillName, currentXP, currentLevel)
+    local xpObj = player and player.getXp and player:getXp() or nil
+    local multiplierMap, entry = getSkillBookMultiplierEntry(xpObj, perk)
+    if not (multiplierMap and entry) then
+        return false
+    end
+
+    local multiplier = getSkillBookMultiplierEntryField(entry, "multiplier")
+    if (not multiplier or multiplier <= 1.0) and xpObj and xpObj.getMultiplier then
+        local ok, rawMultiplier = safePcall(function()
+            return xpObj:getMultiplier(perk)
+        end)
+        multiplier = ok and tonumber(rawMultiplier) or multiplier
+    end
+    if not multiplier or multiplier <= 1.0 then
+        return false
+    end
+
+    local effectiveLevel = math.max(0, tonumber(currentLevel) or 0)
+    local effectiveXP = math.max(0, tonumber(currentXP) or 0)
+    local minLevel = math.max(0, getSkillBookMultiplierEntryField(entry, "minLevel") or 0)
+    local maxLevel = math.max(0, getSkillBookMultiplierEntryField(entry, "maxLevel") or 0)
+    local minXP = nil
+    local maxXP = nil
+
+    if minLevel > 0 then
+        minXP = getPerkTotalXpForLevelCompat(perk, skillName, minLevel - 1)
+    end
+    if maxLevel > 0 then
+        maxXP = getPerkTotalXpForLevelCompat(perk, skillName, maxLevel)
+    end
+
+    local shouldRemove = false
+    if maxLevel > 0 and effectiveLevel >= maxLevel then
+        shouldRemove = true
+    end
+    if not shouldRemove and maxXP and effectiveXP >= (maxXP - 0.001) then
+        shouldRemove = true
+    end
+    if not shouldRemove and minLevel > 0 and effectiveLevel < minLevel then
+        shouldRemove = true
+    end
+    if not shouldRemove and minXP and effectiveXP < (minXP - 0.001) then
+        shouldRemove = true
+    end
+    if not shouldRemove then
+        return false
+    end
+
+    local removed = false
+    if multiplierMap.remove then
+        removed = safePcall(function()
+            multiplierMap:remove(perk)
+        end) == true
+    end
+    if not removed then
+        removed = safePcall(function()
+            multiplierMap[perk] = nil
+        end) == true
+    end
+
+    if removed then
+        BurdJournals.debugPrint("[BurdJournals] Cleared stale skill-book multiplier for "
+            .. tostring(skillName or perk) .. " after exact XP set (" .. tostring(effectiveXP) .. ")")
+    end
+
+    return removed
+end
+
 function BurdJournals.setSkillTotalXPCompat(player, perk, targetXP, skillName)
     if not player or not perk then
         return false, "invalid", 0
@@ -342,6 +480,7 @@ function BurdJournals.setSkillTotalXPCompat(player, perk, targetXP, skillName)
     end
 
     if math.abs(remainingXP) < 0.001 then
+        reconcileExactSetSkillBookMultiplier(player, perk, skillName, afterSetXP, getLiveLevel())
         local via = buildBaseVia()
         if via == "none" then
             via = "already"
@@ -352,11 +491,13 @@ function BurdJournals.setSkillTotalXPCompat(player, perk, targetXP, skillName)
     if remainingXP > 0 then
         local ok, via = BurdJournals.applyXPDeltaCompat(player, perk, remainingXP)
         local finalXP = math.max(0, tonumber(BurdJournals.getPlayerSkillTotalXP and BurdJournals.getPlayerSkillTotalXP(player, perk, skillName) or xpObj:getXP(perk)) or 0)
+        reconcileExactSetSkillBookMultiplier(player, perk, skillName, finalXP, getLiveLevel())
         local baseVia = buildBaseVia()
         return ok == true, ((baseVia ~= "none") and (baseVia .. "+" .. tostring(via)) or via), finalXP
     end
 
     local via = buildBaseVia()
+    reconcileExactSetSkillBookMultiplier(player, perk, skillName, afterSetXP, getLiveLevel())
     return setApplied, via, afterSetXP
 end
 
@@ -1932,22 +2073,38 @@ function BurdJournals.extractTraitMetadata(trait, knownPositive, knownNegative, 
     }
     
     -- Get trait ID
-    if trait.getType then data.id = trait:getType() end
-    if not data.id then return nil end
+    local rawTraitId = nil
+    if trait.getType then
+        rawTraitId = trait:getType()
+    elseif trait.getId then
+        rawTraitId = trait:getId()
+    end
+    data.id = BurdJournals.normalizeTraitId(rawTraitId)
+    if not data.id or data.id == "" then return nil end
     
     -- Get display name
-    if trait.getLabel then data.displayName = trait:getLabel() end
-    if not data.displayName then data.displayName = data.id end
+    if trait.getLabel then
+        data.displayName = trait:getLabel()
+    elseif trait.getName then
+        data.displayName = trait:getName()
+    end
+    if data.displayName ~= nil then
+        data.displayName = tostring(data.displayName)
+    end
+    if not data.displayName or data.displayName == "" then data.displayName = data.id end
     
     -- Get description
     if trait.getDescription then data.description = trait:getDescription() end
+    if data.description ~= nil then
+        data.description = tostring(data.description)
+    end
     
     -- Get cost
     -- In PZ trait definitions:
     -- cost > 0 = Positive trait (benefits, player pays points to get)
     -- cost < 0 = Negative trait (drawbacks, player gains points by taking)
     -- cost = 0 = Neutral/profession traits
-    if trait.getCost then data.cost = trait:getCost() end
+    if trait.getCost then data.cost = tonumber(trait:getCost()) or 0 end
     -- Use polarity function for accurate detection (handles zero-cost fallback)
     local polarity = BurdJournals.determineTraitPolarity(data.id, data.cost)
     data.isPositive = (polarity == true)
@@ -1964,7 +2121,10 @@ function BurdJournals.extractTraitMetadata(trait, knownPositive, knownNegative, 
         if exclusives and exclusives.size then
             for i = 0, exclusives:size() - 1 do
                 local ex = exclusives:get(i)
-                if ex then table.insert(data.exclusives, tostring(ex)) end
+                local normalizedExclusive = BurdJournals.normalizeTraitId(ex)
+                if normalizedExclusive and normalizedExclusive ~= "" then
+                    table.insert(data.exclusives, normalizedExclusive)
+                end
             end
         end
     end
@@ -3706,6 +3866,7 @@ function BurdJournals.getSandboxOption(optionName)
         AllowMutualExclusionCancellation = true,
 
         EnableBaselineRestriction = true,
+        BaselineRecordingMode = 1,
         EnableBaselineSnapshots = true,
         BaselineSnapshotsPerSteamLimit = 50,
         BaselineSnapshotsAutoCapture = true,
@@ -12699,6 +12860,22 @@ function BurdJournals.isBaselineRestrictionEnabled()
     return BurdJournals.getSandboxOption("EnableBaselineRestriction") ~= false
 end
 
+function BurdJournals.getBaselineRecordingMode()
+    local mode = tonumber(BurdJournals.getSandboxOption("BaselineRecordingMode")) or 1
+    mode = math.floor(mode)
+    if mode < 1 or mode > 2 then
+        mode = 1
+    end
+    return mode
+end
+
+function BurdJournals.shouldUseBaselineForPlayerJournalRecording(player)
+    if not BurdJournals.shouldEnforceBaseline or not BurdJournals.shouldEnforceBaseline(player) then
+        return false
+    end
+    return BurdJournals.getBaselineRecordingMode() ~= 2
+end
+
 -- Check if baseline has been bypassed for this specific player (admin cleared it)
 function BurdJournals.isBaselineBypassed(player)
     if not player then return false end
@@ -12734,7 +12911,7 @@ end
 -- `true`  = baseline/delta mode (earned XP only)
 -- `false` = absolute/set mode (total XP)
 function BurdJournals.getJournalSkillRecordingMode(journalData, player)
-    local defaultMode = BurdJournals.shouldEnforceBaseline and BurdJournals.shouldEnforceBaseline(player) or false
+    local defaultMode = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     if type(journalData) ~= "table" then
         return defaultMode
     end
@@ -12777,7 +12954,7 @@ function BurdJournals.collectPlayerSkills(player)
 
     local skills = {}
     local allowedSkills = BurdJournals.getAllowedSkills()
-    local useBaseline = BurdJournals.shouldEnforceBaseline(player)
+    local useBaseline = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     local playerJournalContext = { isPlayerCreated = true }
 
     for _, skillName in ipairs(allowedSkills) do
@@ -12822,7 +12999,7 @@ function BurdJournals.collectPlayerTraits(player, excludeStarting)
     if not player then return {} end
 
     if excludeStarting == nil then
-        excludeStarting = BurdJournals.shouldEnforceBaseline(player)
+        excludeStarting = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     end
 
     local traits = {}
@@ -14886,7 +15063,7 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting, incl
     end
 
     if excludeStarting == nil then
-        excludeStarting = BurdJournals.shouldEnforceBaseline(player)
+        excludeStarting = BurdJournals.shouldUseBaselineForPlayerJournalRecording and BurdJournals.shouldUseBaselineForPlayerJournalRecording(player) or false
     end
 
     local recipes = {}
@@ -15280,10 +15457,54 @@ local function isMeaningfulRecipeDisplayName(candidate, recipeName)
     return true
 end
 
+local function getTranslatedRecipeDisplayName(recipeName, scriptRecipe)
+    if not Translator or not Translator.getRecipeName then
+        return nil
+    end
+
+    local attempted = {}
+    local candidates = {}
+    local function addCandidate(candidate)
+        if type(candidate) ~= "string" or candidate == "" or attempted[candidate] then
+            return
+        end
+        attempted[candidate] = true
+        candidates[#candidates + 1] = candidate
+    end
+
+    addCandidate(recipeName)
+    if scriptRecipe then
+        if scriptRecipe.getOriginalname then
+            addCandidate(scriptRecipe:getOriginalname())
+        end
+        if scriptRecipe.getName then
+            addCandidate(scriptRecipe:getName())
+        end
+        if scriptRecipe.getDisplayName then
+            addCandidate(scriptRecipe:getDisplayName())
+        end
+    end
+
+    for _, candidate in ipairs(candidates) do
+        local okTranslated, translatedName = safePcall(function()
+            return Translator.getRecipeName(candidate)
+        end)
+        if okTranslated and isMeaningfulRecipeDisplayName(translatedName, recipeName) then
+            return translatedName:match("^%s*(.-)%s*$")
+        end
+    end
+
+    return nil
+end
+
 function BurdJournals.getRecipeDisplayName(recipeName)
     if not recipeName then return "Unknown Recipe" end
 
     local scriptRecipe = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
+    local translatedRecipeName = getTranslatedRecipeDisplayName(recipeName, scriptRecipe)
+    if translatedRecipeName then
+        return translatedRecipeName
+    end
     if scriptRecipe then
         if scriptRecipe.getTranslationName then
             local translatedName = scriptRecipe:getTranslationName()
