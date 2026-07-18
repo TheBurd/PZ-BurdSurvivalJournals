@@ -1,4 +1,4 @@
-# Burd's Survival Journals Translation Guide
+﻿# Burd's Survival Journals Translation Guide
 
 Last updated: February 19, 2026
 
@@ -25,13 +25,13 @@ Current legacy `42` English baseline key counts:
 
 Repo layout for translations:
 
-- `Contents/mods/BurdSurvivalJournals/42/.../Translate`
+- `mods/BurdSurvivalJournals/42/.../Translate`
   - editable source of truth
   - legacy `Category_XX.txt` files
-- `Contents/mods/BurdSurvivalJournals/42.15/.../Translate`
+- `mods/BurdSurvivalJournals/42.15/.../Translate`
   - generated output
   - JSON `Category.json` files
-- `Contents/mods/BurdSurvivalJournals/common`
+- `mods/BurdSurvivalJournals/common`
   - shared Lua/code only
   - no translation assets
 
@@ -153,7 +153,7 @@ If GitHub submission is blocked:
 If you find malformed source entries:
 
 - Report file path + key + language.
-- Example known malformed line reference: `Contents/mods/BurdSurvivalJournals/42/media/lua/shared/Translate/CN/Tooltip_CN.txt:49`
+- Example known malformed line reference: `mods/BurdSurvivalJournals/42/media/lua/shared/Translate/CN/Tooltip_CN.txt:49`
 
 ## Contributing
 
@@ -165,3 +165,4 @@ Primary contribution path:
 Fallback path:
 
 - Export files and open a manual PR against `TheBurd/PZ-BurdSurvivalJournals`.
+

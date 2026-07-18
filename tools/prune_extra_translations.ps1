@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Remove translation keys that are not in EN reference files.
 
@@ -9,7 +9,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals"
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals"
 )
 
 $ErrorActionPreference = "Stop"
@@ -60,3 +60,4 @@ foreach ($dir in $TranslationDirs) {
 
 Write-Host ""
 Write-Host ("Prune complete. Removed {0} extra keys total." -f $totalRemoved) -ForegroundColor Green
+

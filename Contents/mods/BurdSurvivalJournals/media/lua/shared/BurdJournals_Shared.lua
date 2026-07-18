@@ -28,6 +28,15 @@ end
 
 BurdJournals = BurdJournals or {}
 
+-- Client-facing gameplay code must use the authoritative command path in every
+-- multiplayer session, including a listen-server host where both isClient()
+-- and isServer() are true. Do not use this helper to infer the execution side
+-- from shared/server code; it answers only whether client UI/actions should
+-- send their mutation to the server.
+function BurdJournals.clientShouldUseServerAuthority()
+    return isClient and isClient() == true
+end
+
 BurdJournals.VERSION = "2.4.6"
 BurdJournals.MOD_ID = "BurdSurvivalJournals"
 BurdJournals.BASELINE_VERSION = BurdJournals.BASELINE_VERSION or 5
@@ -35,6 +44,557 @@ BurdJournals.BASELINE_VERSION = BurdJournals.BASELINE_VERSION or 5
 -- Expose safePcall for use throughout the mod
 BurdJournals.safePcall = safePcall
 
+-- =====================================================================
+-- Add-on extension infrastructure (hooks + registries)
+-- Lets companion mods (e.g. BSJ: Curses & Blessings) extend behavior
+-- without patching core files. All entry points are defensive so a
+-- misbehaving add-on cannot break the base mod.
+-- =====================================================================
+
+BurdJournals._hooks = BurdJournals._hooks or {}
+BurdJournals.REGISTERED_JOURNAL_TYPES = BurdJournals.REGISTERED_JOURNAL_TYPES or {}
+BurdJournals.REGISTERED_FORGET_SLOT_TYPES = BurdJournals.REGISTERED_FORGET_SLOT_TYPES or {}
+BurdJournals.REGISTERED_DEBUG_JOURNAL_TYPES = BurdJournals.REGISTERED_DEBUG_JOURNAL_TYPES or {}
+BurdJournals.REGISTERED_DEBUG_ADVANCED_SECTIONS = BurdJournals.REGISTERED_DEBUG_ADVANCED_SECTIONS or {}
+
+-- Register a callback for a named lifecycle event. Multiple callbacks per event are allowed.
+function BurdJournals.addHook(eventName, fn)
+    if type(eventName) ~= "string" or eventName == "" or type(fn) ~= "function" then
+        return false
+    end
+    local list = BurdJournals._hooks[eventName]
+    if not list then
+        list = {}
+        BurdJournals._hooks[eventName] = list
+    end
+    list[#list + 1] = fn
+    return true
+end
+
+function BurdJournals.removeHook(eventName, fn)
+    local list = BurdJournals._hooks[eventName]
+    if type(list) ~= "table" then return false end
+    local removed = false
+    for i = #list, 1, -1 do
+        if list[i] == fn then
+            table.remove(list, i)
+            removed = true
+        end
+    end
+    return removed
+end
+
+-- Fire all callbacks for an event. Each callback is isolated via pcall so
+-- one failing add-on hook cannot abort core flow or sibling hooks.
+function BurdJournals.runHooks(eventName, ...)
+    local list = BurdJournals._hooks[eventName]
+    if type(list) ~= "table" then return end
+    for i = 1, #list do
+        local fn = list[i]
+        if type(fn) == "function" then
+            safePcall(fn, ...)
+        end
+    end
+end
+
+-- Register a new journal item type so core recognizers (isAnyJournal etc.)
+-- treat it as a journal. kind: "filled" | "blank" | "special".
+function BurdJournals.registerJournalType(fullType, opts)
+    if type(fullType) ~= "string" or fullType == "" then
+        return false
+    end
+    opts = type(opts) == "table" and opts or {}
+    local kind = opts.kind or "filled"
+    BurdJournals.REGISTERED_JOURNAL_TYPES[fullType] = {
+        fullType = fullType,
+        kind = kind,
+        isLoot = opts.isLoot == true,
+        canDissolve = opts.canDissolve == true or (opts.isLoot == true and opts.canDissolve ~= false),
+        forgetSlotType = opts.forgetSlotType,
+        displayNameKey = opts.displayNameKey,
+    }
+
+    local function appendUnique(list, value)
+        if type(list) ~= "table" then return end
+        for _, existing in ipairs(list) do
+            if existing == value then return end
+        end
+        list[#list + 1] = value
+    end
+
+    if kind == "blank" then
+        appendUnique(BurdJournals.BLANK_JOURNAL_TYPES, fullType)
+    elseif kind == "special" then
+        if type(BurdJournals.SPECIAL_JOURNAL_TYPES) == "table" then
+            BurdJournals.SPECIAL_JOURNAL_TYPES[fullType] = true
+        end
+    else
+        appendUnique(BurdJournals.FILLED_JOURNAL_TYPES, fullType)
+    end
+
+    return true
+end
+
+function BurdJournals.getRegisteredJournalType(fullType)
+    if type(fullType) ~= "string" then return nil end
+    return BurdJournals.REGISTERED_JOURNAL_TYPES[fullType]
+end
+
+-- Register a journal type with the BSJ debug spawn menu. Add-ons can provide
+-- UI metadata on the client and payload initializers on both client/SP and
+-- server without requiring the base debug panel to know add-on internals.
+function BurdJournals.registerDebugJournalType(typeId, opts)
+    if type(typeId) ~= "string" or typeId == "" then
+        return false
+    end
+    opts = type(opts) == "table" and opts or {}
+    local existing = BurdJournals.REGISTERED_DEBUG_JOURNAL_TYPES[typeId]
+    if type(existing) == "table" then
+        for key, value in pairs(opts) do
+            existing[key] = value
+        end
+        existing.id = typeId
+    else
+        opts.id = typeId
+        BurdJournals.REGISTERED_DEBUG_JOURNAL_TYPES[typeId] = opts
+    end
+    return true
+end
+
+function BurdJournals.getDebugJournalType(typeId)
+    if type(typeId) ~= "string" then return nil end
+    return BurdJournals.REGISTERED_DEBUG_JOURNAL_TYPES[typeId]
+end
+
+function BurdJournals.isDebugJournalTypeRegistered(typeId)
+    return BurdJournals.getDebugJournalType(typeId) ~= nil
+end
+
+function BurdJournals.getDebugJournalTypes()
+    local out = {}
+    for id, def in pairs(BurdJournals.REGISTERED_DEBUG_JOURNAL_TYPES or {}) do
+        if type(def) == "table" then
+            out[#out + 1] = def
+        else
+            out[#out + 1] = { id = id, label = id }
+        end
+    end
+    table.sort(out, function(a, b)
+        local ao = tonumber(a.sortOrder) or 1000
+        local bo = tonumber(b.sortOrder) or 1000
+        if ao ~= bo then return ao < bo end
+        return tostring(a.label or a.id or "") < tostring(b.label or b.id or "")
+    end)
+    return out
+end
+
+function BurdJournals.registerDebugAdvancedSection(sectionId, opts)
+    if type(sectionId) ~= "string" or sectionId == "" then
+        return false
+    end
+    opts = type(opts) == "table" and opts or {}
+    local existing = BurdJournals.REGISTERED_DEBUG_ADVANCED_SECTIONS[sectionId]
+    if type(existing) == "table" then
+        for key, value in pairs(opts) do
+            existing[key] = value
+        end
+        existing.id = sectionId
+    else
+        opts.id = sectionId
+        BurdJournals.REGISTERED_DEBUG_ADVANCED_SECTIONS[sectionId] = opts
+    end
+    return true
+end
+
+function BurdJournals.getDebugAdvancedSections()
+    local out = {}
+    for id, def in pairs(BurdJournals.REGISTERED_DEBUG_ADVANCED_SECTIONS or {}) do
+        if type(def) == "table" then
+            out[#out + 1] = def
+        else
+            out[#out + 1] = { id = id, label = id }
+        end
+    end
+    table.sort(out, function(a, b)
+        local ao = tonumber(a.sortOrder) or 1000
+        local bo = tonumber(b.sortOrder) or 1000
+        if ao ~= bo then return ao < bo end
+        return tostring(a.label or a.id or "") < tostring(b.label or b.id or "")
+    end)
+    return out
+end
+
+-- =====================================================================
+-- Sealed journal archetype registry
+-- ---------------------------------------------------------------------
+-- Generalizes the pattern proven by Cursed (dormant/unleashed) and
+-- Yuletide (wrapped/unwrapped): a journal that is delivered "sealed" and
+-- must be broken open to reveal/apply its payload. Add-ons register a
+-- sealed type here and drive it entirely through modData, without
+-- patching core state machines.
+--
+-- A sealed journal carries, in its BurdJournals modData:
+--   dataMarker (e.g. isBlessedJournal = true)  -- identity flag
+--   sealedState = "sealed" | "broken"          -- generic seal state
+--   sealedTypeKey = "<registered key>"          -- back-reference
+-- =====================================================================
+BurdJournals.REGISTERED_SEALED_TYPES = BurdJournals.REGISTERED_SEALED_TYPES or {}
+BurdJournals.SEALED_STATE_SEALED = "sealed"
+BurdJournals.SEALED_STATE_BROKEN = "broken"
+
+-- opts:
+--   fullType        (string)  item full type, e.g. "Mod.BlessedJournal"
+--   dataMarker      (string)  modData boolean flag naming this type (e.g. "isBlessedJournal")
+--   forgetSlotType  (string)  optional forget-slot profile key
+--   themeKey        (string)  optional reward palette key (see registerRewardTheme)
+--   sealedIconName  (string)  optional icon while sealed
+--   brokenIconName  (string)  optional icon once broken
+--   breakCommand    (string)  optional server command name used to break the seal
+--                             (defaults to "breakJournalSeal")
+--   hideContentsWhileSealed (bool, default true)
+--   canDissolve     (bool, default true for loot journals) show/use the
+--                    loot journal Dissolve flow once rewards are revealed
+--   displayNameKey  (string)  optional
+--   displayName     (string)  optional fallback display name
+function BurdJournals.registerSealedJournalType(fullType, opts)
+    if type(fullType) ~= "string" or fullType == "" then
+        return false
+    end
+    opts = type(opts) == "table" and opts or {}
+
+    -- Also make it a recognized special journal type.
+    BurdJournals.registerJournalType(fullType, {
+        kind = "special",
+        isLoot = opts.isLoot == true,
+        canDissolve = opts.canDissolve,
+        forgetSlotType = opts.forgetSlotType,
+        displayNameKey = opts.displayNameKey,
+    })
+    if type(BurdJournals.SPECIAL_JOURNAL_TYPES) == "table" then
+        BurdJournals.SPECIAL_JOURNAL_TYPES[fullType] = true
+    end
+
+    local entry = {
+        fullType = fullType,
+        dataMarker = opts.dataMarker,
+        forgetSlotType = opts.forgetSlotType,
+        themeKey = opts.themeKey,
+        sealedIconName = opts.sealedIconName,
+        brokenIconName = opts.brokenIconName,
+        breakCommand = opts.breakCommand or "breakJournalSeal",
+        hideContentsWhileSealed = opts.hideContentsWhileSealed ~= false,
+        displayNameKey = opts.displayNameKey,
+        displayName = opts.displayName,
+        isLoot = opts.isLoot == true,
+        canDissolve = opts.canDissolve == true or (opts.isLoot == true and opts.canDissolve ~= false),
+    }
+    BurdJournals.REGISTERED_SEALED_TYPES[fullType] = entry
+    if type(opts.dataMarker) == "string" and opts.dataMarker ~= "" then
+        BurdJournals.REGISTERED_SEALED_TYPES["marker:" .. opts.dataMarker] = entry
+    end
+    return true
+end
+
+-- Resolve the sealed-type entry for an item or journalData, or nil.
+function BurdJournals.getSealedJournalType(itemOrData)
+    if not itemOrData then return nil end
+    local data, item = nil, nil
+    if itemOrData.getModData then
+        item = itemOrData
+        data = BurdJournals.getItemJournalModData and BurdJournals.getItemJournalModData(item) or nil
+        if not data and item.getModData then
+            local md = item:getModData()
+            data = md and md.BurdJournals or nil
+        end
+    elseif type(itemOrData) == "table" then
+        data = itemOrData
+    end
+
+    if item and item.getFullType then
+        local entry = BurdJournals.REGISTERED_SEALED_TYPES[item:getFullType()]
+        if entry then return entry, data end
+    end
+    if type(data) == "table" then
+        if type(data.sealedTypeKey) == "string" then
+            local entry = BurdJournals.REGISTERED_SEALED_TYPES[data.sealedTypeKey]
+            if entry then return entry, data end
+        end
+        for _, entry in pairs(BurdJournals.REGISTERED_SEALED_TYPES) do
+            if type(entry) == "table" and type(entry.dataMarker) == "string"
+                and data[entry.dataMarker] == true then
+                return entry, data
+            end
+        end
+    end
+    return nil, data
+end
+
+function BurdJournals.isSealedJournal(itemOrData)
+    local entry = BurdJournals.getSealedJournalType(itemOrData)
+    return entry ~= nil
+end
+
+-- Returns "sealed" | "broken" | nil (nil if not a registered sealed journal).
+function BurdJournals.getSealedState(itemOrData)
+    local entry, data = BurdJournals.getSealedJournalType(itemOrData)
+    if not entry then return nil end
+    if type(data) == "table" and data.sealedState == BurdJournals.SEALED_STATE_BROKEN then
+        return BurdJournals.SEALED_STATE_BROKEN
+    end
+    return BurdJournals.SEALED_STATE_SEALED
+end
+
+function BurdJournals.isJournalSealed(itemOrData)
+    return BurdJournals.getSealedState(itemOrData) == BurdJournals.SEALED_STATE_SEALED
+end
+
+function BurdJournals.isSealedLootRewardJournal(itemOrData)
+    local entry = BurdJournals.getSealedJournalType(itemOrData)
+    return entry ~= nil and entry.isLoot == true
+end
+
+function BurdJournals.isBrokenSealedLootRewardJournal(itemOrData)
+    return BurdJournals.isSealedLootRewardJournal(itemOrData) == true
+        and BurdJournals.getSealedState(itemOrData) == BurdJournals.SEALED_STATE_BROKEN
+end
+
+-- Mutate the seal state on an item's (or table's) journal modData. Returns true
+-- if a change was written. Icon/name refresh is left to the caller.
+function BurdJournals.setSealedState(itemOrData, newState)
+    if newState ~= BurdJournals.SEALED_STATE_SEALED and newState ~= BurdJournals.SEALED_STATE_BROKEN then
+        return false
+    end
+    local entry, data = BurdJournals.getSealedJournalType(itemOrData)
+    if not entry then return false end
+    if type(data) ~= "table" then
+        if itemOrData and itemOrData.getModData then
+            local md = itemOrData:getModData()
+            md.BurdJournals = md.BurdJournals or {}
+            data = md.BurdJournals
+        else
+            return false
+        end
+    end
+    data.sealedState = newState
+    data.sealedTypeKey = entry.fullType
+    if type(entry.dataMarker) == "string" and entry.dataMarker ~= "" then
+        data[entry.dataMarker] = true
+    end
+    return true
+end
+
+-- Icon name appropriate to the current seal state, or nil to leave default.
+function BurdJournals.getSealedJournalIconName(itemOrData)
+    local entry = BurdJournals.getSealedJournalType(itemOrData)
+    if not entry then return nil end
+    if BurdJournals.getSealedState(itemOrData) == BurdJournals.SEALED_STATE_BROKEN then
+        return entry.brokenIconName
+    end
+    return entry.sealedIconName
+end
+
+-- True when a sealed journal should have its reward contents concealed in
+-- tooltip / UI (i.e. still sealed and configured to hide).
+function BurdJournals.shouldHideSealedContents(itemOrData)
+    local entry = BurdJournals.getSealedJournalType(itemOrData)
+    if not entry or not entry.hideContentsWhileSealed then return false end
+    return BurdJournals.getSealedState(itemOrData) == BurdJournals.SEALED_STATE_SEALED
+end
+
+-- =====================================================================
+-- Reward theme registry (palettes + condition tags + selection predicates)
+-- ---------------------------------------------------------------------
+-- The main journal UI themes itself off a string "reward theme" key
+-- resolved from modData flags. Historically that key set (worn / bloody /
+-- cursed / yuletide) and its palettes were hardcoded in the MainPanel.
+-- These registries let add-ons contribute a new theme (palette + how it is
+-- selected + its tooltip condition tag) without editing core UI files.
+--   * MainPanel merges REGISTERED_REWARD_PALETTES into its palette table.
+--   * getAbsorptionRewardThemeState consults REWARD_THEME_PREDICATES
+--     (highest priority first) before the built-in fallback chain.
+--   * Tooltips consult REWARD_CONDITION_TAGS to append e.g. "[Blessed]".
+-- =====================================================================
+BurdJournals.REGISTERED_REWARD_PALETTES = BurdJournals.REGISTERED_REWARD_PALETTES or {}
+BurdJournals.REWARD_THEME_PREDICATES = BurdJournals.REWARD_THEME_PREDICATES or {}
+BurdJournals.REWARD_CONDITION_TAGS = BurdJournals.REWARD_CONDITION_TAGS or {}
+
+-- Register a palette table for a theme key. Fields mirror the MainPanel
+-- "worn" palette; unspecified fields fall back to worn at render time.
+function BurdJournals.registerRewardPalette(themeKey, palette)
+    if type(themeKey) ~= "string" or themeKey == "" or type(palette) ~= "table" then
+        return false
+    end
+    BurdJournals.REGISTERED_REWARD_PALETTES[themeKey] = palette
+    return true
+end
+
+function BurdJournals.getRegisteredRewardPalette(themeKey)
+    if type(themeKey) ~= "string" then return nil end
+    return BurdJournals.REGISTERED_REWARD_PALETTES[themeKey]
+end
+
+-- Register a predicate that maps (journal, journalData) -> themeKey (or nil).
+-- Higher priority predicates win; ties resolve by registration order. This
+-- runs BEFORE the built-in cursed/bloody/worn fallback chain, so an add-on
+-- theme can take precedence when its condition holds.
+function BurdJournals.registerRewardTheme(themeKey, predicateFn, priority)
+    if type(themeKey) ~= "string" or themeKey == "" or type(predicateFn) ~= "function" then
+        return false
+    end
+    BurdJournals.REWARD_THEME_PREDICATES[#BurdJournals.REWARD_THEME_PREDICATES + 1] = {
+        themeKey = themeKey,
+        predicate = predicateFn,
+        priority = tonumber(priority) or 0,
+        order = #BurdJournals.REWARD_THEME_PREDICATES + 1,
+    }
+    table.sort(BurdJournals.REWARD_THEME_PREDICATES, function(a, b)
+        if a.priority ~= b.priority then return a.priority > b.priority end
+        return a.order < b.order
+    end)
+    return true
+end
+
+-- Returns the first themeKey whose predicate matches, or nil for fallback.
+function BurdJournals.resolveRegisteredRewardTheme(journal, journalData)
+    for _, entry in ipairs(BurdJournals.REWARD_THEME_PREDICATES) do
+        local ok, result = safePcall(entry.predicate, journal, journalData)
+        if ok and type(result) == "string" and result ~= "" then
+            return result
+        elseif ok and result == true then
+            return entry.themeKey
+        end
+    end
+    return nil
+end
+
+-- Header text (type / rarity / flavor translation keys) for a registered
+-- theme, so the main panel header block can present an add-on journal without
+-- a hardcoded branch. opts: { typeKey, rarityKey, flavorKey }.
+BurdJournals.REWARD_THEME_HEADERS = BurdJournals.REWARD_THEME_HEADERS or {}
+function BurdJournals.registerRewardThemeHeader(themeKey, opts)
+    if type(themeKey) ~= "string" or themeKey == "" or type(opts) ~= "table" then
+        return false
+    end
+    BurdJournals.REWARD_THEME_HEADERS[themeKey] = {
+        typeKey = opts.typeKey,
+        rarityKey = opts.rarityKey,
+        flavorKey = opts.flavorKey,
+    }
+    return true
+end
+
+-- Register a tooltip "condition tag" (e.g. "[Blessed]") contributed by an
+-- add-on. predicateFn(journalData, item) -> bool decides when it shows.
+--   opts: { textKey, fallbackText, color = {r,g,b}, priority }
+function BurdJournals.registerConditionTag(tagId, predicateFn, opts)
+    if type(tagId) ~= "string" or tagId == "" or type(predicateFn) ~= "function" then
+        return false
+    end
+    opts = type(opts) == "table" and opts or {}
+    BurdJournals.REWARD_CONDITION_TAGS[tagId] = {
+        tagId = tagId,
+        predicate = predicateFn,
+        textKey = opts.textKey,
+        fallbackText = opts.fallbackText or ("[" .. tagId .. "]"),
+        color = opts.color or {r=0.9, g=0.85, b=0.6},
+        priority = tonumber(opts.priority) or 0,
+    }
+    return true
+end
+
+-- Resolve the highest-priority matching condition tag for a journal, or nil.
+-- Returns text, color (both nil if none match).
+function BurdJournals.resolveConditionTag(journalData, item)
+    local best = nil
+    for _, tag in pairs(BurdJournals.REWARD_CONDITION_TAGS) do
+        local ok, matched = safePcall(tag.predicate, journalData, item)
+        if ok and matched == true then
+            if not best or tag.priority > best.priority then
+                best = tag
+            end
+        end
+    end
+    if not best then return nil, nil end
+    local text = best.fallbackText
+    if best.textKey and BurdJournals.safeGetText then
+        text = BurdJournals.safeGetText(best.textKey, best.fallbackText)
+    end
+    return text, best.color
+end
+
+-- Register a forget-slot profile for a new journal category key so
+-- rollForgetSlotForType("<key>", ...) works for add-on journals.
+function BurdJournals.registerForgetSlotType(typeKey, opts)
+    if type(typeKey) ~= "string" or typeKey == "" then
+        return false
+    end
+    opts = type(opts) == "table" and opts or {}
+    BurdJournals.REGISTERED_FORGET_SLOT_TYPES[typeKey] = {
+        enabledOption = opts.enabledOption,
+        enabledDefault = opts.enabledDefault ~= false,
+        chanceOption = opts.chanceOption,
+        chanceDefault = tonumber(opts.chanceDefault) or 0,
+    }
+    return true
+end
+
+function BurdJournals.getPlayerPingMs(player)
+    local function normalizePing(value)
+        local numberValue = tonumber(value)
+        if numberValue and numberValue >= 0 then
+            return math.floor(numberValue + 0.5)
+        end
+        return nil
+    end
+
+    local function tryMethod(obj, methodName)
+        if not obj or not methodName then return nil end
+        local method = obj[methodName]
+        if type(method) ~= "function" then return nil end
+        local ok, value = safePcall(function()
+            return method(obj)
+        end)
+        if ok then
+            return normalizePing(value)
+        end
+        return nil
+    end
+
+    local function tryField(obj, fieldName)
+        if not obj or not fieldName then return nil end
+        local ok, value = safePcall(function()
+            return obj[fieldName]
+        end)
+        if ok then
+            return normalizePing(value)
+        end
+        return nil
+    end
+
+    local pingMethods = { "getPing", "getPingMs", "getLatency", "getAveragePing", "getLastPing" }
+    for _, methodName in ipairs(pingMethods) do
+        local ping = tryMethod(player, methodName)
+        if ping ~= nil then return ping end
+    end
+
+    local connectionMethods = { "getConnection", "getUdpConnection", "getNetworkConnection" }
+    for _, connectionMethod in ipairs(connectionMethods) do
+        local ok, connection = safePcall(function()
+            local method = player and player[connectionMethod]
+            return type(method) == "function" and method(player) or nil
+        end)
+        if ok and connection then
+            for _, methodName in ipairs(pingMethods) do
+                local ping = tryMethod(connection, methodName)
+                if ping ~= nil then return ping end
+            end
+            local ping = tryField(connection, "ping") or tryField(connection, "Ping") or tryField(connection, "latency")
+            if ping ~= nil then return ping end
+        end
+    end
+
+    return nil
+end
 -- Build 41-safe local XP helpers.
 -- B41's Java bindings expose exact-set methods (`setXPToLevel`, `AddXPNoMultiplier`)
 -- and those are more reliable than probing newer AddXP overloads from Lua.
@@ -264,13 +824,36 @@ local function getSkillBookMultiplierEntryField(entry, fieldName)
     if not entry or type(fieldName) ~= "string" or fieldName == "" then
         return nil
     end
-    local ok, value = safePcall(function()
-        return entry[fieldName]
-    end)
-    if ok and value ~= nil then
-        return tonumber(value)
+    if type(entry) == "table" then
+        local value = rawget(entry, fieldName)
+        if value ~= nil then
+            return tonumber(value)
+        end
     end
     return nil
+end
+
+local function inferSkillBookMultiplierLevelRange(multiplier)
+    local numericMultiplier = tonumber(multiplier)
+    if not numericMultiplier or numericMultiplier <= 1.0 then
+        return nil, nil
+    end
+
+    local knownRanges = {
+        { multiplier = 3.0, minLevel = 1, maxLevel = 2 },
+        { multiplier = 5.0, minLevel = 3, maxLevel = 4 },
+        { multiplier = 8.0, minLevel = 5, maxLevel = 6 },
+        { multiplier = 12.0, minLevel = 7, maxLevel = 8 },
+        { multiplier = 16.0, minLevel = 9, maxLevel = 10 },
+    }
+
+    for _, range in ipairs(knownRanges) do
+        if math.abs(numericMultiplier - range.multiplier) < 0.001 then
+            return range.minLevel, range.maxLevel
+        end
+    end
+
+    return nil, nil
 end
 
 local function reconcileExactSetSkillBookMultiplier(player, perk, skillName, currentXP, currentLevel)
@@ -293,8 +876,15 @@ local function reconcileExactSetSkillBookMultiplier(player, perk, skillName, cur
 
     local effectiveLevel = math.max(0, tonumber(currentLevel) or 0)
     local effectiveXP = math.max(0, tonumber(currentXP) or 0)
-    local minLevel = math.max(0, getSkillBookMultiplierEntryField(entry, "minLevel") or 0)
-    local maxLevel = math.max(0, getSkillBookMultiplierEntryField(entry, "maxLevel") or 0)
+    local minLevel = getSkillBookMultiplierEntryField(entry, "minLevel")
+    local maxLevel = getSkillBookMultiplierEntryField(entry, "maxLevel")
+    if minLevel == nil or maxLevel == nil then
+        local inferredMinLevel, inferredMaxLevel = inferSkillBookMultiplierLevelRange(multiplier)
+        minLevel = minLevel or inferredMinLevel
+        maxLevel = maxLevel or inferredMaxLevel
+    end
+    minLevel = math.max(0, tonumber(minLevel) or 0)
+    maxLevel = math.max(0, tonumber(maxLevel) or 0)
     local minXP = nil
     local maxXP = nil
 
@@ -310,12 +900,6 @@ local function reconcileExactSetSkillBookMultiplier(player, perk, skillName, cur
         shouldRemove = true
     end
     if not shouldRemove and maxXP and effectiveXP >= (maxXP - 0.001) then
-        shouldRemove = true
-    end
-    if not shouldRemove and minLevel > 0 and effectiveLevel < minLevel then
-        shouldRemove = true
-    end
-    if not shouldRemove and minXP and effectiveXP < (minXP - 0.001) then
         shouldRemove = true
     end
     if not shouldRemove then
@@ -721,6 +1305,38 @@ function BurdJournals.normalizeTable(tbl)
 
     return nil
 end
+-- Bounded normalization for untrusted network payloads. The protected iterator is
+-- a narrow Kahlua/Java compatibility boundary; it stops after maxEntries + 1 and
+-- never hides a gameplay mutation.
+function BurdJournals.normalizeTableLimited(tbl, maxEntries)
+    if not tbl then return nil, false end
+    local limit = math.max(0, math.floor(tonumber(maxEntries) or 0))
+    if tbl.size and tbl.get then
+        local ok, list, tooLarge = safePcall(function()
+            local size = tonumber(tbl:size()) or 0
+            if size > limit then return nil, true end
+            local output = {}
+            for index = 0, size - 1 do output[index + 1] = tbl:get(index) end
+            return output, false
+        end)
+        if ok then return list, tooLarge == true end
+        return nil, false
+    end
+    local pairsFn = (_safeType and _safeType(_safePairs) == "function") and _safePairs or nil
+    if not pairsFn then return nil, false end
+    local ok, result, tooLarge = safePcall(function()
+        local output = {}
+        local count = 0
+        for key, value in pairsFn(tbl) do
+            count = count + 1
+            if count > limit then return nil, true end
+            output[key] = value
+        end
+        return output, false
+    end)
+    if not ok then return nil, false end
+    return result, tooLarge == true
+end
 
 -- Check if a table-like object has any entries (safe for Java-backed ModData)
 function BurdJournals.hasAnyEntries(tbl)
@@ -733,24 +1349,11 @@ function BurdJournals.hasAnyEntries(tbl)
         return false
     end
 
-    -- Guard against environments/mods where global next()/pairs() may be missing/overridden.
-    if _safeType and _safeType(_safeNext) == "function" then
-        local ok, firstKey = safePcall(function() return _safeNext(normalized) end)
-        if ok then
-            return firstKey ~= nil
-        end
-    end
-
-    -- Fallback iteration path.
+    -- normalizeTable() above returns a plain Lua table, so a direct iteration
+    -- is both compatible with Kahlua and clearer than probing next() in pcall.
     if _safeType and _safeType(_safePairs) == "function" then
-        local ok, hasEntries = safePcall(function()
-            for _, _ in _safePairs(normalized) do
-                return true
-            end
-            return false
-        end)
-        if ok then
-            return hasEntries == true
+        for _, _ in _safePairs(normalized) do
+            return true
         end
     end
 
@@ -1088,6 +1691,66 @@ function BurdJournals.createAdaptiveModalDialog(options)
     return modal
 end
 
+function BurdJournals.isPlayerJournalDebugProvenanceSafeToClear(journalData)
+    if type(journalData) ~= "table" then
+        return false
+    end
+
+    local sourceType = string.lower(tostring(journalData.sourceType or ""))
+    local originMode = string.lower(tostring(journalData.originMode or ""))
+    local hasPlayerOrigin = journalData.isPlayerCreated == true
+        or sourceType == "personal"
+        or originMode == "personal"
+        or journalData.ownerUsername ~= nil
+        or journalData.ownerSteamId ~= nil
+        or journalData.ownerCharacterName ~= nil
+
+    if not hasPlayerOrigin then
+        return false
+    end
+
+    if journalData.isWorn == true
+        or journalData.isBloody == true
+        or journalData.wasFromWorn == true
+        or journalData.wasFromBloody == true
+        or journalData.isCursedJournal == true
+        or journalData.isCursedReward == true
+        or journalData.isYuletideJournal == true
+        or sourceType == "found"
+        or sourceType == "world"
+        or sourceType == "zombie"
+        or originMode == "found"
+        or originMode == "world"
+        or originMode == "zombie" then
+        return false
+    end
+
+    return true
+end
+
+function BurdJournals.clearPlayerJournalDebugProvenance(journalData, sourceTag)
+    if type(journalData) ~= "table" then
+        return false
+    end
+    if not BurdJournals.isPlayerJournalDebugProvenanceSafeToClear(journalData) then
+        return false
+    end
+    if journalData.isDebugSpawned ~= true
+        and journalData.isDebugEdited ~= true
+        and journalData.debugBackupEnabled ~= true then
+        return false
+    end
+
+    journalData.isPlayerCreated = true
+    journalData.isDebugSpawned = false
+    journalData.isDebugEdited = nil
+    journalData.debugBackupEnabled = nil
+    BurdJournals.debugPrint("[BurdJournals] Cleared debug provenance from filled player journal"
+        .. " source=" .. tostring(sourceTag or "unknown")
+        .. " uuid=" .. tostring(journalData.uuid or journalData.entryStoreUUID or "nil"))
+    return true
+end
+
 -- Normalize journal data (shallow) so UI can safely iterate without pcall
 function BurdJournals.normalizeJournalData(journalData)
     if not journalData or (_safeType and _safeType(journalData) ~= "table") then return nil end
@@ -1107,6 +1770,12 @@ function BurdJournals.normalizeJournalData(journalData)
     normalized.claims = BurdJournals.normalizeTable(journalData.claims) or {}
     normalized.claimedForgetSlot = BurdJournals.normalizeTable(journalData.claimedForgetSlot) or {}
     normalized.forgetSlot = journalData.forgetSlot == true
+    if normalized.forgetSlot then
+        local forgetSlotCount = math.floor(tonumber(journalData.forgetSlotCount) or 1)
+        normalized.forgetSlotCount = forgetSlotCount > 1 and forgetSlotCount or nil
+    else
+        normalized.forgetSlotCount = nil
+    end
     normalized.isHiddenCursedJournal = journalData.isHiddenCursedJournal == true
     normalized.isCursedJournal = journalData.isCursedJournal == true
     normalized.isCursedReward = journalData.isCursedReward == true
@@ -1149,8 +1818,288 @@ function BurdJournals.normalizeJournalData(journalData)
     normalized.yuletideDeliveryLabel = journalData.yuletideDeliveryLabel
     normalized.yuletidePendingDelivery = journalData.yuletidePendingDelivery == true
     normalized.yuletideBeacon = BurdJournals.normalizeTable(journalData.yuletideBeacon)
+    normalized.notes = BurdJournals.normalizeJournalNotes and BurdJournals.normalizeJournalNotes(journalData.notes, false) or journalData.notes
+    if normalized.isPlayerCreated == true and BurdJournals.sanitizePlayerJournalNotes then
+        normalized.notes = BurdJournals.sanitizePlayerJournalNotes(normalized.notes)
+    end
+    if BurdJournals.clearPlayerJournalDebugProvenance then
+        BurdJournals.clearPlayerJournalDebugProvenance(normalized, "normalizeJournalData")
+    end
 
     return normalized
+end
+
+-- ============================================================================
+-- Player Journal Notes
+-- ============================================================================
+
+BurdJournals.JOURNAL_NOTES_MAX_PAGES = 30
+BurdJournals.JOURNAL_NOTES_MAX_CHARS_PER_PAGE = 2000
+
+function BurdJournals.isPlayerJournalNotesEnabled()
+    return not BurdJournals.getSandboxOption
+        or BurdJournals.getSandboxOption("EnablePlayerJournalNotes") ~= false
+end
+
+function BurdJournals.getJournalNotesMaxPages()
+    local value = tonumber(BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("PlayerJournalNotesMaxPages"))
+        or tonumber(BurdJournals.JOURNAL_NOTES_MAX_PAGES)
+        or 30
+    value = math.floor(value)
+    if value < 1 then value = 1 end
+    if value > 100 then value = 100 end
+    return value
+end
+
+function BurdJournals.getJournalNotesMaxCharsPerPage()
+    local value = tonumber(BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("PlayerJournalNotesMaxCharsPerPage"))
+        or tonumber(BurdJournals.JOURNAL_NOTES_MAX_CHARS_PER_PAGE)
+        or 2000
+    value = math.floor(value)
+    if value < 250 then value = 250 end
+    if value > 8000 then value = 8000 end
+    return value
+end
+
+function BurdJournals.sanitizeJournalNoteText(text)
+    local value = tostring(text or "")
+    value = value:gsub("\r\n", "\n"):gsub("\r", "\n")
+    value = value:gsub("[%z\1-\8\11\12\14-\31\127]", "")
+    local maxChars = BurdJournals.getJournalNotesMaxCharsPerPage and BurdJournals.getJournalNotesMaxCharsPerPage()
+        or tonumber(BurdJournals.JOURNAL_NOTES_MAX_CHARS_PER_PAGE)
+        or 2000
+    if string.len(value) > maxChars then
+        value = string.sub(value, 1, maxChars)
+    end
+    return value
+end
+
+function BurdJournals._sanitizeJournalNoteMetadataText(value, maxChars)
+    if value == nil then return nil end
+    value = tostring(value):gsub("[%z\1-\31\127]", "")
+    if value == "" then return nil end
+    return string.sub(value, 1, math.max(1, tonumber(maxChars) or 128))
+end
+
+function BurdJournals._normalizeGeneratedLoreMetadata(generatedLore)
+    if type(generatedLore) ~= "table" then return nil end
+    local templateKey = BurdJournals._sanitizeJournalNoteMetadataText(generatedLore.templateKey, 160)
+    if not templateKey then return nil end
+
+    local normalized = {
+        templateKey = templateKey,
+        templateFallback = BurdJournals._sanitizeJournalNoteMetadataText(generatedLore.templateFallback, 2000),
+        tokens = {},
+    }
+    local tokenCount = 0
+    if type(generatedLore.tokens) == "table" then
+        for tokenKey, tokenValue in pairs(generatedLore.tokens) do
+            if tokenCount >= 64 then break end
+            local normalizedKey = BurdJournals._sanitizeJournalNoteMetadataText(tokenKey, 80)
+            local normalizedValue = nil
+            if type(tokenValue) == "table" then
+                local poolKey = BurdJournals._sanitizeJournalNoteMetadataText(tokenValue.poolKey, 160)
+                local value = BurdJournals._sanitizeJournalNoteMetadataText(tokenValue.value, 256)
+                local index = math.floor(tonumber(tokenValue.index) or 0)
+                if poolKey and index >= 1 and index <= 1000 then
+                    normalizedValue = { poolKey = poolKey, index = index, value = value }
+                elseif value then
+                    normalizedValue = value
+                end
+            else
+                normalizedValue = BurdJournals._sanitizeJournalNoteMetadataText(tokenValue, 256)
+            end
+            if normalizedKey and normalizedValue ~= nil then
+                normalized.tokens[normalizedKey] = normalizedValue
+                tokenCount = tokenCount + 1
+            end
+        end
+    end
+    return normalized
+end
+
+function BurdJournals.normalizeJournalNotes(notes, keepBlankPage)
+    local sourcePages = nil
+    if type(notes) == "table" then
+        if type(notes.pages) == "table" then
+            sourcePages = notes.pages
+        else
+            sourcePages = notes
+        end
+    elseif notes ~= nil then
+        sourcePages = { tostring(notes) }
+    end
+
+    local normalized = { pages = {} }
+    local maxPages = BurdJournals.getJournalNotesMaxPages and BurdJournals.getJournalNotesMaxPages()
+        or tonumber(BurdJournals.JOURNAL_NOTES_MAX_PAGES)
+        or 30
+    if type(sourcePages) == "table" then
+        for i = 1, maxPages do
+            local pageText = sourcePages[i]
+            if pageText ~= nil then
+                normalized.pages[#normalized.pages + 1] = BurdJournals.sanitizeJournalNoteText(pageText)
+            end
+        end
+    end
+
+    if #normalized.pages <= 0 and keepBlankPage == true then
+        normalized.pages[1] = ""
+    end
+
+    if type(notes) == "table" then
+        normalized.updatedAt = tonumber(notes.updatedAt) or nil
+        normalized.updatedBy = BurdJournals._sanitizeJournalNoteMetadataText(notes.updatedBy, 128)
+        normalized.generated = notes.generated == true
+        normalized.source = BurdJournals._sanitizeJournalNoteMetadataText(notes.source, 32)
+        normalized.family = BurdJournals._sanitizeJournalNoteMetadataText(notes.family, 32)
+        if normalized.generated == true then
+            normalized.generatedLore = BurdJournals._normalizeGeneratedLoreMetadata(notes.generatedLore)
+        end
+    end
+
+    if #normalized.pages <= 0 and normalized.generated == true and type(normalized.generatedLore) == "table" then
+        normalized.pages[1] = ""
+    end
+
+    if #normalized.pages <= 0 then
+        return nil
+    end
+    return normalized
+end
+
+function BurdJournals.sanitizePlayerJournalNotes(notes)
+    if type(notes) ~= "table" then
+        return nil
+    end
+
+    if notes.generated ~= true and notes.generatedLore == nil and notes.source ~= "loot" then
+        return notes
+    end
+
+    local pages = type(notes.pages) == "table" and notes.pages or {}
+    local hasWrittenPage = false
+    for _, pageText in ipairs(pages) do
+        if tostring(pageText or "") ~= "" then
+            hasWrittenPage = true
+            break
+        end
+    end
+
+    if not hasWrittenPage then
+        return nil
+    end
+
+    notes.generated = nil
+    notes.generatedLore = nil
+    notes.source = nil
+    notes.family = nil
+    return notes
+end
+
+function BurdJournals.renderLoreTemplateText(templateText, tokens)
+    if type(templateText) ~= "string" then
+        return ""
+    end
+    templateText = templateText:gsub("\\r\\n", "\n"):gsub("\\n", "\n")
+    local tokenValues = type(tokens) == "table" and tokens or {}
+    local function getTokenBase(token)
+        if type(token) ~= "string" then
+            return nil
+        end
+        if token == "stashNoun" or token == "dangerNoun" or token == "supplyNoun" or token == "omenNoun" then
+            return token
+        end
+        for _, base in ipairs({ "entryName", "skillName", "traitName", "recipeName", "exclamation", "adjective", "adverb", "noun", "verb" }) do
+            if string.sub(token, 1, string.len(base)) == base then
+                return base
+            end
+        end
+        return nil
+    end
+    local function resolveTokenValue(tokenData)
+        if type(tokenData) ~= "table" then
+            return tokenData
+        end
+        if type(tokenData.poolKey) == "string" and tonumber(tokenData.index) then
+            local poolText = BurdJournals.safeGetText and BurdJournals.safeGetText(tokenData.poolKey, nil) or nil
+            local poolIndex = math.max(1, tonumber(tokenData.index) or 1)
+            if type(poolText) == "string" and poolText ~= "" and poolText ~= tokenData.poolKey then
+                local index = 0
+                for entry in string.gmatch(poolText, "([^|]+)") do
+                    index = index + 1
+                    if index == poolIndex then
+                        return entry
+                    end
+                end
+            end
+        end
+        return tokenData.value
+    end
+    local tokenOccurrences = {}
+    return (templateText:gsub("{{([%w_]+)}}", function(token)
+        tokenOccurrences[token] = (tonumber(tokenOccurrences[token]) or 0) + 1
+        local occurrenceKey = token .. "#" .. tostring(tokenOccurrences[token])
+        local value = resolveTokenValue(tokenValues[occurrenceKey])
+        if value == nil then
+            value = resolveTokenValue(tokenValues[token])
+        end
+        if value == nil then
+            local base = getTokenBase(token)
+            if base and base ~= token then
+                value = resolveTokenValue(tokenValues[base .. "#" .. tostring(tokenOccurrences[token])])
+                    or resolveTokenValue(tokenValues[base])
+                    or resolveTokenValue(tokenValues[base .. "#1"])
+            elseif base then
+                value = resolveTokenValue(tokenValues[base .. "#1"])
+            end
+        end
+        if value == nil then
+            return ""
+        end
+        return tostring(value)
+    end))
+end
+
+function BurdJournals.getLocalizedGeneratedLorePage(notes, pageIndex)
+    if type(notes) ~= "table" or type(notes.generatedLore) ~= "table" then
+        return nil
+    end
+    local lore = notes.generatedLore
+    local key = type(lore.templateKey) == "string" and lore.templateKey or nil
+    if not key or key == "" then
+        return nil
+    end
+    local pages = type(notes.pages) == "table" and notes.pages or {}
+    local storedPage = pages[tonumber(pageIndex) or 1] or pages[1]
+    local fallback = lore.templateFallback or storedPage or ""
+    local templateText = BurdJournals.safeGetText and BurdJournals.safeGetText(key, fallback) or fallback
+    if type(templateText) ~= "string" or templateText == "" or templateText == key then
+        templateText = fallback
+    end
+    if templateText == fallback and type(lore.templateFallback) ~= "string" and storedPage ~= nil then
+        return tostring(storedPage or "")
+    end
+    return BurdJournals.renderLoreTemplateText(templateText, lore.tokens)
+end
+
+function BurdJournals.hasJournalNotes(journalData)
+    local notes = journalData and BurdJournals.normalizeJournalNotes and BurdJournals.normalizeJournalNotes(journalData.notes, false) or nil
+    if journalData and journalData.isPlayerCreated == true and BurdJournals.sanitizePlayerJournalNotes then
+        notes = BurdJournals.sanitizePlayerJournalNotes(notes)
+    end
+    if type(notes) ~= "table" or type(notes.pages) ~= "table" then
+        return false
+    end
+    if notes.generated == true and type(notes.generatedLore) == "table" and type(notes.generatedLore.templateKey) == "string" then
+        return true
+    end
+    for _, pageText in ipairs(notes.pages) do
+        if tostring(pageText or "") ~= "" then
+            return true
+        end
+    end
+    return false
 end
 
 -- ============================================================================
@@ -1261,12 +2210,25 @@ function BurdJournals.resolveSkillKey(skillsTable, skillName)
                 return perkKey
             end
         end
+
+        local requestedPerkId = perkId or skillName
+        local requestedPerkLower = string.lower(tostring(requestedPerkId))
+        for existingKey, _ in pairs(tableToScan) do
+            local existingPerkId = BurdJournals.SKILL_TO_PERK[existingKey] or existingKey
+            if string.lower(tostring(existingPerkId)) == requestedPerkLower then
+                return existingKey
+            end
+        end
     end
 
     return skillName
 end
 
-function BurdJournals.buildTraitCostLookup()
+function BurdJournals.buildTraitCostLookup(forceRefresh)
+    if not forceRefresh and BurdJournals._cachedTraitCostLookup then
+        return BurdJournals._cachedTraitCostLookup
+    end
+
     local lookup = {}
     if CharacterTraitDefinition and CharacterTraitDefinition.getTraits then
         local allDefs = CharacterTraitDefinition.getTraits()
@@ -1289,6 +2251,7 @@ function BurdJournals.buildTraitCostLookup()
             end
         end
     end
+    BurdJournals._cachedTraitCostLookup = lookup
     return lookup
 end
 
@@ -1427,6 +2390,476 @@ function BurdJournals.generateUUID()
     return uuid
 end
 
+BurdJournals.JOURNAL_EXPORT_SCHEMA = "BurdJournals.JournalExport"
+BurdJournals.JOURNAL_EXPORT_VERSION = 1
+
+function BurdJournals.jsonEscapeString(value)
+    local text = tostring(value or "")
+    text = string.gsub(text, "\\", "\\\\")
+    text = string.gsub(text, "\"", "\\\"")
+    text = string.gsub(text, "\b", "\\b")
+    text = string.gsub(text, "\f", "\\f")
+    text = string.gsub(text, "\n", "\\n")
+    text = string.gsub(text, "\r", "\\r")
+    text = string.gsub(text, "\t", "\\t")
+    text = string.gsub(text, "[%z\1-\31]", function(c)
+        return BurdJournals.formatText("\\u%04x", string.byte(c))
+    end)
+    return "\"" .. text .. "\""
+end
+
+function BurdJournals.isSequentialArray(value)
+    if type(value) ~= "table" then
+        return false, 0
+    end
+    local maxIndex = 0
+    local count = 0
+    for key, _ in pairs(value) do
+        if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then
+            return false, 0
+        end
+        if key > maxIndex then
+            maxIndex = key
+        end
+        count = count + 1
+    end
+    return maxIndex == count, maxIndex
+end
+
+function BurdJournals.sortedJsonKeys(value)
+    local keys = {}
+    for key, _ in pairs(value) do
+        keys[#keys + 1] = key
+    end
+    table.sort(keys, function(a, b)
+        return tostring(a) < tostring(b)
+    end)
+    return keys
+end
+
+function BurdJournals.encodeJsonValue(value, depth, seen, options)
+    options = type(options) == "table" and options or {}
+    local valueType = type(value)
+    if valueType == "nil" then
+        return "null"
+    elseif valueType == "boolean" then
+        return value and "true" or "false"
+    elseif valueType == "number" then
+        if value ~= value or value == math.huge or value == -math.huge then
+            return "null"
+        end
+        return tostring(value)
+    elseif valueType == "string" then
+        return BurdJournals.jsonEscapeString(value)
+    elseif valueType ~= "table" then
+        return BurdJournals.jsonEscapeString(tostring(value))
+    end
+
+    depth = tonumber(depth) or 0
+    if depth > 32 then
+        return "null"
+    end
+    seen = seen or {}
+    if seen[value] then
+        return "null"
+    end
+    seen[value] = true
+
+    local isArray, arrayLength = BurdJournals.isSequentialArray(value)
+    local out = {}
+    local pretty = options.pretty == true
+    local indentText = options.indent or "  "
+    if isArray then
+        for i = 1, arrayLength do
+            out[#out + 1] = BurdJournals.encodeJsonValue(value[i], depth + 1, seen, options)
+        end
+        seen[value] = nil
+        if not pretty or #out == 0 then
+            return "[" .. table.concat(out, ",") .. "]"
+        end
+        local currentIndent = string.rep(indentText, depth)
+        local childIndent = string.rep(indentText, depth + 1)
+        return "[\n" .. childIndent .. table.concat(out, ",\n" .. childIndent) .. "\n" .. currentIndent .. "]"
+    end
+
+    for _, key in ipairs(BurdJournals.sortedJsonKeys(value)) do
+        local keyType = type(key)
+        if keyType == "string" or keyType == "number" or keyType == "boolean" then
+            local separator = pretty and ": " or ":"
+            out[#out + 1] = BurdJournals.jsonEscapeString(tostring(key)) .. separator .. BurdJournals.encodeJsonValue(value[key], depth + 1, seen, options)
+        end
+    end
+    seen[value] = nil
+    if not pretty or #out == 0 then
+        return "{" .. table.concat(out, ",") .. "}"
+    end
+    local currentIndent = string.rep(indentText, depth)
+    local childIndent = string.rep(indentText, depth + 1)
+    return "{\n" .. childIndent .. table.concat(out, ",\n" .. childIndent) .. "\n" .. currentIndent .. "}"
+end
+
+function BurdJournals.encodeJournalExportJSON(payload, options)
+    if type(payload) ~= "table" then
+        return nil, "payload must be a table"
+    end
+    return BurdJournals.encodeJsonValue(payload, 0, {}, options)
+end
+
+function BurdJournals.createJsonParser(text)
+    local parser = {
+        text = tostring(text or ""),
+        index = 1,
+        length = string.len(tostring(text or "")),
+    }
+
+    function parser:peek()
+        return string.sub(self.text, self.index, self.index)
+    end
+
+    function parser:skipWhitespace()
+        while self.index <= self.length do
+            local c = self:peek()
+            if c ~= " " and c ~= "\t" and c ~= "\r" and c ~= "\n" then
+                break
+            end
+            self.index = self.index + 1
+        end
+    end
+
+    function parser:readLiteral(literal, value)
+        if string.sub(self.text, self.index, self.index + string.len(literal) - 1) ~= literal then
+            error("Expected " .. literal)
+        end
+        self.index = self.index + string.len(literal)
+        return value
+    end
+
+    function parser:readString()
+        if self:peek() ~= "\"" then
+            error("Expected string")
+        end
+        self.index = self.index + 1
+        local out = {}
+        while self.index <= self.length do
+            local c = self:peek()
+            self.index = self.index + 1
+            if c == "\"" then
+                return table.concat(out)
+            elseif c == "\\" then
+                local esc = self:peek()
+                self.index = self.index + 1
+                if esc == "\"" or esc == "\\" or esc == "/" then
+                    out[#out + 1] = esc
+                elseif esc == "b" then
+                    out[#out + 1] = "\b"
+                elseif esc == "f" then
+                    out[#out + 1] = "\f"
+                elseif esc == "n" then
+                    out[#out + 1] = "\n"
+                elseif esc == "r" then
+                    out[#out + 1] = "\r"
+                elseif esc == "t" then
+                    out[#out + 1] = "\t"
+                elseif esc == "u" then
+                    local hex = string.sub(self.text, self.index, self.index + 3)
+                    if not string.match(hex, "^[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]$") then
+                        error("Invalid unicode escape")
+                    end
+                    self.index = self.index + 4
+                    local code = tonumber(hex, 16) or 63
+                    if code < 128 then
+                        out[#out + 1] = string.char(code)
+                    else
+                        out[#out + 1] = "?"
+                    end
+                else
+                    error("Invalid escape")
+                end
+            else
+                out[#out + 1] = c
+            end
+        end
+        error("Unterminated string")
+    end
+
+    function parser:readNumber()
+        local startIndex = self.index
+        local c = self:peek()
+        if c == "-" then
+            self.index = self.index + 1
+        end
+        while string.match(self:peek(), "%d") do
+            self.index = self.index + 1
+        end
+        if self:peek() == "." then
+            self.index = self.index + 1
+            while string.match(self:peek(), "%d") do
+                self.index = self.index + 1
+            end
+        end
+        c = self:peek()
+        if c == "e" or c == "E" then
+            self.index = self.index + 1
+            c = self:peek()
+            if c == "+" or c == "-" then
+                self.index = self.index + 1
+            end
+            while string.match(self:peek(), "%d") do
+                self.index = self.index + 1
+            end
+        end
+        local raw = string.sub(self.text, startIndex, self.index - 1)
+        local value = tonumber(raw)
+        if value == nil then
+            error("Invalid number")
+        end
+        return value
+    end
+
+    function parser:readArray()
+        self.index = self.index + 1
+        local out = {}
+        self:skipWhitespace()
+        if self:peek() == "]" then
+            self.index = self.index + 1
+            return out
+        end
+        while true do
+            out[#out + 1] = self:readValue()
+            self:skipWhitespace()
+            local c = self:peek()
+            if c == "]" then
+                self.index = self.index + 1
+                return out
+            elseif c ~= "," then
+                error("Expected array separator")
+            end
+            self.index = self.index + 1
+        end
+    end
+
+    function parser:readObject()
+        self.index = self.index + 1
+        local out = {}
+        self:skipWhitespace()
+        if self:peek() == "}" then
+            self.index = self.index + 1
+            return out
+        end
+        while true do
+            self:skipWhitespace()
+            local key = self:readString()
+            self:skipWhitespace()
+            if self:peek() ~= ":" then
+                error("Expected object separator")
+            end
+            self.index = self.index + 1
+            out[key] = self:readValue()
+            self:skipWhitespace()
+            local c = self:peek()
+            if c == "}" then
+                self.index = self.index + 1
+                return out
+            elseif c ~= "," then
+                error("Expected object comma")
+            end
+            self.index = self.index + 1
+        end
+    end
+
+    function parser:readValue()
+        self:skipWhitespace()
+        local c = self:peek()
+        if c == "{" then
+            return self:readObject()
+        elseif c == "[" then
+            return self:readArray()
+        elseif c == "\"" then
+            return self:readString()
+        elseif c == "t" then
+            return self:readLiteral("true", true)
+        elseif c == "f" then
+            return self:readLiteral("false", false)
+        elseif c == "n" then
+            return self:readLiteral("null", nil)
+        elseif c == "-" or string.match(c, "%d") then
+            return self:readNumber()
+        end
+        error("Unexpected JSON token")
+    end
+
+    return parser
+end
+
+function BurdJournals.decodeJournalExportJSON(jsonText)
+    if type(jsonText) ~= "string" or jsonText == "" then
+        return nil, "JSON text is empty"
+    end
+    local parser = BurdJournals.createJsonParser(jsonText)
+    local ok, result = pcall(function()
+        local value = parser:readValue()
+        parser:skipWhitespace()
+        if parser.index <= parser.length then
+            error("Unexpected trailing JSON content")
+        end
+        return value
+    end)
+    if not ok then
+        return nil, tostring(result)
+    end
+    if type(result) ~= "table" then
+        return nil, "JSON root must be an object"
+    end
+    return result
+end
+
+function BurdJournals.copyJournalExportTable(source)
+    if type(source) ~= "table" then
+        return source
+    end
+    local out = {}
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            out[key] = BurdJournals.copyJournalExportTable(value)
+        else
+            out[key] = value
+        end
+    end
+    return out
+end
+
+function BurdJournals.getJournalExportCounts(journalData)
+    local data = BurdJournals.normalizeJournalData and BurdJournals.normalizeJournalData(journalData) or journalData
+    data = type(data) == "table" and data or {}
+    return {
+        skills = BurdJournals.countTable and BurdJournals.countTable(data.skills) or 0,
+        traits = BurdJournals.countTable and BurdJournals.countTable(data.traits) or 0,
+        recipes = BurdJournals.countTable and BurdJournals.countTable(data.recipes) or 0,
+        stats = BurdJournals.countTable and BurdJournals.countTable(data.stats) or 0,
+        claims = BurdJournals.countTable and BurdJournals.countTable(data.claims) or 0,
+    }
+end
+
+function BurdJournals.buildJournalExportPayload(journalData, itemInfo, options)
+    local normalized = BurdJournals.normalizeJournalData and BurdJournals.normalizeJournalData(journalData) or journalData
+    if type(normalized) ~= "table" then
+        return nil, "No journal data to export"
+    end
+    itemInfo = type(itemInfo) == "table" and itemInfo or {}
+    options = type(options) == "table" and options or {}
+    local exportedData = BurdJournals.copyJournalExportTable(normalized)
+    return {
+        schema = BurdJournals.JOURNAL_EXPORT_SCHEMA,
+        version = BurdJournals.JOURNAL_EXPORT_VERSION,
+        exportedAt = options.exportedAt or ((getTimestampMs and getTimestampMs()) or os.time()),
+        exportedBy = options.exportedBy,
+        sourceModVersion = BurdJournals.VERSION or BurdJournals.ModVersion or "unknown",
+        source = {
+            uuid = exportedData.uuid,
+            itemType = itemInfo.itemType or exportedData.fullType,
+            itemName = itemInfo.itemName or exportedData.customName,
+            ownerUsername = exportedData.ownerUsername,
+            ownerSteamId = exportedData.ownerSteamId,
+            ownerCharacterName = exportedData.ownerCharacterName,
+        },
+        counts = BurdJournals.getJournalExportCounts(exportedData),
+        journalData = exportedData,
+    }
+end
+
+function BurdJournals.parseJournalExportPayload(jsonText)
+    local decoded, err = BurdJournals.decodeJournalExportJSON(jsonText)
+    if not decoded then
+        return nil, err or "Invalid JSON"
+    end
+    if decoded.schema == BurdJournals.JOURNAL_EXPORT_SCHEMA then
+        local version = tonumber(decoded.version) or 0
+        if version < 1 or version > BurdJournals.JOURNAL_EXPORT_VERSION then
+            return nil, "Unsupported journal export version"
+        end
+        if type(decoded.journalData) ~= "table" then
+            return nil, "Journal export is missing journalData"
+        end
+        return decoded
+    end
+    if type(decoded.skills) == "table"
+        or type(decoded.traits) == "table"
+        or type(decoded.recipes) == "table"
+        or type(decoded.stats) == "table"
+    then
+        return {
+            schema = "BurdJournals.LegacyJournalData",
+            version = 0,
+            source = {
+                uuid = decoded.uuid,
+                itemType = decoded.fullType or decoded.itemType,
+                itemName = decoded.customName,
+            },
+            journalData = decoded,
+        }
+    end
+    return nil, "Unsupported journal export schema"
+end
+
+function BurdJournals.clearJournalImportClaimState(data)
+    data.claims = {}
+    data.claimedSkills = {}
+    data.claimedTraits = {}
+    data.claimedRecipes = {}
+    data.claimedStats = {}
+    data.claimedForgetSlot = {}
+    if type(data.cursedPendingRewards) == "table" then
+        data.cursedPendingRewards.claims = {}
+        data.cursedPendingRewards.claimedSkills = {}
+        data.cursedPendingRewards.claimedTraits = {}
+        data.cursedPendingRewards.claimedRecipes = {}
+        data.cursedPendingRewards.claimedStats = {}
+        data.cursedPendingRewards.claimedForgetSlot = {}
+    end
+end
+
+function BurdJournals.normalizeImportedJournalPayload(payload, options)
+    options = type(options) == "table" and options or {}
+    local envelope = payload
+    if type(envelope) ~= "table" then
+        return nil, "Import payload must be a table"
+    end
+    if envelope.schema == BurdJournals.JOURNAL_EXPORT_SCHEMA or envelope.schema == "BurdJournals.LegacyJournalData" then
+        payload = envelope.journalData
+    end
+    local normalized = BurdJournals.normalizeJournalData and BurdJournals.normalizeJournalData(payload) or payload
+    if type(normalized) ~= "table" then
+        return nil, "Import payload has no journal data"
+    end
+
+    local imported = BurdJournals.copyJournalExportTable(normalized)
+    imported.uuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
+        or ("import-" .. tostring((getTimestampMs and getTimestampMs()) or os.time()))
+    imported.entryStoreUUID = nil
+    imported.itemID = nil
+    imported.itemId = nil
+    imported.pendingApply = nil
+    imported.pendingReason = nil
+    imported.pendingRequestedBy = nil
+    imported.backupKey = nil
+    imported.indexKey = nil
+    imported.debugRevision = (tonumber(imported.debugRevision) or 0) + 1
+    imported.importedFromUUID = envelope.source and envelope.source.uuid or normalized.uuid
+    imported.importedAt = (getTimestampMs and getTimestampMs()) or os.time()
+    imported.sanitizedVersion = BurdJournals.SANITIZE_VERSION or imported.sanitizedVersion
+
+    local claimMode = tostring(options.claimMode or "preserve")
+    if claimMode == "clear" then
+        BurdJournals.clearJournalImportClaimState(imported)
+    end
+    return imported, {
+        source = envelope.source or {},
+        counts = BurdJournals.getJournalExportCounts(imported),
+        claimMode = (claimMode == "clear") and "clear" or "preserve",
+    }
+end
+
+
 local function getItemFullTypeEarly(item)
     if not (item and item.getFullType) then return nil end
     local fullType = item:getFullType()
@@ -1483,7 +2916,8 @@ function BurdJournals.findJournalByUUID(player, uuid)
                                     local fullType = getItemFullTypeEarly(worldItem)
                                     if fullType and fullType:find("^BurdJournals%.") then
                                         local journalData = getItemJournalModDataEarly(worldItem)
-                                        if journalData and journalData.uuid == uuid then
+                                        local journalUUID = journalData and (journalData.uuid or journalData.entryStoreUUID) or nil
+                                        if journalUUID and tostring(journalUUID) == tostring(uuid) then
                                             return worldItem
                                         end
                                     end
@@ -1513,6 +2947,28 @@ function BurdJournals.findJournalByUUID(player, uuid)
     return nil
 end
 
+function BurdJournals.getJournalIdentityUUID(journalData)
+    if type(journalData) ~= "table" then
+        return nil
+    end
+    -- Once entries have been offloaded, entryStoreUUID is the durable identity.
+    -- Every identity consumer must make the same choice or a repaired shell can
+    -- point at one UUID while recording writes through another.
+    local uuid = journalData.entryStoreEnabled == true and journalData.entryStoreUUID or journalData.uuid
+    if type(uuid) == "string" and uuid ~= "" then
+        return uuid
+    end
+    uuid = journalData.entryStoreUUID
+    if type(uuid) == "string" and uuid ~= "" then
+        return uuid
+    end
+    uuid = journalData.uuid
+    if type(uuid) == "string" and uuid ~= "" then
+        return uuid
+    end
+    return nil
+end
+
 function BurdJournals.findJournalByUUIDInContainer(container, uuid)
     if not container then return nil end
 
@@ -1526,7 +2982,7 @@ function BurdJournals.findJournalByUUIDInContainer(container, uuid)
 
             if fullType and fullType:find("^BurdJournals%.") then
                 local journalData = getItemJournalModDataEarly(item)
-                if journalData and journalData.uuid == uuid then
+                if journalData and tostring(BurdJournals.getJournalIdentityUUID(journalData) or "") == tostring(uuid) then
                     return item
                 end
             end
@@ -1541,6 +2997,14 @@ function BurdJournals.findJournalByUUIDInContainer(container, uuid)
         end
     end
     return nil
+end
+
+-- Possession-scoped lookup for ordinary gameplay and MP response handling.
+-- Unlike findJournalByUUID, this never inspects loot panes or nearby squares.
+function BurdJournals.findJournalByUUIDInPlayerInventory(player, uuid)
+    local inventory = player and player.getInventory and player:getInventory() or nil
+    if not inventory then return nil end
+    return BurdJournals.findJournalByUUIDInContainer(inventory, uuid)
 end
 
 BurdJournals.SKILL_CATEGORIES = {
@@ -1736,8 +3200,7 @@ function BurdJournals.isTrainableSkill(perk)
 end
 
 -- ============================================================================
--- ENHANCED SKILL/TRAIT DISCOVERY SYSTEM
--- Automatically discovers all skills (vanilla + modded) with full metadata
+-- Skill/Trait Discovery
 -- ============================================================================
 
 -- Cache for skill metadata (richer than just names)
@@ -1989,13 +3452,14 @@ function BurdJournals.refreshSkillCache()
     BurdJournals._cachedDiscoveredSkills = nil
     BurdJournals._cachedSkillMetadata = nil
     BurdJournals._cachedTraitMetadata = nil
+    BurdJournals._cachedTraitCostLookup = nil
     BurdJournals._traitSourceCache = nil
     BurdJournals._traitSourceIdCache = nil
     BurdJournals.debugPrint("[BurdJournals] Skill/trait cache cleared - will rediscover on next access")
 end
 
 -- ============================================================================
--- TRAIT DISCOVERY SYSTEM
+-- Trait Discovery
 -- ============================================================================
 
 BurdJournals._cachedTraitMetadata = nil
@@ -2307,21 +3771,74 @@ BurdJournals.GRANTABLE_TRAITS = {
     "whittler",             -- Whittler
 }
 
-BurdJournals.EXCLUDED_TRAITS = {
-    -- Passive skill traits (automatically granted/removed based on skill levels)
-    -- NOTE: "out of shape" has a space in its CharacterTrait ID (base:"out of shape")
-    "athletic", "strong", "stout", "fit", "feeble", "unfit", "out of shape", "weak",
-    -- Weight/body-condition traits (dynamically applied by the game based on character weight)
-    -- NOTE: "very underweight" also has a space (base:"very underweight")
-    "overweight", "obese", "underweight", "very underweight", "emaciated",
-    -- Metabolism traits (passive body condition, not learnable skills)
-    "weightgain", "weightloss",
-    -- Permanent physical traits that shouldn't be grantable
-    -- CharacterTrait IDs confirmed from character_traits.txt: base:hardofhearing, base:shortsighted
-    "asthmatic", "deaf", "hardofhearing", "shortsighted",
-    -- Illiterate is a special case
-    "illiterate",
+BurdJournals.EXCLUDED_TRAITS = BurdJournals.EXCLUDED_TRAITS or {}
+
+BurdJournals.PASSIVE_SKILL_RELATED_TRAITS = BurdJournals.PASSIVE_SKILL_RELATED_TRAITS or {
+    Unfit = true,
+    OutOfShape = true,
+    ["Out of Shape"] = true,
+    outofshape = true,
+    out_of_shape = true,
+    Fit = true,
+    fit = true,
+    Athletic = true,
+    athletic = true,
+    Puny = true,
+    puny = true,
+    Weak = true,
+    weak = true,
+    Feeble = true,
+    feeble = true,
+    Stout = true,
+    stout = true,
+    Strong = true,
+    strong = true,
+    Overweight = true,
+    overweight = true,
+    Obese = true,
+    obese = true,
+    Underweight = true,
+    underweight = true,
+    VeryUnderweight = true,
+    ["Very Underweight"] = true,
+    veryunderweight = true,
+    very_underweight = true,
+    Emaciated = true,
+    emaciated = true,
 }
+
+function BurdJournals.isPassiveSkillRelatedTraitKey(traitId)
+    if traitId == nil then return false end
+    local normalized = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(traitId) or tostring(traitId)
+    normalized = tostring(normalized or traitId)
+    local compact = string.gsub(normalized, "[%s_]+", "")
+    local lower = string.lower(normalized)
+    local lowerCompact = string.gsub(lower, "[%s_]+", "")
+    return BurdJournals.PASSIVE_SKILL_RELATED_TRAITS[traitId] == true
+        or BurdJournals.PASSIVE_SKILL_RELATED_TRAITS[normalized] == true
+        or BurdJournals.PASSIVE_SKILL_RELATED_TRAITS[compact] == true
+        or BurdJournals.PASSIVE_SKILL_RELATED_TRAITS[lower] == true
+        or BurdJournals.PASSIVE_SKILL_RELATED_TRAITS[lowerCompact] == true
+end
+
+function BurdJournals.isPassiveSkillRelatedTrait(traitId)
+    if not traitId then return false end
+    if BurdJournals.isPassiveSkillRelatedTraitKey(traitId) then
+        return true
+    end
+    if BurdJournals.getTraitAliases then
+        for _, alias in ipairs(BurdJournals.getTraitAliases(traitId)) do
+            if BurdJournals.isPassiveSkillRelatedTraitKey(alias) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function BurdJournals.shouldExcludePassiveSkillRelatedTraits()
+    return BurdJournals.getSandboxOption("ExcludePassiveSkillRelatedTraits") ~= false
+end
 
 -- Negative traits that can be removed through gameplay or journal claims
 -- Excludes permanent traits (deaf, weight traits, etc.) and passive skill traits
@@ -2388,6 +3905,10 @@ BurdJournals.TRAIT_ALIASES = {
     cook2 = {"cook", "keencook", "keen cook", "Cook", "Cook2", "KeenCook"},
     keencook = {"cook", "cook2", "keen cook", "Cook", "Cook2", "KeenCook"},
     ["keen cook"] = {"cook", "cook2", "keencook", "Cook", "Cook2", "KeenCook"},
+
+    -- B42 display labels for profession/hobby knowledge traits.
+    blacksmithknowledge = {"blacksmith", "Blacksmith", "blacksmith2", "Blacksmith2", "blacksmith knowledge"},
+    ["blacksmith knowledge"] = {"blacksmith", "Blacksmith", "blacksmith2", "Blacksmith2", "blacksmithknowledge"},
     
     -- Wakeful / Restless Sleeper - CharacterTrait IDs confirmed from character_traits.txt
     -- Wakeful = base:needslesssleep, Restless Sleeper = base:needsmoresleep
@@ -2403,7 +3924,8 @@ BurdJournals.TRAIT_ALIASES = {
     -- Vehicle Knowledge / Amateur Mechanic - Internal ID is "Mechanics"
     mechanics = {"vehicleknowledge", "mechanics2", "Mechanics", "Mechanics2"},
     mechanics2 = {"mechanics", "vehicleknowledge", "Mechanics", "Mechanics2"},
-    vehicleknowledge = {"mechanics", "mechanics2", "Mechanics", "Mechanics2"},
+    vehicleknowledge = {"mechanics", "mechanics2", "Mechanics", "Mechanics2", "vehicle knowledge"},
+    ["vehicle knowledge"] = {"vehicleknowledge", "mechanics", "mechanics2", "Mechanics", "Mechanics2"},
     
     -- Runner - Internal ID is "Jogger"
     runner = {"jogger", "Runner", "Jogger"},
@@ -2416,6 +3938,11 @@ BurdJournals.TRAIT_ALIASES = {
     -- First Aider - Internal ID is "FirstAid"
     firstaider = {"firstaid", "FirstAid"},
     firstaid = {"firstaider", "FirstAid"},
+
+    -- Target Shooter - B42/modded APIs may expose this as snake_case, compact, or title case.
+    target_shooter = {"targetshooter", "TargetShooter", "Target Shooter", "target shooter"},
+    targetshooter = {"target_shooter", "TargetShooter", "Target Shooter", "target shooter"},
+    ["target shooter"] = {"target_shooter", "targetshooter", "TargetShooter"},
     
     -- Gardener - Internal ID is "Gardener"
     gardener = {"Gardener"},
@@ -2489,6 +4016,12 @@ function BurdJournals.traitIdsMatch(id1, id2)
     if aliases1 then
         for _, alias in ipairs(aliases1) do
             if string.lower(alias) == lower2 then return true end
+        end
+    end
+    local aliases2 = BurdJournals.TRAIT_ALIASES[lower2]
+    if aliases2 then
+        for _, alias in ipairs(aliases2) do
+            if string.lower(alias) == lower1 then return true end
         end
     end
     
@@ -2784,7 +4317,9 @@ function BurdJournals.discoverGrantableTraits(includeNegative, forceRefresh)
         end
     end
 
-    if #discoveredTraits == 0 and TraitFactory and TraitFactory.getTraits then
+    -- The two registries are not guaranteed to finish populating together.
+    -- Merge both instead of treating TraitFactory as an all-or-nothing fallback.
+    if TraitFactory and TraitFactory.getTraits then
         local allTraits = TraitFactory.getTraits()
         if allTraits and allTraits.size and allTraits.get then
             for i = 0, allTraits:size() - 1 do
@@ -2857,6 +4392,13 @@ function BurdJournals.getGrantableTraitsForJournal(journalData, includeNegative)
         elseif BurdJournals.isEvolvingTraitsWorldManagedTrait
             and BurdJournals.isEvolvingTraitsWorldManagedTrait(traitId) then
             blocked = not BurdJournals.isEvolvingTraitsWorldManagedTraitLootGenerationEnabled()
+        end
+        if not blocked
+            and BurdJournals.shouldExcludePassiveSkillRelatedTraits()
+            and BurdJournals.isPassiveSkillRelatedTrait
+            and BurdJournals.isPassiveSkillRelatedTrait(traitId)
+        then
+            blocked = true
         end
 
         if not blocked then
@@ -2988,6 +4530,9 @@ end
 function BurdJournals.refreshTraitCache()
     BurdJournals._cachedGrantableTraits = nil
     BurdJournals._cachedAllTraits = nil
+    BurdJournals._cachedPositiveTraits = nil
+    BurdJournals._cachedNegativeTraits = nil
+    BurdJournals._cachedTraitCostLookup = nil
     BurdJournals.debugPrint("[BurdJournals] Trait cache cleared - will rediscover on next access")
 end
 
@@ -3728,7 +5273,8 @@ function BurdJournals.getSandboxOption(optionName)
     if opts and opts[optionName] ~= nil then
         return opts[optionName]
     end
-    local defaults = {
+    if not BurdJournals._sandboxOptionDefaults then
+        BurdJournals._sandboxOptionDefaults = {
         EnableJournals = true,
 
         XPRecoveryMode = 1,
@@ -3750,6 +5296,9 @@ function BurdJournals.getSandboxOption(optionName)
         EnableStatRecording = true,
         RecordZombieKills = true,
         RecordHoursSurvived = true,
+        EnablePlayerJournalNotes = true,
+        PlayerJournalNotesMaxPages = 30,
+        PlayerJournalNotesMaxCharsPerPage = 2000,
         RecordBatchSize = 15,
         AbsorbBatchSize = 15,
         BatchTimeMultiplier = 0.25,
@@ -3762,11 +5311,12 @@ function BurdJournals.getSandboxOption(optionName)
         EnableLimitedClaimLootJournals = false,
         LootJournalMaxClaimsBeforeDissolve = 1,
         AllowNegativeTraits = false,
+        ExcludePassiveSkillRelatedTraits = true,
         AllowTraitPurchaseSkillRecording = false,
         AllowAdaptiveTraitsManagedTraitRecording = false,
         AllowEvolvingTraitsWorldManagedTraitRecording = false,
         AllowEvolvingTraitsWorldManagedTraitLootGeneration = false,
-        AllowVhsSkillRecording = false,
+        AllowVhsSkillRecording = true,
         AllowDebugCommands = false,
 
         -- Loot journal trait/recipe display toggles (hides but preserves data)
@@ -3800,6 +5350,11 @@ function BurdJournals.getSandboxOption(optionName)
         WornJournalMinTraits = 1,
         WornJournalMaxTraits = 1,
         WornJournalForgetChance = 1,
+        EnableLootJournalNotes = true,
+        WornJournalNoteChance = 35,
+        BloodyJournalNoteChance = 50,
+        CursedJournalNoteChance = 75,
+        YuletideJournalNoteChance = 75,
 
         EnableBloodyJournalSpawns = true,
         BloodyJournalSpawnChance = 0.3,
@@ -3826,6 +5381,20 @@ function BurdJournals.getSandboxOption(optionName)
         CursedJournalRecipeChance = 60,
         CursedJournalMaxRecipes = 3,
         CursedJournalForgetChance = 25,
+        CursedJournalNegativeTraitCurseWeight = 90,
+        CursedJournalLosePositiveTraitCurseWeight = 12,
+        CursedJournalLoseSkillCurseWeight = 10,
+        CursedJournalSevereRepeatChancePercent = 4,
+        CursedJournalSevereCooldownHours = 72,
+        CursedJournalSeverityCompensation = true,
+        CursedJournalSevereRewardBonusPercent = 50,
+        EnableCursedJournalExpiration = true,
+        CursedJournalExpirationDays = 30,
+        EnableCursedJournalInsight = true,
+        CursedJournalInsightRevealForagingLevel = 4,
+        CursedJournalInsightOmenForagingLevel = 6,
+        CursedJournalInsightExactForagingLevel = 8,
+        CursedJournalInsightExactEffect = false,
         EnableYuletideJournalSpawns = true,
         YuletideSeasonMode = 1,
         EnableYuletideKrampusCursedAuthors = 1,
@@ -3848,8 +5417,12 @@ function BurdJournals.getSandboxOption(optionName)
         YuletideGiftMaxItems = 2,
 
         EnablePlayerJournals = true,
+        RespawnWithExistingPlayerJournal = false,
+        SpawnWithBlankPlayerJournal = false,
         EnablePlayerJournalCrafting = true,
+        EnableVanillaJournalCrafting = true,
         EnableAnimatedJournalVisuals = true,
+        JournalUIPaginationThreshold = 50,
         ReadingSkillAffectsSpeed = true,
         ReadingSpeedBonus = 0.1,
         EraseTime = 10.0,
@@ -3868,14 +5441,39 @@ function BurdJournals.getSandboxOption(optionName)
         EnableBaselineRestriction = true,
         BaselineRecordingMode = 1,
         EnableBaselineSnapshots = true,
-        BaselineSnapshotsPerSteamLimit = 50,
+        BaselineSnapshotsPerSteamLimit = 5,
         BaselineSnapshotsAutoCapture = true,
         BaselineSnapshotsCaptureOnDeath = true,
         BaselineSnapshotsProtectOnRestore = false,
 
         AllowPlayerJournalDissolution = false,
-    }
-    return defaults[optionName]
+        }
+    end
+    return BurdJournals._sandboxOptionDefaults[optionName]
+end
+
+function BurdJournals.isSandboxOptionEnabled(optionName)
+    local value = BurdJournals.getSandboxOption and BurdJournals.getSandboxOption(optionName) or nil
+    if value == true then
+        return true
+    end
+    if value == false or value == nil then
+        return false
+    end
+    if type(value) == "number" then
+        return value ~= 0
+    end
+    if type(value) == "string" then
+        local normalized = string.lower(value)
+        return normalized == "true" or normalized == "1" or normalized == "yes" or normalized == "on"
+    end
+    return false
+end
+
+function BurdJournals.isDisguiseCursedJournalsAsBloodyEnabled()
+    return BurdJournals.isSandboxOptionEnabled
+        and BurdJournals.isSandboxOptionEnabled("DisguiseCursedJournalsAsBloody")
+        or false
 end
 
 function BurdJournals.shouldRenderAnimatedJournalVisuals(effectKey)
@@ -4076,6 +5674,13 @@ function BurdJournals.isForgetSlotEnabledForType(journalType)
     if journalType == "worn" then
         return BurdJournals.getSandboxOption("EnableWornJournalForgetSlot") ~= false
     end
+    local registered = BurdJournals.REGISTERED_FORGET_SLOT_TYPES and BurdJournals.REGISTERED_FORGET_SLOT_TYPES[journalType]
+    if registered then
+        if registered.enabledOption then
+            return BurdJournals.getSandboxOption(registered.enabledOption) ~= false
+        end
+        return registered.enabledDefault ~= false
+    end
     return false
 end
 
@@ -4091,6 +5696,13 @@ function BurdJournals.getForgetSlotChanceForType(journalType)
     end
     if journalType == "worn" then
         return tonumber(BurdJournals.getSandboxOption("WornJournalForgetChance")) or 1
+    end
+    local registered = BurdJournals.REGISTERED_FORGET_SLOT_TYPES and BurdJournals.REGISTERED_FORGET_SLOT_TYPES[journalType]
+    if registered then
+        if registered.chanceOption then
+            return tonumber(BurdJournals.getSandboxOption(registered.chanceOption)) or registered.chanceDefault or 0
+        end
+        return registered.chanceDefault or 0
     end
     return 0
 end
@@ -4132,6 +5744,13 @@ function BurdJournals.isPlayerJournalCraftingEnabled()
         return false
     end
     return BurdJournals.getSandboxOption("EnablePlayerJournalCrafting") ~= false
+end
+
+function BurdJournals.isVanillaJournalCraftingEnabled()
+    if not BurdJournals.isEnabled() then
+        return false
+    end
+    return BurdJournals.getSandboxOption("EnableVanillaJournalCrafting") ~= false
 end
 
 function BurdJournals.requiresLightForJournalUse()
@@ -4221,17 +5840,22 @@ end
 -- Compatibility toggle for VHS/media-derived skill XP.
 -- Default OFF to prevent media grinding from being journaled and looped.
 function BurdJournals.isVhsSkillRecordingEnabled()
-    -- VHS flow temporarily disabled: treat VHS XP like normal XP for journals.
-    return true
+    return BurdJournals.getSandboxOption("AllowVhsSkillRecording") == true
 end
 
-local function normalizePositiveNumberMap(inputMap)
+local function normalizePositiveNumberMap(inputMap, maxEntries, maxValue)
     local output = {}
     if not inputMap then
         return output
     end
 
-    local normalized = BurdJournals.normalizeTable and BurdJournals.normalizeTable(inputMap) or inputMap
+    local normalized, tooLarge = nil, false
+    if maxEntries and BurdJournals.normalizeTableLimited then
+        normalized, tooLarge = BurdJournals.normalizeTableLimited(inputMap, maxEntries)
+    else
+        normalized = BurdJournals.normalizeTable and BurdJournals.normalizeTable(inputMap) or inputMap
+    end
+    if tooLarge then return output, true end
     if type(normalized) ~= "table" then
         return output
     end
@@ -4239,13 +5863,33 @@ local function normalizePositiveNumberMap(inputMap)
     for key, value in pairs(normalized) do
         if key then
             local numberValue = tonumber(value)
-            if numberValue and numberValue > 0 then
-                output[tostring(key)] = numberValue
+            if numberValue and numberValue == numberValue and numberValue > 0 and numberValue < math.huge then
+                output[tostring(key)] = math.min(numberValue, tonumber(maxValue) or numberValue)
             end
         end
     end
 
-    return output
+    return output, false
+end
+
+BurdJournals.VHS_MEDIA_LINE_MAX_ENTRIES = BurdJournals.VHS_MEDIA_LINE_MAX_ENTRIES or 2048
+BurdJournals.VHS_SKILL_XP_MAX_TOTAL = BurdJournals.VHS_SKILL_XP_MAX_TOTAL or 100000000
+
+function BurdJournals.pruneVhsMediaLineMap(lineMap, maxEntries)
+    if type(lineMap) ~= "table" then return 0 end
+    local limit = math.max(1, math.floor(tonumber(maxEntries) or BurdJournals.VHS_MEDIA_LINE_MAX_ENTRIES))
+    local entries = {}
+    for key, entry in pairs(lineMap) do
+        entries[#entries + 1] = {key = key, seenAt = tonumber(type(entry) == "table" and entry.seenAt or 0) or 0}
+    end
+    if #entries <= limit then return 0 end
+    table.sort(entries, function(a, b)
+        if a.seenAt == b.seenAt then return tostring(a.key) < tostring(b.key) end
+        return a.seenAt < b.seenAt
+    end)
+    local removed = #entries - limit
+    for index = 1, removed do lineMap[entries[index].key] = nil end
+    return removed
 end
 
 function BurdJournals.rebuildVhsMediaLineCache()
@@ -4300,7 +5944,7 @@ function BurdJournals.getVhsMediaLineCategory(lineGuid)
 end
 
 function BurdJournals.getPlayerVhsSkillXPMap(player, createIfMissing)
-    if not player then
+    if not player or not player.getModData then
         return nil
     end
 
@@ -4352,9 +5996,95 @@ function BurdJournals.getPlayerVhsSkillXPMapCopy(player)
     return normalizePositiveNumberMap(source)
 end
 
+function BurdJournals.getPlayerVhsMediaLineMap(player, createIfMissing)
+    if not player or not player.getModData then
+        return nil
+    end
+
+    local modData = player:getModData()
+    if not modData then
+        return nil
+    end
+
+    modData.BurdJournals = modData.BurdJournals or {}
+    local bj = modData.BurdJournals
+
+    if type(bj.vhsMediaLines) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        bj.vhsMediaLines = {}
+    end
+
+    return bj.vhsMediaLines
+end
+
+function BurdJournals.getPlayerVhsMediaLinesForSkill(player, skillName, baselineXP)
+    if not player or type(skillName) ~= "string" or skillName == "" then
+        return nil
+    end
+
+    local lineMap = BurdJournals.getPlayerVhsMediaLineMap(player, false)
+    if type(lineMap) ~= "table" then
+        return nil
+    end
+
+    local entries = {}
+    for lineGuid, lineData in pairs(lineMap) do
+        if type(lineGuid) == "string" and lineGuid ~= "" and type(lineData) == "table" and type(lineData.skills) == "table" then
+            local xp = math.max(0, tonumber(lineData.skills[skillName]) or 0)
+            if xp > 0 then
+                entries[#entries + 1] = {
+                    lineGuid = lineGuid,
+                    category = lineData.category,
+                    xp = xp,
+                    seenAt = math.max(0, tonumber(lineData.seenAt) or 0)
+                }
+            end
+        end
+    end
+
+    if #entries == 0 then
+        return nil
+    end
+
+    table.sort(entries, function(a, b)
+        if a.seenAt == b.seenAt then
+            return tostring(a.lineGuid) < tostring(b.lineGuid)
+        end
+        return a.seenAt < b.seenAt
+    end)
+
+    local remainingBaseline = math.max(0, tonumber(baselineXP) or 0)
+    local result = {}
+    local any = false
+    for _, entry in ipairs(entries) do
+        local exportXP = entry.xp
+        if remainingBaseline > 0 then
+            local consumed = math.min(remainingBaseline, exportXP)
+            remainingBaseline = remainingBaseline - consumed
+            exportXP = exportXP - consumed
+        end
+
+        if exportXP > 0 then
+            local skillLineEntry = {
+                category = entry.category,
+                xp = exportXP,
+                skills = {}
+            }
+            skillLineEntry.skills[skillName] = exportXP
+            result[entry.lineGuid] = skillLineEntry
+            any = true
+        end
+    end
+
+    if not any then
+        return nil
+    end
+    return result
+end
+
 function BurdJournals.recordVhsSkillXP(player, skillDeltas, lineGuid, category, sourceTag)
-    -- VHS tracking flow disabled (temporary rollback).
-    if true then return 0 end
     if not player or type(skillDeltas) ~= "table" then
         return 0
     end
@@ -4367,11 +6097,16 @@ function BurdJournals.recordVhsSkillXP(player, skillDeltas, lineGuid, category, 
     modData.BurdJournals = modData.BurdJournals or {}
     local bj = modData.BurdJournals
 
-    if type(lineGuid) ~= "string" or lineGuid == "" then
+    if type(lineGuid) ~= "string" or lineGuid == "" or #lineGuid > 256 or lineGuid:find("%c") then
         lineGuid = nil
     end
+    if type(category) ~= "string" or category == "" or #category > 128 or category:find("%c") then category = nil end
+    if lineGuid and type(bj.vhsJournalKnownLines) == "table" and bj.vhsJournalKnownLines[lineGuid] == true then
+        return 0
+    end
 
-    local normalizedDeltas = normalizePositiveNumberMap(skillDeltas)
+    local normalizedDeltas, tooLarge = normalizePositiveNumberMap(skillDeltas, 32, 1000000)
+    if tooLarge then return 0 end
     if not BurdJournals.hasAnyEntries(normalizedDeltas) then
         return 0
     end
@@ -4381,13 +6116,61 @@ function BurdJournals.recordVhsSkillXP(player, skillDeltas, lineGuid, category, 
         return 0
     end
 
+    local lineEntry = nil
+    if lineGuid then
+        local lineMap = BurdJournals.getPlayerVhsMediaLineMap(player, true)
+        if lineMap then
+            bj.vhsMediaLineCounter = (tonumber(bj.vhsMediaLineCounter) or 0) + 1
+            lineEntry = lineMap[lineGuid]
+            if type(lineEntry) ~= "table" then
+                lineEntry = {
+                    lineGuid = lineGuid,
+                    skills = {},
+                    seenAt = bj.vhsMediaLineCounter
+                }
+                lineMap[lineGuid] = lineEntry
+                BurdJournals.pruneVhsMediaLineMap(lineMap, BurdJournals.VHS_MEDIA_LINE_MAX_ENTRIES)
+            end
+            if type(lineEntry.skills) ~= "table" then
+                lineEntry.skills = {}
+            end
+            lineEntry.lineGuid = lineGuid
+            lineEntry.seenAt = tonumber(lineEntry.seenAt) or bj.vhsMediaLineCounter
+            if type(category) == "string" and category ~= "" then
+                lineEntry.category = category
+            end
+        end
+    end
+
     local skillCount = 0
     local xpAddedTotal = 0
     for skillName, delta in pairs(normalizedDeltas) do
-        local nextValue = (tonumber(skillMap[skillName]) or 0) + delta
-        skillMap[skillName] = nextValue
-        skillCount = skillCount + 1
-        xpAddedTotal = xpAddedTotal + delta
+        local deltaToRecord = delta
+        if lineEntry then
+            local existingLineXP = tonumber(lineEntry.skills[skillName]) or 0
+            deltaToRecord = math.max(0, delta - existingLineXP)
+        end
+        if deltaToRecord > 0 then
+            local nextValue = math.min(
+                BurdJournals.VHS_SKILL_XP_MAX_TOTAL,
+                (tonumber(skillMap[skillName]) or 0) + deltaToRecord
+            )
+            deltaToRecord = math.max(0, nextValue - (tonumber(skillMap[skillName]) or 0))
+            if deltaToRecord <= 0 then
+                -- The bounded ledger is saturated for this skill.
+            else
+            skillMap[skillName] = nextValue
+            if lineEntry then
+                lineEntry.skills[skillName] = (tonumber(lineEntry.skills[skillName]) or 0) + deltaToRecord
+            end
+            skillCount = skillCount + 1
+            xpAddedTotal = xpAddedTotal + deltaToRecord
+            end
+        end
+    end
+
+    if xpAddedTotal <= 0 then
+        return 0
     end
 
     if lineGuid then
@@ -4412,8 +6195,6 @@ function BurdJournals.recordVhsSkillXP(player, skillDeltas, lineGuid, category, 
 end
 
 function BurdJournals.sendVhsSkillXPToServer(player, skillDeltas, lineGuid, category)
-    -- VHS tracking flow disabled (temporary rollback).
-    if true then return false end
     if not (isClient and isClient()) then
         return false
     end
@@ -4441,8 +6222,6 @@ function BurdJournals.sendVhsSkillXPToServer(player, skillDeltas, lineGuid, cate
 end
 
 function BurdJournals.ensureVhsMediaTrackingHook()
-    -- VHS tracking flow disabled (temporary rollback).
-    if true then return false end
     if BurdJournals._vhsMediaTrackingHookInstalled then
         return true
     end
@@ -4476,6 +6255,14 @@ function BurdJournals.ensureVhsMediaTrackingHook()
 
         if player.isKnownMediaLine and lineGuid and lineGuid ~= "" and player:isKnownMediaLine(lineGuid) then
             return originalCheckPlayer(player, lineGuid, interactCodes, x, y, z, line, source)
+        end
+        if lineGuid and lineGuid ~= "" and player.getModData and player.addKnownMediaLine then
+            local modData = player:getModData()
+            local bj = modData and modData.BurdJournals or nil
+            if type(bj) == "table" and type(bj.vhsJournalKnownLines) == "table" and bj.vhsJournalKnownLines[lineGuid] == true then
+                player:addKnownMediaLine(lineGuid)
+                return originalCheckPlayer(player, lineGuid, interactCodes, x, y, z, line, source)
+            end
         end
 
         local allowedSkills = BurdJournals.getAllowedSkills and BurdJournals.getAllowedSkills() or {}
@@ -4525,12 +6312,12 @@ function BurdJournals.ensureVhsMediaTrackingHook()
     return true
 end
 
-if false and not BurdJournals._vhsHookOnGameStartRegistered and Events and Events.OnGameStart and Events.OnGameStart.Add then
+if not BurdJournals._vhsHookOnGameStartRegistered and Events and Events.OnGameStart and Events.OnGameStart.Add then
     Events.OnGameStart.Add(BurdJournals.ensureVhsMediaTrackingHook)
     BurdJournals._vhsHookOnGameStartRegistered = true
 end
 
-local hookOk, hookErr = true, nil
+local hookOk, hookErr = pcall(BurdJournals.ensureVhsMediaTrackingHook)
 if not hookOk and hookErr then
     if BurdJournals.debugPrint then
         BurdJournals.debugPrint("[BurdJournals] VHS media tracking hook deferred after load error: " .. tostring(hookErr))
@@ -4693,10 +6480,6 @@ function BurdJournals.isAdaptiveTraitsModActive()
         end
     end
 
-    if not isActive and getModInfoByID then
-        isActive = getModInfoByID("AdaptiveTraits") ~= nil
-    end
-
     BurdJournals._adaptiveTraitsActive = isActive
     return isActive
 end
@@ -4746,10 +6529,6 @@ function BurdJournals.isEvolvingTraitsWorldModActive()
                 end
             end
         end
-    end
-
-    if not isActive and getModInfoByID then
-        isActive = getModInfoByID("EvolvingTraitsWorld") ~= nil
     end
 
     BurdJournals._evolvingTraitsWorldActive = isActive
@@ -4804,6 +6583,224 @@ function BurdJournals.isSkillBlockedByModCompat(skillName)
     return false
 end
 
+BurdJournals.ADMIN_POLICY_MODDATA_KEY = BurdJournals.ADMIN_POLICY_MODDATA_KEY or "BurdJournals_AdminPolicyV1"
+BurdJournals.AdminPolicy = BurdJournals.AdminPolicy or { skills = {}, traits = {}, recipes = {} }
+
+function BurdJournals.normalizeAdminPolicyKind(kind)
+    local text = tostring(kind or "")
+    if text == "skill" or text == "skills" then return "skills" end
+    if text == "trait" or text == "traits" then return "traits" end
+    if text == "recipe" or text == "recipes" then return "recipes" end
+    return nil
+end
+
+function BurdJournals.normalizeAdminPolicyScope(scope)
+    local text = tostring(scope or "")
+    if text == "player" or text == "loot" then return text end
+    return nil
+end
+
+function BurdJournals.normalizeAdminPolicyValue(policy)
+    local text = tostring(policy or "")
+    if text == "allow" or text == "ban" then return text end
+    if text == "inherit" or text == "" or text == "nil" then return nil end
+    return nil
+end
+
+function BurdJournals.getJournalAdminPolicyScope(journalData)
+    if journalData and journalData.isPlayerCreated == true then
+        return "player"
+    end
+    return "loot"
+end
+
+local function addSandboxBlockReason(reasons, optionName)
+    if type(reasons) ~= "table" or not optionName then return end
+    for _, reason in ipairs(reasons) do
+        if reason == optionName then
+            return
+        end
+    end
+    reasons[#reasons + 1] = optionName
+end
+
+function BurdJournals.getTraitJournalSandboxOption(journalData)
+    if not journalData then return nil end
+    if journalData.isPlayerCreated then return "EnableTraitRecordingPlayer" end
+    if journalData.isCursedReward == true or journalData.isCursedJournal == true then return "EnableCursedJournalTraits" end
+    if journalData.isYuletideJournal == true then return "EnableYuletideJournalTraits" end
+    if journalData.isBloody or journalData.wasFromBloody then return "EnableBloodyJournalTraits" end
+    if journalData.isWorn then return "EnableWornJournalTraits" end
+    return nil
+end
+
+function BurdJournals.getRecipeJournalSandboxOption(journalData)
+    if not journalData then return nil end
+    if journalData.isPlayerCreated then return "EnableRecipeRecordingPlayer" end
+    if journalData.isCursedReward == true or journalData.isCursedJournal == true then return "EnableCursedJournalRecipes" end
+    if journalData.isYuletideJournal == true then return "EnableYuletideJournalRecipes" end
+    if journalData.isBloody or journalData.wasFromBloody then return "EnableBloodyJournalRecipes" end
+    if journalData.isWorn then return "EnableWornJournalRecipes" end
+    return nil
+end
+
+function BurdJournals.getEntrySandboxBlockReasons(kind, id, scope, journalData)
+    local policyKind = BurdJournals.normalizeAdminPolicyKind(kind)
+    local policyScope = BurdJournals.normalizeAdminPolicyScope(scope) or BurdJournals.getJournalAdminPolicyScope(journalData)
+    local reasons = {}
+    if not (policyKind and id) then return reasons end
+
+    if policyKind == "skills" then
+        if BurdJournals.isTraitPurchaseSkill and BurdJournals.isTraitPurchaseSkill(id)
+            and BurdJournals.isTraitPurchaseSkillRecordingEnabled
+            and not BurdJournals.isTraitPurchaseSkillRecordingEnabled()
+        then
+            addSandboxBlockReason(reasons, "AllowTraitPurchaseSkillRecording")
+        end
+
+        local isPassive = BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(id)
+        if isPassive == nil then
+            isPassive = (id == "Fitness" or id == "Strength")
+        end
+        if isPassive and not BurdJournals.arePassiveSkillsEnabledForJournal(journalData) then
+            addSandboxBlockReason(reasons, policyScope == "player" and "EnablePassiveSkillsPlayer" or "EnablePassiveSkillsLoot")
+        end
+    elseif policyKind == "traits" then
+        local traitOption = BurdJournals.getTraitJournalSandboxOption and BurdJournals.getTraitJournalSandboxOption(journalData) or nil
+        if traitOption and BurdJournals.getSandboxOption and BurdJournals.getSandboxOption(traitOption) == false then
+            addSandboxBlockReason(reasons, traitOption)
+        end
+
+        local isPlayerJournal = journalData and journalData.isPlayerCreated == true
+        if isPlayerJournal and BurdJournals.isAdaptiveManagedTrait and BurdJournals.isAdaptiveManagedTrait(id)
+            and BurdJournals.isAdaptiveTraitsManagedTraitRecordingEnabled
+            and not BurdJournals.isAdaptiveTraitsManagedTraitRecordingEnabled()
+        then
+            addSandboxBlockReason(reasons, "AllowAdaptiveTraitsManagedTraitRecording")
+        end
+        if BurdJournals.isEvolvingTraitsWorldManagedTrait and BurdJournals.isEvolvingTraitsWorldManagedTrait(id) then
+            if isPlayerJournal and BurdJournals.isEvolvingTraitsWorldManagedTraitRecordingEnabled
+                and not BurdJournals.isEvolvingTraitsWorldManagedTraitRecordingEnabled()
+            then
+                addSandboxBlockReason(reasons, "AllowEvolvingTraitsWorldManagedTraitRecording")
+            elseif not isPlayerJournal and BurdJournals.isEvolvingTraitsWorldManagedTraitLootGenerationEnabled
+                and not BurdJournals.isEvolvingTraitsWorldManagedTraitLootGenerationEnabled()
+            then
+                addSandboxBlockReason(reasons, "AllowEvolvingTraitsWorldManagedTraitLootGeneration")
+            end
+        end
+
+        if BurdJournals.getSandboxOption then
+            local isNegative = BurdJournals.isKnownNegativeTraitId and BurdJournals.isKnownNegativeTraitId(id)
+            if isNegative == true and BurdJournals.getSandboxOption("AllowNegativeTraits") ~= true then
+                addSandboxBlockReason(reasons, "AllowNegativeTraits")
+            end
+            if BurdJournals.shouldExcludePassiveSkillRelatedTraits()
+                and BurdJournals.isPassiveSkillRelatedTrait
+                and BurdJournals.isPassiveSkillRelatedTrait(id)
+            then
+                addSandboxBlockReason(reasons, "ExcludePassiveSkillRelatedTraits")
+            end
+        end
+    elseif policyKind == "recipes" then
+        local recipeOption = BurdJournals.getRecipeJournalSandboxOption and BurdJournals.getRecipeJournalSandboxOption(journalData) or nil
+        if recipeOption and BurdJournals.getSandboxOption and BurdJournals.getSandboxOption(recipeOption) == false then
+            addSandboxBlockReason(reasons, recipeOption)
+        end
+    end
+
+    return reasons
+end
+
+function BurdJournals.setAdminPolicy(policy)
+    BurdJournals.AdminPolicy = type(policy) == "table" and policy or { skills = {}, traits = {}, recipes = {} }
+    BurdJournals.AdminPolicy.skills = BurdJournals.AdminPolicy.skills or {}
+    BurdJournals.AdminPolicy.traits = BurdJournals.AdminPolicy.traits or {}
+    BurdJournals.AdminPolicy.recipes = BurdJournals.AdminPolicy.recipes or {}
+end
+
+function BurdJournals.getAdminPolicy(kind, id, scope)
+    local policyKind = BurdJournals.normalizeAdminPolicyKind(kind)
+    local policyScope = BurdJournals.normalizeAdminPolicyScope(scope)
+    if not (policyKind and policyScope and id) then return nil end
+    local root = BurdJournals.AdminPolicy
+    local bucket = root and root[policyKind] or nil
+    local entry = bucket and bucket[tostring(id)] or nil
+    local value = type(entry) == "table" and entry[policyScope] or nil
+    return BurdJournals.normalizeAdminPolicyValue(value)
+end
+
+function BurdJournals.isAdminPolicyBanned(kind, id, scope)
+    return BurdJournals.getAdminPolicy(kind, id, scope) == "ban"
+end
+
+function BurdJournals.isAdminPolicyAllowed(kind, id, scope)
+    return BurdJournals.getAdminPolicy(kind, id, scope) == "allow"
+end
+
+function BurdJournals.isEntrySandboxBlocked(kind, id, scope, journalData)
+    local policyKind = BurdJournals.normalizeAdminPolicyKind(kind)
+    local policyScope = BurdJournals.normalizeAdminPolicyScope(scope) or BurdJournals.getJournalAdminPolicyScope(journalData)
+    if not (policyKind and id) then return true end
+
+    local sandboxReasons = BurdJournals.getEntrySandboxBlockReasons
+        and BurdJournals.getEntrySandboxBlockReasons(policyKind, id, policyScope, journalData)
+        or nil
+    if type(sandboxReasons) == "table" and #sandboxReasons > 0 then
+        return true
+    end
+
+    if policyKind == "skills" then
+        if BurdJournals.isSkillBlockedByModCompat and BurdJournals.isSkillBlockedByModCompat(id) then
+            return true
+        end
+        local canValidateRegistration = (Perks ~= nil) and (BurdJournals.getPerkByName ~= nil)
+        if canValidateRegistration and not BurdJournals.getPerkByName(id) then
+            return true
+        end
+        local isPassive = BurdJournals.isPassiveSkill and BurdJournals.isPassiveSkill(id)
+        if isPassive == nil then
+            isPassive = (id == "Fitness" or id == "Strength")
+        end
+        if isPassive then
+            return not BurdJournals.arePassiveSkillsEnabledForJournal(journalData)
+        end
+        return false
+    elseif policyKind == "traits" then
+        if not BurdJournals.areTraitsEnabledForJournal(journalData) then
+            return true
+        end
+        if BurdJournals.isTraitBlockedByModCompat and BurdJournals.isTraitBlockedByModCompat(journalData, id) then
+            return true
+        end
+        if BurdJournals.getSandboxOption then
+            local isNegative = BurdJournals.isKnownNegativeTraitId and BurdJournals.isKnownNegativeTraitId(id)
+            if isNegative == true and BurdJournals.getSandboxOption("AllowNegativeTraits") ~= true then
+                return true
+            end
+            if BurdJournals.shouldExcludePassiveSkillRelatedTraits()
+                and BurdJournals.isPassiveSkillRelatedTrait
+                and BurdJournals.isPassiveSkillRelatedTrait(id)
+            then
+                return true
+            end
+        end
+        return false
+    elseif policyKind == "recipes" then
+        return not BurdJournals.areRecipesEnabledForJournal(journalData)
+    end
+    return true
+end
+
+function BurdJournals.isEntryAllowedByAdminPolicy(kind, id, scope, journalData)
+    if BurdJournals.isEntrySandboxBlocked(kind, id, scope, journalData) then
+        return false
+    end
+    local policy = BurdJournals.getAdminPolicy(kind, id, scope)
+    if policy == "ban" then return false end
+    return true
+end
+
 -- Check if a specific skill is enabled for this journal context
 function BurdJournals.isSkillEnabledForJournal(journalData, skillName)
     if not skillName then return false end
@@ -4824,10 +6821,13 @@ function BurdJournals.isSkillEnabledForJournal(journalData, skillName)
         isPassive = (skillName == "Fitness" or skillName == "Strength")
     end
     if not isPassive then
-        return true
+        return BurdJournals.isEntryAllowedByAdminPolicy("skills", skillName, BurdJournals.getJournalAdminPolicyScope(journalData), journalData)
     end
 
-    return BurdJournals.arePassiveSkillsEnabledForJournal(journalData)
+    if not BurdJournals.arePassiveSkillsEnabledForJournal(journalData) then
+        return false
+    end
+    return BurdJournals.isEntryAllowedByAdminPolicy("skills", skillName, BurdJournals.getJournalAdminPolicyScope(journalData), journalData)
 end
 
 -- Check if traits are enabled for a specific journal type
@@ -4868,16 +6868,13 @@ end
 
 function BurdJournals.isTraitEnabledForJournal(journalData, traitId)
     if not traitId then return false end
-    local hasExplicitEntry = type(journalData) == "table"
-        and type(journalData.traits) == "table"
-        and journalData.traits[traitId] ~= nil
-    if not BurdJournals.areTraitsEnabledForJournal(journalData) and not hasExplicitEntry then
+    if not BurdJournals.areTraitsEnabledForJournal(journalData) then
         return false
     end
     if BurdJournals.isTraitBlockedByModCompat and BurdJournals.isTraitBlockedByModCompat(journalData, traitId) then
         return false
     end
-    return true
+    return BurdJournals.isEntryAllowedByAdminPolicy("traits", traitId, BurdJournals.getJournalAdminPolicyScope(journalData), journalData)
 end
 
 -- Check if recipes are enabled for a specific journal type
@@ -4917,13 +6914,10 @@ end
 
 function BurdJournals.isRecipeEnabledForJournal(journalData, recipeName)
     if not recipeName then return false end
-    local hasExplicitEntry = type(journalData) == "table"
-        and type(journalData.recipes) == "table"
-        and journalData.recipes[recipeName] ~= nil
-    if not BurdJournals.areRecipesEnabledForJournal(journalData) and not hasExplicitEntry then
+    if not BurdJournals.areRecipesEnabledForJournal(journalData) then
         return false
     end
-    return true
+    return BurdJournals.isEntryAllowedByAdminPolicy("recipes", recipeName, BurdJournals.getJournalAdminPolicyScope(journalData), journalData)
 end
 
 -- Unified helper: Check if recipe recording is enabled globally
@@ -4934,37 +6928,44 @@ function BurdJournals.isRecipeRecordingEnabled()
     return v ~= false
 end
 
+function BurdJournals.getJournalCapacityLimit(optionName)
+    local rawValue = BurdJournals.getSandboxOption(optionName)
+    if type(rawValue) ~= "number" and type(rawValue) ~= "string" then
+        return 0
+    end
+
+    local value = tonumber(rawValue)
+    if not value or value <= 0 then
+        return 0
+    end
+
+    return math.floor(value)
+end
+
+local function getJournalCapacityWarning(optionName, multiplier)
+    local limit = BurdJournals.getJournalCapacityLimit(optionName)
+    if limit <= 0 then
+        return 0
+    end
+    return math.max(1, math.floor(limit * multiplier))
+end
+
 setmetatable(BurdJournals.Limits, {
     __index = function(t, key)
 
         if key == "MAX_SKILLS" then
-            -- 0 = unlimited (sandbox option comment says "0 = unlimited")
-            local val = BurdJournals.getSandboxOption("MaxSkillsPerJournal")
-            if val == nil or val == 0 then return 999999 end
-            return val
+            return BurdJournals.getJournalCapacityLimit("MaxSkillsPerJournal")
         elseif key == "MAX_TRAITS" then
-            -- 0 = unlimited
-            local val = BurdJournals.getSandboxOption("MaxTraitsPerJournal")
-            if val == nil or val == 0 then return 999999 end
-            return val
+            return BurdJournals.getJournalCapacityLimit("MaxTraitsPerJournal")
         elseif key == "MAX_RECIPES" then
-            -- 0 = unlimited
-            local val = BurdJournals.getSandboxOption("MaxRecipesPerJournal")
-            if val == nil or val == 0 then return 999999 end
-            return val
+            return BurdJournals.getJournalCapacityLimit("MaxRecipesPerJournal")
 
         elseif key == "WARN_SKILLS" then
-            local val = BurdJournals.getSandboxOption("MaxSkillsPerJournal")
-            if val == nil or val == 0 then return 999999 end
-            return math.floor(val * 0.5)
+            return getJournalCapacityWarning("MaxSkillsPerJournal", 0.5)
         elseif key == "WARN_TRAITS" then
-            local val = BurdJournals.getSandboxOption("MaxTraitsPerJournal")
-            if val == nil or val == 0 then return 999999 end
-            return math.floor(val * 0.4)
+            return getJournalCapacityWarning("MaxTraitsPerJournal", 0.4)
         elseif key == "WARN_RECIPES" then
-            local val = BurdJournals.getSandboxOption("MaxRecipesPerJournal")
-            if val == nil or val == 0 then return 999999 end
-            return math.floor(val * 0.4)
+            return getJournalCapacityWarning("MaxRecipesPerJournal", 0.4)
         end
         return rawget(t, key)
     end
@@ -4981,7 +6982,7 @@ function BurdJournals.getPlayerSteamId(player)
         end
     end
 
-    local username = player:getUsername()
+    local username = player.getUsername and player:getUsername() or nil
     if username and username ~= "" then
         return "local_" .. username
     end
@@ -4995,16 +6996,33 @@ function BurdJournals.getPlayerCharacterId(player)
     local steamId = BurdJournals.getPlayerSteamId(player)
     if not steamId then return nil end
 
-    local descriptor = player:getDescriptor()
-    if not descriptor then return steamId .. "_Unknown" end
+    local pmd = player.getModData and player:getModData() or nil
 
-    local forename = descriptor:getForename() or "Unknown"
-    local surname = descriptor:getSurname() or ""
+    local descriptor = player.getDescriptor and player:getDescriptor() or nil
+    if not descriptor then
+        -- Descriptor not ready yet: reuse the previously-resolved id (per-character
+        -- player modData) instead of drifting to a "_Unknown" key that would orphan
+        -- this character's claims/baseline.
+        if pmd and type(pmd.BurdJournals_persistedCharacterId) == "string" then
+            return pmd.BurdJournals_persistedCharacterId
+        end
+        return steamId .. "_Unknown"
+    end
+
+    local forename = descriptor.getForename and descriptor:getForename() or "Unknown"
+    local surname = descriptor.getSurname and descriptor:getSurname() or ""
     local charName = forename .. "_" .. surname
 
     charName = string.gsub(charName, " ", "_")
 
-    return steamId .. "_" .. charName
+    local resolvedId = steamId .. "_" .. charName
+
+    -- Persist the first fully-resolved id so later descriptor outages reuse it.
+    if pmd and forename ~= "Unknown" and not pmd.BurdJournals_persistedCharacterId then
+        pmd.BurdJournals_persistedCharacterId = resolvedId
+    end
+
+    return resolvedId
 end
 
 function BurdJournals.getJournalOwnerSteamId(item)
@@ -5167,16 +7185,31 @@ local function findCompatibleCharacterClaimsKey(claimsTable, characterId)
         return characterId
     end
 
-    local characterSuffix = characterId:match("^.-_(.+)$")
+    local characterPrefix, characterSuffix = characterId:match("^(.-)_(.+)$")
     if not characterSuffix or characterSuffix == "" then
+        return nil
+    end
+    -- Never alias the descriptor-unavailable placeholder ("<steamId>_Unknown")
+    -- onto a real character's claims.
+    if characterSuffix == "Unknown" then
         return nil
     end
 
     for existingKey, existingClaims in pairs(claimsTable) do
         if existingKey ~= "legacy_unknown" and type(existingClaims) == "table" then
-            local existingSuffix = tostring(existingKey):match("^.-_(.+)$")
+            local existingPrefix, existingSuffix = tostring(existingKey):match("^(.-)_(.+)$")
             if existingSuffix == characterSuffix then
-                return existingKey
+                -- Same character-name suffix. Block the match only when both
+                -- prefixes are distinct numeric SteamIDs - that means two different
+                -- accounts sharing a character name, which previously let one
+                -- inherit the other's claims (contamination). Non-numeric / legacy
+                -- prefixes still heal so id-format migrations keep their claims.
+                local bothNumericDistinct = existingPrefix and characterPrefix
+                    and existingPrefix:match("^%d+$") and characterPrefix:match("^%d+$")
+                    and existingPrefix ~= characterPrefix
+                if not bothNumericDistinct then
+                    return existingKey
+                end
             end
         end
     end
@@ -5324,13 +7357,64 @@ function BurdJournals.isRestoredJournalData(journalData)
     if type(journalData) ~= "table" then
         return false
     end
-    return journalData.wasFromWorn == true
+    local hasRestoredOrigin = journalData.wasFromWorn == true
         or journalData.wasFromBloody == true
-        or journalData.wasRestored == true
         or journalData.wasCleaned == true
-        or (type(journalData.restoredBy) == "string" and journalData.restoredBy ~= "")
         or journalData.isWorn == true
         or journalData.isBloody == true
+    if hasRestoredOrigin then
+        return true
+    end
+
+    local sourceType = string.lower(tostring(journalData.sourceType or ""))
+    local originMode = string.lower(tostring(journalData.originMode or ""))
+    local hasOwner = journalData.ownerUsername or journalData.ownerSteamId or journalData.ownerCharacterName
+    local isCleanPersonal = journalData.isPlayerCreated == true
+        or sourceType == "personal"
+        or originMode == "personal"
+        or (hasOwner and journalData.isWorn ~= true and journalData.isBloody ~= true)
+
+    if isCleanPersonal then
+        return false
+    end
+
+    return journalData.wasRestored == true
+        or (type(journalData.restoredBy) == "string" and journalData.restoredBy ~= "")
+end
+
+local function hasPersistentPlayerJournalOrigin(journalData)
+    if type(journalData) ~= "table" then
+        return false
+    end
+
+    if journalData.isYuletideJournal == true
+        and journalData.yuletideState == BurdJournals.YULETIDE_STATE_UNWRAPPED
+    then
+        return false
+    end
+
+    local sourceType = string.lower(tostring(journalData.sourceType or ""))
+    local originMode = string.lower(tostring(journalData.originMode or ""))
+    if sourceType == "personal" or originMode == "personal" then
+        return true
+    end
+    if journalData.isPlayerCreated == true then
+        return true
+    end
+
+    local explicitLootOrigin = journalData.isWorn == true
+        or journalData.isBloody == true
+        or journalData.isCursedJournal == true
+        or journalData.isCursedReward == true
+        or journalData.isZombieJournal == true
+        or sourceType == "found"
+        or sourceType == "world"
+        or sourceType == "zombie"
+        or originMode == "found"
+        or originMode == "world"
+        or originMode == "zombie"
+    local hasOwner = journalData.ownerUsername or journalData.ownerSteamId or journalData.ownerCharacterName
+    return hasOwner and not explicitLootOrigin
 end
 
 -- Claim tracking policy:
@@ -5356,6 +7440,11 @@ function BurdJournals.shouldTrackCharacterClaims(journalData, claimType)
         end
     end
     local isRestored = BurdJournals.isRestoredJournalData(journalData)
+    local allowDissolution = BurdJournals.getSandboxOption("AllowPlayerJournalDissolution") == true
+
+    if isRestored and not allowDissolution and hasPersistentPlayerJournalOrigin(journalData) then
+        return false
+    end
 
     local isBinaryClaimType = (claimType and claimType ~= "skills")
     if not isBinaryClaimType then
@@ -5381,12 +7470,184 @@ function BurdJournals.shouldTrackCharacterClaims(journalData, claimType)
         return true
     end
 
-    local allowDissolution = BurdJournals.getSandboxOption("AllowPlayerJournalDissolution") == true
     if not allowDissolution then
         return false
     end
 
     return isRestored
+end
+
+function BurdJournals.shouldConsumeJournalClaimRead(journalData, claimType)
+    if type(journalData) ~= "table" then
+        return true
+    end
+    if ((BurdJournals.isEffectivelyPlayerJournal and BurdJournals.isEffectivelyPlayerJournal(journalData))
+            or journalData.isPlayerCreated == true)
+        and BurdJournals.shouldTrackCharacterClaims
+        and BurdJournals.shouldTrackCharacterClaims(journalData, claimType or "skills") == false
+    then
+        return false
+    end
+    return true
+end
+
+local function getEffectiveJournalClaimsTable(journalData)
+    if type(journalData) ~= "table" then
+        return nil
+    end
+
+    local claims = journalData.claims
+    if BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()
+        and BurdJournals.getOrCreateJournalRuntimeEntryForData then
+        local runtimeEntry = BurdJournals.getOrCreateJournalRuntimeEntryForData(journalData, false)
+        claims = runtimeEntry and runtimeEntry.claims or claims
+    end
+    if type(claims) ~= "table" and BurdJournals.normalizeTable then
+        claims = BurdJournals.normalizeTable(claims)
+    end
+    if type(claims) ~= "table" then
+        return nil
+    end
+
+    return claims
+end
+
+local function isEffectivelyPlayerJournal(journalData)
+    if type(journalData) ~= "table" then
+        return false
+    end
+
+    if journalData.isYuletideJournal == true
+        and journalData.yuletideState == BurdJournals.YULETIDE_STATE_UNWRAPPED
+    then
+        return false
+    end
+
+    local isPlayerJournal = journalData.isPlayerCreated == true
+    if not isPlayerJournal and journalData.isPlayerCreated == nil then
+        local hasOwner = journalData.ownerUsername or journalData.ownerSteamId or journalData.ownerCharacterName
+        if hasOwner and journalData.isWorn ~= true and journalData.isBloody ~= true then
+            isPlayerJournal = true
+        end
+    end
+
+    return isPlayerJournal
+end
+
+function BurdJournals.isEffectivelyPlayerJournal(journalData)
+    return isEffectivelyPlayerJournal(journalData)
+end
+
+local function getLegacyClaimFieldName(claimType)
+    if claimType == "skills" then
+        return "claimedSkills"
+    end
+    if claimType == "traits" then
+        return "claimedTraits"
+    end
+    if claimType == "recipes" then
+        return "claimedRecipes"
+    end
+    if claimType == "stats" then
+        return "claimedStats"
+    end
+    if claimType == "forgetSlots" then
+        return "claimedForgetSlot"
+    end
+    return nil
+end
+
+local function usesGlobalLootClaimTruth(journalData, claimType)
+    if type(journalData) ~= "table" then
+        return false
+    end
+    if claimType and not BurdJournals.shouldTrackCharacterClaims(journalData, claimType) then
+        return false
+    end
+    return not isEffectivelyPlayerJournal(journalData)
+end
+
+local function hasAnyCharacterClaimedEntry(journalData, claimType, claimId)
+    if type(journalData) ~= "table" or type(claimType) ~= "string" or claimType == "" then
+        return false
+    end
+
+    local legacyField = getLegacyClaimFieldName(claimType)
+    if legacyField then
+        local legacyClaims = journalData[legacyField]
+        if type(legacyClaims) ~= "table" and BurdJournals.normalizeTable then
+            legacyClaims = BurdJournals.normalizeTable(legacyClaims)
+        end
+        if type(legacyClaims) == "table" then
+            if claimType == "forgetSlots" then
+                for _, value in pairs(legacyClaims) do
+                    if value ~= nil and value ~= false then
+                        return true
+                    end
+                end
+            elseif claimId ~= nil and legacyClaims[claimId] then
+                return true
+            end
+        end
+    end
+
+    if claimId ~= nil and hasLegacyUnknownClaim(journalData, claimType, claimId) then
+        return true
+    end
+
+    local claims = getEffectiveJournalClaimsTable(journalData)
+    if type(claims) ~= "table" then
+        return false
+    end
+
+    for characterId, claimBucket in pairs(claims) do
+        if characterId ~= "legacy_unknown" and type(claimBucket) == "table" then
+            local typedClaims = claimBucket[claimType]
+            if type(typedClaims) == "table" then
+                if claimType == "forgetSlots" then
+                    if typedClaims.default ~= nil and typedClaims.default ~= false then
+                        return true
+                    end
+                elseif claimId ~= nil and typedClaims[claimId] then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function mirrorGlobalLootClaim(journalData, claimType, claimId)
+    if not usesGlobalLootClaimTruth(journalData, claimType) then
+        return
+    end
+
+    local legacyField = getLegacyClaimFieldName(claimType)
+    if not legacyField then
+        return
+    end
+
+    if type(journalData[legacyField]) ~= "table" then
+        journalData[legacyField] = {}
+    end
+
+    if claimType == "forgetSlots" then
+        local slotKey = claimId or "slot1"
+        if type(journalData[legacyField].global) ~= "table" then
+            local existing = journalData[legacyField].global
+            journalData[legacyField].global = {}
+            if existing ~= nil and existing ~= false then
+                journalData[legacyField].global.slot1 = existing
+            end
+        end
+        journalData[legacyField].global[slotKey] = true
+        return
+    end
+
+    if claimId ~= nil then
+        journalData[legacyField][claimId] = true
+    end
 end
 
 local function resolveJournalDataAndItem(itemOrData)
@@ -5476,10 +7737,12 @@ local function getRemainingRewardsForJournalData(journalData, player)
         end
     end
 
-    local hasForgetSlot = journalData.forgetSlot == true
+    local forgetSlotCount = BurdJournals.getForgetSlotCount and BurdJournals.getForgetSlotCount(journalData) or 0
+    local hasForgetSlot = forgetSlotCount > 0
         and (not BurdJournals.isForgetSlotEnabledForJournal or BurdJournals.isForgetSlotEnabledForJournal(journalData))
-    local unclaimedForgetSlot = (hasForgetSlot and player and BurdJournals.hasCharacterClaimedForgetSlot
-        and not BurdJournals.hasCharacterClaimedForgetSlot(journalData, player)) and 1 or 0
+    local claimedForgetSlots = (hasForgetSlot and player and BurdJournals.getCharacterClaimedForgetSlotCount)
+        and BurdJournals.getCharacterClaimedForgetSlotCount(journalData, player) or 0
+    local unclaimedForgetSlot = hasForgetSlot and player and math.max(0, forgetSlotCount - claimedForgetSlots) or 0
 
     return unclaimedSkills + unclaimedTraits + unclaimedRecipes + unclaimedStats + unclaimedForgetSlot
 end
@@ -5545,10 +7808,8 @@ function BurdJournals.getSuccessfulLootClaimCount(itemOrData, player)
         end
     end
 
-    if journalData.forgetSlot == true
-        and BurdJournals.hasCharacterClaimedForgetSlot
-        and BurdJournals.hasCharacterClaimedForgetSlot(journalData, player) then
-        count = count + 1
+    if BurdJournals.getCharacterClaimedForgetSlotCount then
+        count = count + BurdJournals.getCharacterClaimedForgetSlotCount(journalData, player)
     end
 
     return count
@@ -5592,6 +7853,10 @@ end
 function BurdJournals.hasCharacterClaimedSkill(journalData, player, skillName)
     if not journalData or not player or not skillName then return false end
     if not BurdJournals.shouldTrackCharacterClaims(journalData, "skills") then return false end
+    if usesGlobalLootClaimTruth(journalData, "skills")
+        and hasAnyCharacterClaimedEntry(journalData, "skills", skillName) then
+        return true
+    end
 
     local claims = BurdJournals.getCharacterClaims(journalData, player, false)
     if claims and type(claims.skills) == "table" and claims.skills[skillName] then
@@ -5605,9 +7870,140 @@ function BurdJournals.hasCharacterClaimedSkill(journalData, player, skillName)
     return false
 end
 
+function BurdJournals.getPlayerJournalSkillClaimLockKey(journalData, player, skillName)
+    if type(journalData) ~= "table" or not player or not skillName then
+        return nil
+    end
+    local journalUUID = (BurdJournals.getJournalIdentityUUID and BurdJournals.getJournalIdentityUUID(journalData))
+        or journalData.journalUUID
+    if not journalUUID or tostring(journalUUID) == "" then
+        return nil
+    end
+    local characterId = BurdJournals.getPlayerCharacterId and BurdJournals.getPlayerCharacterId(player) or nil
+    if not characterId or tostring(characterId) == "" then
+        characterId = player.getUsername and player:getUsername() or "player"
+    end
+    return tostring(characterId) .. "|" .. tostring(journalUUID) .. "|" .. tostring(skillName)
+end
+
+function BurdJournals.getPlayerJournalSkillClaimLocks(player, createIfMissing)
+    if not (player and player.getModData) then
+        return nil
+    end
+    local modData = player:getModData()
+    if type(modData) ~= "table" then
+        return nil
+    end
+    if type(modData.BurdJournals) ~= "table" then
+        if not createIfMissing then return nil end
+        modData.BurdJournals = {}
+    end
+    if type(modData.BurdJournals.playerJournalSkillClaimLocks) ~= "table" then
+        if not createIfMissing then return nil end
+        modData.BurdJournals.playerJournalSkillClaimLocks = {}
+    end
+    return modData.BurdJournals.playerJournalSkillClaimLocks
+end
+
+function BurdJournals.clearPlayerJournalSkillClaimLocks(player)
+    local locks = BurdJournals.getPlayerJournalSkillClaimLocks(player, false)
+    if type(locks) ~= "table" then
+        return false
+    end
+    local changed = false
+    for key, _ in pairs(locks) do
+        locks[key] = nil
+        changed = true
+    end
+    return changed
+end
+
+function BurdJournals.clearPlayerJournalSkillClaimLock(player, journalData, skillName)
+    local key = BurdJournals.getPlayerJournalSkillClaimLockKey(journalData, player, skillName)
+    local locks = BurdJournals.getPlayerJournalSkillClaimLocks(player, false)
+    if not key or type(locks) ~= "table" then
+        return false
+    end
+    if locks[key] ~= nil then
+        locks[key] = nil
+        return true
+    end
+    return false
+end
+
+function BurdJournals.clearPlayerJournalSkillClaimLocksForSkill(player, skillName)
+    local locks = BurdJournals.getPlayerJournalSkillClaimLocks(player, false)
+    if type(locks) ~= "table" or not skillName then
+        return false
+    end
+    local suffix = "|" .. tostring(skillName)
+    local changed = false
+    for key, _ in pairs(locks) do
+        if tostring(key):sub(-#suffix) == suffix then
+            locks[key] = nil
+            changed = true
+        end
+    end
+    return changed
+end
+
+function BurdJournals.markPlayerJournalSkillClaimLock(journalData, player, skillName, recordedXP, targetXP, preClaimXP, preClaimLevel, targetLevel)
+    local key = BurdJournals.getPlayerJournalSkillClaimLockKey(journalData, player, skillName)
+    if not key then return false end
+    local locks = BurdJournals.getPlayerJournalSkillClaimLocks(player, true)
+    if type(locks) ~= "table" then return false end
+    locks[key] = {
+        recordedXP = math.max(0, tonumber(recordedXP) or 0),
+        targetXP = math.max(0, tonumber(targetXP) or 0),
+        preClaimXP = math.max(0, tonumber(preClaimXP) or 0),
+        preClaimLevel = math.max(0, tonumber(preClaimLevel) or 0),
+        targetLevel = math.max(0, tonumber(targetLevel) or 0),
+    }
+    return true
+end
+
+function BurdJournals.getActivePlayerJournalSkillClaimLock(journalData, player, skillName, recordedXP, targetXP, currentXP, currentLevel)
+    local key = BurdJournals.getPlayerJournalSkillClaimLockKey(journalData, player, skillName)
+    local locks = BurdJournals.getPlayerJournalSkillClaimLocks(player, false)
+    if not key or type(locks) ~= "table" then
+        return nil
+    end
+    local lock = locks[key]
+    if type(lock) ~= "table" then
+        return nil
+    end
+
+    local incomingRecordedXP = math.max(0, tonumber(recordedXP) or 0)
+    local lockedRecordedXP = math.max(0, tonumber(lock.recordedXP) or 0)
+    if incomingRecordedXP > lockedRecordedXP + 0.001 then
+        locks[key] = nil
+        return nil
+    end
+
+    local liveXP = math.max(0, tonumber(currentXP) or 0)
+    local liveLevel = math.max(0, tonumber(currentLevel) or 0)
+    local preClaimXP = math.max(0, tonumber(lock.preClaimXP) or 0)
+    local preClaimLevel = math.max(0, tonumber(lock.preClaimLevel) or 0)
+    local lockedTargetXP = math.max(0, tonumber(lock.targetXP) or 0)
+    if liveXP < lockedTargetXP - 0.001 then
+        locks[key] = nil
+        return nil
+    end
+    if liveXP < preClaimXP - 0.001 or liveLevel < preClaimLevel then
+        locks[key] = nil
+        return nil
+    end
+
+    return lock
+end
+
 function BurdJournals.hasCharacterClaimedTrait(journalData, player, traitId)
     if not journalData or not player or not traitId then return false end
     if not BurdJournals.shouldTrackCharacterClaims(journalData, "traits") then return false end
+    if usesGlobalLootClaimTruth(journalData, "traits")
+        and hasAnyCharacterClaimedEntry(journalData, "traits", traitId) then
+        return true
+    end
 
     local claims = BurdJournals.getCharacterClaims(journalData, player, false)
     if claims and type(claims.traits) == "table" and claims.traits[traitId] then
@@ -5624,6 +8020,12 @@ end
 function BurdJournals.hasCharacterClaimedRecipe(journalData, player, recipeName)
     if not journalData or not player or not recipeName then return false end
     if not BurdJournals.shouldTrackCharacterClaims(journalData, "recipes") then return false end
+    local storedRecipeName = BurdJournals.resolveRecipeKey and BurdJournals.resolveRecipeKey(journalData.recipes, recipeName) or recipeName
+    recipeName = storedRecipeName or recipeName
+    if usesGlobalLootClaimTruth(journalData, "recipes")
+        and hasAnyCharacterClaimedEntry(journalData, "recipes", recipeName) then
+        return true
+    end
 
     local claims = BurdJournals.getCharacterClaims(journalData, player, false)
     if claims and type(claims.recipes) == "table" and claims.recipes[recipeName] then
@@ -5645,11 +8047,10 @@ function BurdJournals.markSkillClaimedByCharacter(journalData, player, skillName
     if not claims then return false end
 
     claims.skills[skillName] = true
-
-    -- Keep legacy mirror only when it already exists to avoid duplicate growth.
     if type(journalData.claimedSkills) == "table" then
         journalData.claimedSkills[skillName] = true
     end
+    mirrorGlobalLootClaim(journalData, "skills", skillName)
 
     return true
 end
@@ -5662,11 +8063,10 @@ function BurdJournals.markTraitClaimedByCharacter(journalData, player, traitId)
     if not claims then return false end
 
     claims.traits[traitId] = true
-
-    -- Keep legacy mirror only when it already exists to avoid duplicate growth.
     if type(journalData.claimedTraits) == "table" then
         journalData.claimedTraits[traitId] = true
     end
+    mirrorGlobalLootClaim(journalData, "traits", traitId)
 
     return true
 end
@@ -5674,39 +8074,100 @@ end
 function BurdJournals.markRecipeClaimedByCharacter(journalData, player, recipeName)
     if not journalData or not player or not recipeName then return false end
     if not BurdJournals.shouldTrackCharacterClaims(journalData, "recipes") then return true end
+    local storedRecipeName = BurdJournals.resolveRecipeKey and BurdJournals.resolveRecipeKey(journalData.recipes, recipeName) or recipeName
+    recipeName = storedRecipeName or recipeName
 
     local claims = BurdJournals.getCharacterClaims(journalData, player, true)
     if not claims then return false end
 
     claims.recipes[recipeName] = true
-
-    -- Keep legacy mirror only when it already exists to avoid duplicate growth.
     if type(journalData.claimedRecipes) == "table" then
         journalData.claimedRecipes[recipeName] = true
     end
+    mirrorGlobalLootClaim(journalData, "recipes", recipeName)
 
     return true
 end
 
-function BurdJournals.hasCharacterClaimedForgetSlot(journalData, player)
-    if not journalData or not player then return false end
-    if journalData.forgetSlot ~= true then return false end
+function BurdJournals.getForgetSlotCount(journalData)
+    if type(journalData) ~= "table" or journalData.forgetSlot ~= true then
+        return 0
+    end
+    local count = math.floor(tonumber(journalData.forgetSlotCount) or 1)
+    if count < 1 then count = 1 end
+    if count > 10 then count = 10 end
+    return count
+end
 
+local function countForgetClaimValues(values)
+    if values == nil or values == false then return 0 end
+    if type(values) ~= "table" then return 1 end
+
+    local count = 0
+    for _, value in pairs(values) do
+        if value ~= nil and value ~= false then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+function BurdJournals.getCharacterClaimedForgetSlotCount(journalData, player)
+    local slotCount = BurdJournals.getForgetSlotCount(journalData)
+    if slotCount < 1 or not player then return 0 end
+
+    if usesGlobalLootClaimTruth(journalData, "forgetSlots") then
+        local claimsCount = 0
+        local claims = getEffectiveJournalClaimsTable(journalData)
+        if type(claims) == "table" then
+            for characterId, claimBucket in pairs(claims) do
+                if characterId ~= "legacy_unknown" and type(claimBucket) == "table" then
+                    claimsCount = claimsCount + countForgetClaimValues(claimBucket.forgetSlots)
+                end
+            end
+        end
+
+        local legacyCount = 0
+        local legacyClaims = journalData.claimedForgetSlot
+        if type(legacyClaims) ~= "table" and BurdJournals.normalizeTable then
+            legacyClaims = BurdJournals.normalizeTable(legacyClaims)
+        end
+        if type(legacyClaims) == "table" then
+            for _, value in pairs(legacyClaims) do
+                legacyCount = legacyCount + countForgetClaimValues(value)
+            end
+        end
+
+        return math.min(slotCount, math.max(claimsCount, legacyCount))
+    end
+
+    local claimsCount = 0
     local claims = BurdJournals.getCharacterClaims(journalData, player, false)
-    if claims and type(claims.forgetSlots) == "table" and claims.forgetSlots.default then
-        return true
+    if claims then
+        claimsCount = countForgetClaimValues(claims.forgetSlots)
     end
 
+    local legacyCount = 0
     local characterId = BurdJournals.getPlayerCharacterId(player)
-    if characterId and type(journalData.claimedForgetSlot) == "table" and journalData.claimedForgetSlot[characterId] then
-        return true
+    if characterId and type(journalData.claimedForgetSlot) == "table" then
+        legacyCount = countForgetClaimValues(journalData.claimedForgetSlot[characterId])
     end
 
-    return false
+    return math.min(slotCount, math.max(claimsCount, legacyCount))
+end
+
+function BurdJournals.hasCharacterClaimedForgetSlot(journalData, player)
+    local slotCount = BurdJournals.getForgetSlotCount(journalData)
+    if slotCount < 1 then return false end
+    return BurdJournals.getCharacterClaimedForgetSlotCount(journalData, player) >= slotCount
 end
 
 function BurdJournals.markForgetSlotClaimedByCharacter(journalData, player, forgottenTraitId)
     if not journalData or not player then return false end
+    local slotCount = BurdJournals.getForgetSlotCount(journalData)
+    if slotCount < 1 then return false end
+    local claimedCount = BurdJournals.getCharacterClaimedForgetSlotCount(journalData, player)
+    if claimedCount >= slotCount then return false end
 
     local claims = BurdJournals.getCharacterClaims(journalData, player, true)
     if not claims then return false end
@@ -5714,7 +8175,8 @@ function BurdJournals.markForgetSlotClaimedByCharacter(journalData, player, forg
     if type(claims.forgetSlots) ~= "table" then
         claims.forgetSlots = {}
     end
-    claims.forgetSlots.default = forgottenTraitId or true
+    local slotKey = "slot" .. tostring(claimedCount + 1)
+    claims.forgetSlots[slotKey] = forgottenTraitId or true
 
     local strictMPServer = BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()
     if not strictMPServer then
@@ -5723,15 +8185,23 @@ function BurdJournals.markForgetSlotClaimedByCharacter(journalData, player, forg
             if type(journalData.claimedForgetSlot) ~= "table" then
                 journalData.claimedForgetSlot = {}
             end
-            journalData.claimedForgetSlot[characterId] = forgottenTraitId or true
+            local legacyValue = journalData.claimedForgetSlot[characterId]
+            if type(legacyValue) ~= "table" then
+                journalData.claimedForgetSlot[characterId] = {}
+                if legacyValue ~= nil and legacyValue ~= false then
+                    journalData.claimedForgetSlot[characterId].slot1 = legacyValue
+                end
+            end
+            journalData.claimedForgetSlot[characterId][slotKey] = forgottenTraitId or true
         end
     end
+    mirrorGlobalLootClaim(journalData, "forgetSlots", slotKey)
 
     return true
 end
 
 -- =============================================================================
--- STAT ABSORPTION SYSTEM
+-- Stat Absorption
 -- =============================================================================
 -- Allows players to claim recorded stats (zombie kills, hours survived) from
 -- worn/bloody journals. Only stats where the journal value exceeds the player's
@@ -5820,8 +8290,15 @@ function BurdJournals.canAbsorbStat(journalData, player, statId)
         currentValue = 0
     end
 
-    -- Check if already claimed by this character
-    if BurdJournals.hasCharacterClaimedStat(journalData, player, statId) then
+    -- Check if already claimed by this character. Player journals can be reset
+    -- by debug/admin flows, so live player stat state wins over stale claim flags.
+    local isPlayerJournalStatClaim = journalData.isPlayerCreated == true
+        or (journalData.isPlayerCreated == nil
+            and (journalData.ownerUsername or journalData.ownerSteamId or journalData.ownerCharacterName)
+            and journalData.isWorn ~= true
+            and journalData.isBloody ~= true)
+    if BurdJournals.hasCharacterClaimedStat(journalData, player, statId)
+        and not (isPlayerJournalStatClaim and currentValue < recordedValue) then
         return false, recordedValue, currentValue, "already_claimed"
     end
 
@@ -5837,24 +8314,17 @@ end
 function BurdJournals.hasCharacterClaimedStat(journalData, player, statId)
     if not journalData or not player or not statId then return false end
     if not BurdJournals.shouldTrackCharacterClaims(journalData, "stats") then return false end
-
-    local strictMPServer = BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()
-
-    -- Non-strict contexts may still use legacy global claimedStats.
-    if not strictMPServer and not journalData.isPlayerCreated and journalData.claimedStats and journalData.claimedStats[statId] then
+    if usesGlobalLootClaimTruth(journalData, "stats")
+        and hasAnyCharacterClaimedEntry(journalData, "stats", statId) then
         return true
     end
 
-    -- Legacy migration fallback: claimedStats may have been migrated to claims.legacy_unknown.stats
-    if hasLegacyUnknownClaim(journalData, "stats", statId) then
-        return true
-    end
-
-    -- Check per-character claims
     local claims = BurdJournals.getCharacterClaims(journalData, player, false)
-    if not claims then return false end
+    if claims and type(claims.stats) == "table" and claims.stats[statId] == true then
+        return true
+    end
 
-    return type(claims.stats) == "table" and claims.stats[statId] == true
+    return hasLegacyUnknownClaim(journalData, "stats", statId)
 end
 
 -- Mark a stat as claimed by a specific character
@@ -5871,8 +8341,6 @@ function BurdJournals.markStatClaimedByCharacter(journalData, player, statId)
     end
 
     claims.stats[statId] = true
-
-    -- Preserve legacy behavior outside strict MP server mode.
     local strictMPServer = BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()
     if not strictMPServer then
         if not journalData.claimedStats then
@@ -5880,6 +8348,7 @@ function BurdJournals.markStatClaimedByCharacter(journalData, player, statId)
         end
         journalData.claimedStats[statId] = true
     end
+    mirrorGlobalLootClaim(journalData, "stats", statId)
 
     return true
 end
@@ -5916,24 +8385,24 @@ BurdJournals.COMPACT_VERSION = 1
 -- This helps prevent hitting the 64KB player data limit that can cause save corruption
 -- All removed fields are either derivable from other data or unused
 function BurdJournals.compactJournalData(item)
-    if not item then return end
+    if not item then return false end
     
     -- Ensure item has getModData method (defensive check)
     if not item.getModData then
         BurdJournals.debugPrint("[BurdJournals] WARNING: compactJournalData called with invalid item (no getModData)")
-        return
+        return false
     end
     
     local modData = item:getModData()
-    if not modData or not modData.BurdJournals then return end
+    if not modData or not modData.BurdJournals then return false end
     local data = modData.BurdJournals
     
     -- Ensure data is a table
-    if type(data) ~= "table" then return end
+    if type(data) ~= "table" then return false end
     
     -- Check if already compacted at current version
     if data.compactVersion and data.compactVersion >= BurdJournals.COMPACT_VERSION then
-        return
+        return false
     end
     
     local fieldsRemoved = 0
@@ -5977,7 +8446,11 @@ function BurdJournals.compactJournalData(item)
     
     -- Keep restored-origin flags. They drive runtime behavior (claim tracking and dissolution).
     -- Legacy journals may only have wasRestored, so preserve it for compatibility.
-    if data.wasRestored == true and data.wasFromWorn ~= true and data.wasFromBloody ~= true then
+    local hasPersonalOrigin = hasExplicitPlayerOwner
+        or tostring(data.sourceType or "") == "personal"
+        or tostring(data.originMode or "") == "personal"
+        or data.isPlayerCreated == true
+    if data.wasRestored == true and data.wasFromWorn ~= true and data.wasFromBloody ~= true and not hasPersonalOrigin then
         -- Legacy compatibility: treat generic restored as worn-origin when source is unknown.
         if data.isBloody == true then
             data.wasFromBloody = true
@@ -6052,12 +8525,13 @@ function BurdJournals.compactJournalData(item)
     if fieldsRemoved > 0 then
         BurdJournals.debugPrint("[BurdJournals] Compacted journal data: removed " .. fieldsRemoved .. " redundant fields")
     end
+    return true
 end
 
--- Build 41 standard-skill XP thresholds.
--- These are CUMULATIVE totals to reach each level.
--- Live B41 perk defs use per-level values: 50, 100, 200, 500, 1000, 2000, 3000, 4000, 5000, 6000.
-BurdJournals.STANDARD_XP_THRESHOLDS = {
+-- Build 42+ should prefer the live perk registry for XP thresholds.
+-- Keep the legacy B41 cumulative values only as a safe fallback for early-load
+-- paths and test harnesses where the perk registry is unavailable.
+local DEFAULT_STANDARD_XP_THRESHOLDS = {
     [0] = 0,
     [1] = 50,
     [2] = 150,      -- 50 + 100
@@ -6071,10 +8545,7 @@ BurdJournals.STANDARD_XP_THRESHOLDS = {
     [10] = 21850    -- 15850 + 6000
 }
 
--- Build 41 passive-skill XP thresholds.
--- These are CUMULATIVE totals to reach each level.
--- Live B41 perk defs use per-level values: 1000, 2000, 4000, 6000, 12000, 20000, 40000, 60000, 80000, 100000.
-BurdJournals.PASSIVE_XP_THRESHOLDS = {
+local DEFAULT_PASSIVE_XP_THRESHOLDS = {
     [0] = 0,
     [1] = 1000,
     [2] = 3000,    -- 1000 + 2000
@@ -6088,11 +8559,104 @@ BurdJournals.PASSIVE_XP_THRESHOLDS = {
     [10] = 325000  -- 225000 + 100000
 }
 
+BurdJournals.STANDARD_XP_THRESHOLDS = BurdJournals.STANDARD_XP_THRESHOLDS or {}
+BurdJournals.PASSIVE_XP_THRESHOLDS = BurdJournals.PASSIVE_XP_THRESHOLDS or {}
+
+local function cloneXPThresholdTable(source)
+    local copy = {[0] = tonumber(source and source[0]) or 0}
+    for level = 1, 10 do
+        copy[level] = tonumber(source and source[level]) or 0
+    end
+    return copy
+end
+
+local function getLiveXPThresholdsFromPerk(perk)
+    if not (perk and PerkFactory and PerkFactory.getPerk) then
+        return nil
+    end
+
+    local perkDef = PerkFactory.getPerk(perk)
+    if not (perkDef and perkDef.getTotalXpForLevel) then
+        return nil
+    end
+
+    local thresholds = {[0] = 0}
+    for level = 1, 10 do
+        local ok, threshold = safePcall(function()
+            return perkDef:getTotalXpForLevel(level)
+        end)
+        threshold = tonumber(threshold)
+        if not ok or not threshold or threshold < 0 then
+            return nil
+        end
+        thresholds[level] = threshold
+    end
+
+    return thresholds
+end
+
+function BurdJournals.refreshXPThresholdTables(force)
+    local standard = nil
+    local passive = nil
+    local canUseEngine = Perks and PerkFactory and PerkFactory.getPerk
+
+    if force == true or BurdJournals.XP_THRESHOLD_SOURCE ~= "engine" then
+        if canUseEngine then
+            local standardCandidates = {
+                Perks.Woodwork,
+                Perks.Cooking,
+                Perks.Axe,
+                Perks.Electricity,
+                Perks.Doctor,
+                Perks.Tailoring,
+            }
+            for _, perk in ipairs(standardCandidates) do
+                standard = getLiveXPThresholdsFromPerk(perk)
+                if standard then
+                    break
+                end
+            end
+
+            passive = getLiveXPThresholdsFromPerk(Perks.Fitness)
+                or getLiveXPThresholdsFromPerk(Perks.Strength)
+        end
+    end
+
+    BurdJournals.STANDARD_XP_THRESHOLDS = standard or cloneXPThresholdTable(DEFAULT_STANDARD_XP_THRESHOLDS)
+    BurdJournals.PASSIVE_XP_THRESHOLDS = passive or cloneXPThresholdTable(DEFAULT_PASSIVE_XP_THRESHOLDS)
+
+    if standard and passive then
+        BurdJournals.XP_THRESHOLD_SOURCE = "engine"
+    elseif standard or passive then
+        BurdJournals.XP_THRESHOLD_SOURCE = "mixed"
+    else
+        BurdJournals.XP_THRESHOLD_SOURCE = "fallback"
+    end
+
+    return BurdJournals.STANDARD_XP_THRESHOLDS, BurdJournals.PASSIVE_XP_THRESHOLDS
+end
+
+local function ensureXPThresholdTables()
+    local standard = BurdJournals.STANDARD_XP_THRESHOLDS
+    local passive = BurdJournals.PASSIVE_XP_THRESHOLDS
+    local missingStandard = type(standard) ~= "table" or standard[1] == nil or standard[10] == nil
+    local missingPassive = type(passive) ~= "table" or passive[1] == nil or passive[10] == nil
+    local canUseEngine = Perks and PerkFactory and PerkFactory.getPerk
+
+    if missingStandard or missingPassive or (canUseEngine and BurdJournals.XP_THRESHOLD_SOURCE ~= "engine") then
+        BurdJournals.refreshXPThresholdTables(true)
+    end
+end
+
+BurdJournals.refreshXPThresholdTables(false)
+
 -- Helper function to get XP threshold for a skill at a given level
 -- Uses our verified tables instead of potentially unreliable PZ API
 function BurdJournals.getXPThresholdForLevel(skillName, level)
     if level <= 0 then return 0 end
     if level > 10 then level = 10 end
+
+    ensureXPThresholdTables()
     
     if skillName == "Fitness" or skillName == "Strength" then
         return BurdJournals.PASSIVE_XP_THRESHOLDS[level] or 0
@@ -6106,6 +8670,8 @@ end
 -- Optional skillName parameter determines which threshold table to use
 function BurdJournals.getSkillLevelFromXP(xp, skillName)
     if not xp or xp <= 0 then return 0 end
+
+    ensureXPThresholdTables()
     
     -- Select the appropriate threshold table
     local thresholds
@@ -6203,7 +8769,9 @@ function BurdJournals.isLikelyLegacyAbsoluteSkillEntry(journalData, player, skil
 end
 
 -- Normalize legacy skill entries where level/xp are inconsistent (older patches).
--- For non-baseline journals (SET mode), if XP is missing/too low for the declared
+-- Any entry with a positive level but missing XP is repaired to that level's
+-- threshold so old journals do not become unclaimable once claim logic keys off XP.
+-- For non-baseline journals (SET mode), if XP is still too low for the declared
 -- level, upgrade XP to the exact threshold for that level.
 function BurdJournals.normalizeLegacySkillEntry(skillName, skillData, recordedWithBaseline)
     if not skillData or type(skillData) ~= "table" then
@@ -6217,14 +8785,13 @@ function BurdJournals.normalizeLegacySkillEntry(skillName, skillData, recordedWi
     local xp = tonumber(skillData.xp) or 0
     local changed = false
 
-    -- Baseline journals intentionally store earned/delta XP.
-    if recordedWithBaseline ~= true and level > 0 then
+    if level > 0 then
         local thresholdXP = BurdJournals.getXPThresholdForLevel and BurdJournals.getXPThresholdForLevel(skillName, level) or 0
 
         if xp <= 0 and thresholdXP > 0 then
             xp = thresholdXP
             changed = true
-        elseif BurdJournals.getSkillLevelFromXP and thresholdXP > 0 then
+        elseif recordedWithBaseline ~= true and BurdJournals.getSkillLevelFromXP and thresholdXP > 0 then
             local computed = BurdJournals.getSkillLevelFromXP(xp, skillName)
             if computed < level and xp < thresholdXP then
                 xp = thresholdXP
@@ -6275,8 +8842,9 @@ function BurdJournals.normalizeSkillVhsBreakdown(skillData)
     return rawXP, vhsExcludedXP, changed
 end
 
-function BurdJournals.migrateJournalIfNeeded(item, player)
+function BurdJournals.migrateJournalIfNeeded(item, player, options)
     if not item then return end
+    options = type(options) == "table" and options or {}
 
     local modData = item:getModData()
     if not modData.BurdJournals then return end
@@ -6376,6 +8944,11 @@ function BurdJournals.migrateJournalIfNeeded(item, player)
             journalData.ownerSteamId = "legacy_" .. journalData.ownerUsername
             migrated = true
             BurdJournals.debugPrint("[BurdJournals] Marked legacy journal with placeholder Steam ID: " .. journalData.ownerSteamId)
+        end
+
+        if BurdJournals.clearPlayerJournalDebugProvenance
+            and BurdJournals.clearPlayerJournalDebugProvenance(journalData, "migrateJournalIfNeeded") then
+            migrated = true
         end
 
         -- Legacy debug-edited journals from older patches may have isDebugEdited but no isDebugSpawned.
@@ -6542,7 +9115,9 @@ function BurdJournals.migrateJournalIfNeeded(item, player)
     local journalSanitizeVersion = journalData.sanitizedVersion or 0
     if journalSanitizeVersion < currentSanitizeVersion then
         -- Note: sanitizeJournalData handles its own transmitModData
-        local sanitizeResult = BurdJournals.sanitizeJournalData(item, player)
+        local sanitizeResult = BurdJournals.sanitizeJournalData(item, player, {
+            suppressTransmit = options.suppressTransmit == true,
+        })
         if sanitizeResult and sanitizeResult.cleaned then
             migrated = true
         end
@@ -6550,22 +9125,52 @@ function BurdJournals.migrateJournalIfNeeded(item, player)
 
     if migrated then
         -- Safety check: ensure transmitModData exists (in case item became invalid)
-        if item.transmitModData then
+        if options.suppressTransmit ~= true
+            and item.transmitModData
+            and BurdJournals.shouldTransmitJournalItemModData(item, "migrateJournalIfNeeded")
+        then
             item:transmitModData()
         end
     end
     
     -- Compact journal data after migration to reduce ModData size
     -- This helps prevent hitting the 64KB player data limit
-    if BurdJournals.compactJournalData then
-        BurdJournals.compactJournalData(item)
+    local compacted = false
+    if options.suppressCompact ~= true and BurdJournals.compactJournalData then
+        compacted = BurdJournals.compactJournalData(item) == true
     end
+    return migrated, compacted
 end
 
 -- Sanitize journal data by removing/auto-claiming invalid entries
 -- Invalid entries include: removed mod content, skill category names, corrupted data
 -- Returns a result table with what was cleaned
-function BurdJournals.sanitizeJournalData(item, player)
+function BurdJournals.shouldTransmitJournalItemModData(item, sourceTag)
+    if item and item.getModData
+        and BurdJournals.isStrictMPServerContext
+        and BurdJournals.isStrictMPServerContext()
+    then
+        local modData = item:getModData()
+        local journalData = modData and modData.BurdJournals or nil
+        if type(journalData) == "table" and journalData.entryStoreEnabled == true then
+            if sourceTag == "recordProgressFinalShell" or sourceTag == "recordProgressPreStrippedShell" then
+                local residentEntries = BurdJournals.countJournalEntryStoreEntries
+                    and BurdJournals.countJournalEntryStoreEntries(journalData)
+                    or 0
+                if residentEntries <= 0 then
+                    return true
+                end
+            end
+            BurdJournals.debugPrint("[BurdJournals] Skipped offloaded item ModData transmit in strict MP"
+                .. " source=" .. tostring(sourceTag or "unknown"))
+            return false
+        end
+    end
+    return true
+end
+
+function BurdJournals.sanitizeJournalData(item, player, options)
+    options = type(options) == "table" and options or {}
     if not item then return { cleaned = false } end
 
     -- Check if already sanitized at current version
@@ -6579,7 +9184,7 @@ function BurdJournals.sanitizeJournalData(item, player)
             or nil
         if repaired then
             repaired.sanitizedVersion = currentVersion
-            if item.transmitModData then
+            if item.transmitModData and BurdJournals.shouldTransmitJournalItemModData(item, "sanitizeJournalDataRepair") then
                 item:transmitModData()
             end
             return { cleaned = true, resetInvalidData = true }
@@ -6588,7 +9193,13 @@ function BurdJournals.sanitizeJournalData(item, player)
     end
 
     local data = modData.BurdJournals
+    local clearedDebugProvenance = BurdJournals.clearPlayerJournalDebugProvenance
+        and BurdJournals.clearPlayerJournalDebugProvenance(data, "sanitizeJournalData")
+        or false
     if data.sanitizedVersion and data.sanitizedVersion >= currentVersion then
+        if clearedDebugProvenance and item.transmitModData and BurdJournals.shouldTransmitJournalItemModData(item, "sanitizeJournalDataDebugProvenance") then
+            item:transmitModData()
+        end
         return { cleaned = false, alreadySanitized = true }
     end
     
@@ -6632,7 +9243,7 @@ function BurdJournals.sanitizeJournalData(item, player)
                 or ("debug-" .. tostring(getTimestampMs and getTimestampMs() or os.time()) .. "-" .. tostring(item:getID()))
         end
         data.sanitizedVersion = currentVersion
-        if item.transmitModData then
+        if item.transmitModData and BurdJournals.shouldTransmitJournalItemModData(item, "sanitizeJournalDataDebug") then
             item:transmitModData()
         end
         return { cleaned = false, debugSpawnedPreserved = true }
@@ -6753,12 +9364,34 @@ function BurdJournals.sanitizeJournalData(item, player)
         BurdJournals.debugPrint("[BurdJournals] Recipe cache built with " .. tostring(recipeCacheCount) .. " entries")
     end
 
-    -- Helper: Check if recipe exists in game (uses cached set)
-    local function isValidRecipe(recipeName)
-        if not recipeName then return false end
+    local function cachedRecipeExists(recipeName)
+        if type(recipeName) ~= "string" or recipeName == "" then return false end
         buildRecipeCache()
-        local found = validRecipeSet[recipeName] or validRecipeSet[string.lower(recipeName)] or false
-        return found
+        return validRecipeSet[recipeName] or validRecipeSet[string.lower(recipeName)] or false
+    end
+
+    local function resolveValidRecipeName(recipeName)
+        if type(recipeName) ~= "string" or recipeName == "" then
+            return nil
+        end
+
+        if BurdJournals.validateRecipeName then
+            local validatedName = BurdJournals.validateRecipeName(recipeName)
+            if type(validatedName) == "string" and validatedName ~= "" then
+                return validatedName
+            end
+        end
+
+        local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or recipeName
+        if type(canonicalName) == "string" and canonicalName ~= "" and cachedRecipeExists(canonicalName) then
+            return canonicalName
+        end
+
+        if cachedRecipeExists(recipeName) then
+            return recipeName
+        end
+
+        return nil
     end
 
     -- Sanitize skills
@@ -6797,18 +9430,49 @@ function BurdJournals.sanitizeJournalData(item, player)
         data.traits = cleanedTraits
     end
 
+    if type(data.claimedRecipes) == "table" then
+        local cleanedClaimedRecipes = {}
+        for recipeName, claimed in pairs(data.claimedRecipes) do
+            local resolvedRecipeName = resolveValidRecipeName(recipeName)
+            if resolvedRecipeName then
+                cleanedClaimedRecipes[resolvedRecipeName] = claimed
+                if resolvedRecipeName ~= recipeName then
+                    result.cleaned = true
+                end
+            else
+                cleanedClaimedRecipes[recipeName] = claimed
+            end
+        end
+        data.claimedRecipes = cleanedClaimedRecipes
+    end
+
     -- Sanitize recipes
     if type(data.recipes) == "table" then
         local cleanedRecipes = {}
-        for recipeName, recipeData in pairs(data.recipes) do
-            if isValidRecipe(recipeName) then
-                cleanedRecipes[recipeName] = recipeData
+        for recipeKey, recipeData in pairs(data.recipes) do
+            local recipeName = type(recipeKey) == "string" and recipeKey or nil
+            local cleanedRecipeData = recipeData
+
+            if type(recipeData) == "string" then
+                recipeName = recipeData
+                cleanedRecipeData = true
+            elseif type(recipeData) == "table" then
+                recipeName = recipeData.name or recipeData.recipeName or recipeData.id or recipeName
+            end
+
+            local resolvedRecipeName = resolveValidRecipeName(recipeName)
+            if resolvedRecipeName then
+                cleanedRecipes[resolvedRecipeName] = cleanedRecipeData
+                if resolvedRecipeName ~= recipeKey or recipeName ~= recipeKey then
+                    result.cleaned = true
+                end
             else
                 -- Invalid recipe - remove and auto-claim
-                table.insert(result.removedRecipes, recipeName)
+                local removedRecipeName = recipeName or recipeKey
+                table.insert(result.removedRecipes, removedRecipeName)
                 if not data.claimedRecipes then data.claimedRecipes = {} end
-                data.claimedRecipes[recipeName] = true
-                table.insert(result.autoClaimedRecipes, recipeName)
+                data.claimedRecipes[removedRecipeName] = true
+                table.insert(result.autoClaimedRecipes, removedRecipeName)
                 result.cleaned = true
             end
         end
@@ -6820,7 +9484,10 @@ function BurdJournals.sanitizeJournalData(item, player)
 
     -- Transmit changes if anything was cleaned
     if result.cleaned then
-        if item.transmitModData then
+        if options.suppressTransmit ~= true
+            and item.transmitModData
+            and BurdJournals.shouldTransmitJournalItemModData(item, "sanitizeJournalDataCleaned")
+        then
             item:transmitModData()
         end
 
@@ -6848,7 +9515,10 @@ function BurdJournals.sanitizeJournalData(item, player)
         BurdJournals.debugPrint("[BurdJournals] Sanitized journal: removed " .. totalRemoved .. " invalid entries")
     else
         -- Even if nothing was cleaned, update sanitizedVersion to avoid re-checking
-        if item.transmitModData then
+        if options.suppressTransmit ~= true
+            and item.transmitModData
+            and BurdJournals.shouldTransmitJournalItemModData(item, "sanitizeJournalDataVersion")
+        then
             item:transmitModData()
         end
     end
@@ -6864,6 +9534,12 @@ function BurdJournals.shouldDebugLog()
     return BurdJournals.isDebug() or BurdJournals.verboseLogging == true
 end
 
+BurdJournals.mpPerfLogging = BurdJournals.mpPerfLogging == true
+
+function BurdJournals.shouldLogMPPerf()
+    return BurdJournals.mpPerfLogging == true or BurdJournals.shouldDebugLog()
+end
+
 function BurdJournals.writeLogLine(msg, loggerName)
     local line = tostring(msg or "")
     if type(writeLog) == "function" then
@@ -6871,6 +9547,12 @@ function BurdJournals.writeLogLine(msg, loggerName)
         return
     end
     print(line)
+end
+
+BurdJournals.RUNTIME_LOAD_MARKER = "claim-authority-progress-smoothing"
+if BurdJournals._runtimeLoadMarkerLogged ~= true and BurdJournals.shouldDebugLog() then
+    BurdJournals._runtimeLoadMarkerLogged = true
+    BurdJournals.writeLogLine("[BurdJournals][LoadMarker] " .. tostring(BurdJournals.RUNTIME_LOAD_MARKER))
 end
 
 -- Debug logging helper. Prefer writeLog() so verbose output does not flood console print().
@@ -7083,6 +9765,143 @@ function BurdJournals.getPerkDisplayName(perkName)
     return perkName
 end
 
+function BurdJournals.getCursedInsightSandboxNumber(optionName, fallback)
+    local value = BurdJournals.getSandboxOption and BurdJournals.getSandboxOption(optionName) or nil
+    value = tonumber(value)
+    if value == nil then
+        return fallback
+    end
+    return math.max(0, math.floor(value))
+end
+
+function BurdJournals.cursedInsightHasTrait(player, traitIds)
+    if not (player and BurdJournals.playerHasTrait and type(traitIds) == "table") then
+        return false
+    end
+    for _, traitId in ipairs(traitIds) do
+        if BurdJournals.playerHasTrait(player, traitId) == true then
+            return true
+        end
+    end
+    return false
+end
+
+function BurdJournals.cursedInsightProfessionName(player)
+    local descriptor = player and player.getDescriptor and player:getDescriptor() or nil
+    if not descriptor then
+        return nil
+    end
+    local profession = nil
+    if descriptor.getCharacterProfession then
+        profession = descriptor:getCharacterProfession()
+    elseif descriptor.getProfession then
+        profession = descriptor:getProfession()
+    end
+    if profession and profession.getName then
+        profession = profession:getName()
+    end
+    if profession == nil then
+        return nil
+    end
+    local text = tostring(profession)
+    if text == "" then
+        return nil
+    end
+    return string.lower(text)
+end
+
+function BurdJournals.getCursedInsightForagingLevel(player)
+    if not (player and player.getPerkLevel) then
+        return 0
+    end
+    local perk = BurdJournals.getPerkByName and (BurdJournals.getPerkByName("Foraging") or BurdJournals.getPerkByName("PlantScavenging")) or nil
+    perk = perk or (Perks and (Perks.PlantScavenging or Perks.Foraging)) or nil
+    if not perk then
+        return 0
+    end
+    return math.max(0, tonumber(player:getPerkLevel(perk)) or 0)
+end
+
+function BurdJournals.getCursedInsightTraitFlags(player)
+    local professionName = BurdJournals.cursedInsightProfessionName(player)
+    local flags = {
+        catsEyes = BurdJournals.cursedInsightHasTrait(player, {"nightvision", "NightVision", "catseyes", "Cat's Eyes"}),
+        herbalist = BurdJournals.cursedInsightHasTrait(player, {"herbalist", "Herbalist", "herbalist_prof", "Herbalist_Prof"}),
+        hiker = BurdJournals.cursedInsightHasTrait(player, {"hiker", "Hiker"}),
+        hunter = BurdJournals.cursedInsightHasTrait(player, {"hunter", "Hunter"}),
+        outdoorsman = BurdJournals.cursedInsightHasTrait(player, {"outdoorsman", "Outdoorsman", "outdoorsy", "Outdoorsy"}),
+        parkRanger = professionName == "parkranger" or professionName == "park ranger" or professionName == "base:parkranger",
+    }
+    flags.fieldcraft = flags.herbalist or flags.hiker or flags.hunter or flags.outdoorsman or flags.parkRanger
+    flags.advanced = flags.catsEyes or flags.herbalist or flags.parkRanger
+    flags.any = flags.catsEyes or flags.fieldcraft
+    return flags
+end
+
+function BurdJournals.getCursedInsightLevel(player)
+    if BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("EnableCursedJournalInsight") == false then
+        return 0, {foragingLevel = 0, traits = {}}
+    end
+
+    local foragingLevel = BurdJournals.getCursedInsightForagingLevel(player)
+    local revealLevel = BurdJournals.getCursedInsightSandboxNumber("CursedJournalInsightRevealForagingLevel", 4)
+    local omenLevel = BurdJournals.getCursedInsightSandboxNumber("CursedJournalInsightOmenForagingLevel", 6)
+    local exactLevel = BurdJournals.getCursedInsightSandboxNumber("CursedJournalInsightExactForagingLevel", 8)
+    local exactEnabled = not (BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("CursedJournalInsightExactEffect") == false)
+    local traits = BurdJournals.getCursedInsightTraitFlags(player)
+    local level = 0
+
+    if traits.any or foragingLevel >= revealLevel then
+        level = 1
+    end
+    if (foragingLevel >= omenLevel and traits.advanced) or foragingLevel >= exactLevel then
+        level = 2
+    end
+    if exactEnabled and foragingLevel >= exactLevel then
+        level = 3
+    end
+
+    return level, {
+        foragingLevel = foragingLevel,
+        revealLevel = revealLevel,
+        omenLevel = omenLevel,
+        exactLevel = exactLevel,
+        exactEnabled = exactEnabled,
+        traits = traits,
+    }
+end
+
+function BurdJournals.getCursedEffectInsightDisplayName(effectType)
+    local normalized = type(effectType) == "string" and string.lower(effectType) or nil
+    local keyByType = {
+        barbed_seal = "UI_BurdJournals_CursedCardBarbedSeal",
+        jammed_breath = "UI_BurdJournals_CursedCardJammedBreath",
+        hexed_tooling = "UI_BurdJournals_CursedCardHexedTooling",
+        torn_gear = "UI_BurdJournals_CursedCardTornGear",
+        seasonal_wave = "UI_BurdJournals_CursedCardSeasonalWave",
+        pantsed = "UI_BurdJournals_CursedCardPantsed",
+        gain_negative_trait = "UI_BurdJournals_CursedCardGainNegative",
+        lose_positive_trait = "UI_BurdJournals_CursedCardLosePositive",
+        lose_skill_level = "UI_BurdJournals_CursedCardLoseSkill",
+        panic = "UI_BurdJournals_CursedCardPanic",
+        expired = "UI_BurdJournals_CursedCardExpired",
+    }
+    local key = normalized and keyByType[normalized] or nil
+    if key and BurdJournals.safeGetText then
+        local text = BurdJournals.safeGetText(key, nil)
+        if text and text ~= "" then
+            return text
+        end
+    end
+    if key and getText then
+        local text = getText(key)
+        if text and text ~= "" and text ~= key then
+            return text
+        end
+    end
+    return effectType
+end
+
 function BurdJournals.getSkillNameFromPerk(perk)
     if not perk then return nil end
 
@@ -7150,7 +9969,7 @@ function BurdJournals.getSkillNameFromPerk(perk)
 end
 
 function BurdJournals.findItemByIdInContainer(container, itemId)
-    if not container then return nil end
+    if not container or not container.getItems then return nil end
 
     local items = container:getItems()
     if not items then return nil end
@@ -7173,6 +9992,12 @@ function BurdJournals.findItemByIdInContainer(container, itemId)
         end
     end
     return nil
+end
+
+function BurdJournals.findItemByIdInPlayerInventory(player, itemId)
+    local inventory = player and player.getInventory and player:getInventory() or nil
+    if not inventory then return nil end
+    return BurdJournals.findItemByIdInContainer(inventory, itemId)
 end
 
 function BurdJournals.findItemById(player, itemId)
@@ -7642,6 +10467,19 @@ function BurdJournals.getItemBurdJournalsData(item)
     if not modData then return nil end
     local data = modData.BurdJournals
     if type(data) == "table" then
+        if data.entryStoreEnabled == true
+            and not BurdJournals.hasAnyEntries(data)
+            and BurdJournals.Client
+            and BurdJournals.Client.getHydratedJournalSnapshot
+        then
+            local snapshotUUID = BurdJournals.getJournalIdentityUUID(data)
+            local snapshot = BurdJournals.Client.getHydratedJournalSnapshot(item, snapshotUUID)
+            if BurdJournals.hasAnyEntries(snapshot) then
+                modData.BurdJournals = BurdJournals.normalizeJournalData and BurdJournals.normalizeJournalData(snapshot) or snapshot
+                BurdJournals.debugPrint("[BurdJournals] Client: restored offloaded journal shell from hydrated snapshot")
+                return modData.BurdJournals
+            end
+        end
         return data
     end
     if data ~= nil and BurdJournals.normalizeTable then
@@ -7715,6 +10553,13 @@ local function itemJournalDataHasRecordedEntries(journalData)
     if type(journalData) ~= "table" then
         return false
     end
+    if type(journalData.entryStoreEntryCounts) == "table" then
+        for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {"skills", "traits", "stats", "recipes"}) do
+            if math.max(0, tonumber(journalData.entryStoreEntryCounts[bucketName]) or 0) > 0 then
+                return true
+            end
+        end
+    end
     return (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.skills))
         or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.traits))
         or (BurdJournals.hasAnyEntries and BurdJournals.hasAnyEntries(journalData.stats))
@@ -7761,6 +10606,11 @@ function BurdJournals.isFilledJournal(item)
         return data and data.isYuletideJournal == true
             and data.yuletideState == BurdJournals.YULETIDE_STATE_UNWRAPPED
             or false
+    end
+    if BurdJournals.isBrokenSealedLootRewardJournal
+        and BurdJournals.isBrokenSealedLootRewardJournal(item)
+    then
+        return true
     end
     if data
         and data.isPlayerCreated == true
@@ -7912,61 +10762,19 @@ function BurdJournals.ensureYuletideWrappedVariantOnItem(item, reasonTag)
         return nil
     end
 
-    local data = BurdJournals.ensureItemBurdJournalsData
-        and BurdJournals.ensureItemBurdJournalsData(item, reasonTag or "ensureYuletideWrappedVariantOnItem")
-        or getItemJournalModData(item)
+    -- This helper is called from icon/presentation refreshes. Presentation must
+    -- never create identity, roll a random variant, or transmit ModData. Server
+    -- spawn/migration paths own those mutations; legacy shells simply render
+    -- with the deterministic default variant until authoritative data arrives.
+    local data = getItemJournalModData(item)
     if type(data) ~= "table" then
-        return nil
-    end
-
-    data.isYuletideJournal = true
-    if data.yuletideState == nil then
-        data.yuletideState = BurdJournals.YULETIDE_STATE_WRAPPED
-    end
-    if (type(data.uuid) ~= "string" or data.uuid == "")
-        and BurdJournals.resolveJournalUUIDForRuntime
-    then
-        data.uuid = BurdJournals.resolveJournalUUIDForRuntime(data, item, true)
-        if item.transmitModData then
-            item:transmitModData()
-        end
+        return BurdJournals.normalizeYuletideWrappedVariant(nil)
     end
 
     if data.yuletideState == BurdJournals.YULETIDE_STATE_UNWRAPPED then
         return nil
     end
-
-    local rawVariant = data.yuletideWrappedVariant
-    local changedVariant = false
-    if rawVariant == nil or tostring(rawVariant) == "" then
-        local chosen = BurdJournals.chooseRandomYuletideWrappedVariant
-            and BurdJournals.chooseRandomYuletideWrappedVariant()
-            or BurdJournals.normalizeYuletideWrappedVariant(nil)
-        data.yuletideWrappedVariant = BurdJournals.normalizeYuletideWrappedVariant(chosen)
-        changedVariant = true
-        if item.transmitModData then
-            item:transmitModData()
-        end
-    else
-        local normalizedVariant = BurdJournals.normalizeYuletideWrappedVariant(rawVariant)
-        changedVariant = tostring(normalizedVariant) ~= tostring(rawVariant)
-        data.yuletideWrappedVariant = normalizedVariant
-        if item.transmitModData then
-            item:transmitModData()
-        end
-    end
-
-    if BurdJournals.updateJournalIcon and reasonTag ~= "applyResolvedJournalAppearance" then
-        BurdJournals.updateJournalIcon(item)
-    end
-    if changedVariant then
-        local container = item.getContainer and item:getContainer() or nil
-        if container and container.setDrawDirty then
-            container:setDrawDirty(true)
-        end
-    end
-
-    return data.yuletideWrappedVariant
+    return BurdJournals.normalizeYuletideWrappedVariant(data.yuletideWrappedVariant)
 end
 
 function BurdJournals.isWrappedYuletideJournal(item)
@@ -7990,6 +10798,9 @@ function BurdJournals.isAnyJournal(item)
     if fullType and BurdJournals.SPECIAL_JOURNAL_TYPES[fullType] then
         return true
     end
+    if fullType and BurdJournals.REGISTERED_JOURNAL_TYPES and BurdJournals.REGISTERED_JOURNAL_TYPES[fullType] then
+        return true
+    end
     if fullType and fullType:find("BurdJournals") and fullType:find("SurvivalJournal") then
         return true
     end
@@ -8010,11 +10821,36 @@ local function hasLootRewardContentForConcealment(journalData)
         or false
 end
 
-local function isAutoHiddenSandboxCursedCandidate(item, journalData)
+local function getNormalizedLootRewardJournalData(itemOrData)
+    local data = nil
+    local item = nil
+    local itemOrDataType = type(itemOrData)
+    if (itemOrDataType == "table" or itemOrDataType == "userdata") and itemOrData.getModData then
+        item = itemOrData
+        data = getItemJournalModData(itemOrData)
+        if data == nil then
+            local modData = itemOrData:getModData()
+            data = modData and modData.BurdJournals or nil
+        end
+    elseif type(itemOrData) == "table" then
+        data = itemOrData
+    end
+
+    if data ~= nil and BurdJournals.normalizeTable then
+        data = BurdJournals.normalizeTable(data) or data
+    end
+    if type(data) == "table" and BurdJournals.normalizeJournalData then
+        data = BurdJournals.normalizeJournalData(data) or data
+    end
+
+    return data, item
+end
+
+function BurdJournals.isAutoHiddenSandboxCursedCandidate(item, journalData)
     if not item then
         return false
     end
-    if not (BurdJournals.getSandboxOption and BurdJournals.getSandboxOption("DisguiseCursedJournalsAsBloody") == true) then
+    if not (BurdJournals.isDisguiseCursedJournalsAsBloodyEnabled and BurdJournals.isDisguiseCursedJournalsAsBloodyEnabled()) then
         return false
     end
 
@@ -8030,6 +10866,11 @@ local function isAutoHiddenSandboxCursedCandidate(item, journalData)
         return true
     end
     if journalData.isCursedReward == true then
+        return false
+    end
+    if journalData.isCursedJournal == true
+        and (journalData.isDebugSpawned == true or journalData.debugBackupEnabled == true)
+    then
         return false
     end
 
@@ -8077,7 +10918,7 @@ function BurdJournals.isHiddenCursedJournal(item)
     if not item then return false end
 
     local data = getItemJournalModData(item)
-    if isAutoHiddenSandboxCursedCandidate(item, data) then
+    if BurdJournals.isAutoHiddenSandboxCursedCandidate(item, data) then
         return true
     end
     if not data or data.isHiddenCursedJournal ~= true or data.isCursedReward == true then
@@ -8108,6 +10949,9 @@ function BurdJournals.isLootRewardJournal(itemOrData)
         end
         return false
     end
+    if BurdJournals.isSealedLootRewardJournal and BurdJournals.isSealedLootRewardJournal(item or data) then
+        return true
+    end
     if data.isPlayerCreated == true then
         return false
     end
@@ -8121,6 +10965,9 @@ function BurdJournals.isLootRewardJournal(itemOrData)
         or data.hasBloodyOrigin == true
 
     if item then
+        if BurdJournals.isSealedLootRewardJournal and BurdJournals.isSealedLootRewardJournal(item) then
+            return true
+        end
         if BurdJournals.isWorn and BurdJournals.isWorn(item) then
             isWorn = true
         end
@@ -8138,29 +10985,75 @@ function BurdJournals.isLootRewardJournal(itemOrData)
     return isYuletide or isHiddenCursed or isCursedReward or isWorn or isBloody
 end
 
-local function getNormalizedLootRewardJournalData(itemOrData)
+function BurdJournals.isRegisteredDissolvableLootJournal(itemOrData)
+    if not itemOrData then return false end
+
     local data = nil
     local item = nil
-    local itemOrDataType = type(itemOrData)
-    if (itemOrDataType == "table" or itemOrDataType == "userdata") and itemOrData.getModData then
+    if (type(itemOrData) == "table" or type(itemOrData) == "userdata") and itemOrData.getModData then
         item = itemOrData
         data = getItemJournalModData(itemOrData)
-        if data == nil then
-            local modData = itemOrData:getModData()
-            data = modData and modData.BurdJournals or nil
-        end
     elseif type(itemOrData) == "table" then
         data = itemOrData
     end
 
-    if data ~= nil and BurdJournals.normalizeTable then
-        data = BurdJournals.normalizeTable(data) or data
-    end
-    if type(data) == "table" and BurdJournals.normalizeJournalData then
-        data = BurdJournals.normalizeJournalData(data) or data
+    local sealedEntry = BurdJournals.getSealedJournalType and BurdJournals.getSealedJournalType(item or data) or nil
+    if sealedEntry and sealedEntry.isLoot == true and sealedEntry.canDissolve ~= false then
+        if sealedEntry.hideContentsWhileSealed ~= false then
+            if type(data) ~= "table" then return false end
+            return data.sealedState == BurdJournals.SEALED_STATE_BROKEN
+        end
+        return true
     end
 
-    return data, item
+    local fullType = item and getItemFullType(item) or nil
+    if type(data) == "table" and not fullType then
+        fullType = type(data.fullType) == "string" and data.fullType
+            or type(data.itemFullType) == "string" and data.itemFullType
+            or type(data.sealedTypeKey) == "string" and data.sealedTypeKey
+            or nil
+    end
+    local registered = BurdJournals.getRegisteredJournalType and BurdJournals.getRegisteredJournalType(fullType) or nil
+    return registered and registered.isLoot == true and registered.canDissolve ~= false or false
+end
+
+function BurdJournals.shouldShowDissolveButton(item, player)
+    if not item or not BurdJournals.shouldDissolve then return false end
+    if BurdJournals.isRegisteredDissolvableLootJournal and BurdJournals.isRegisteredDissolvableLootJournal(item) then
+        return true
+    end
+
+    local data = getItemJournalModData(item)
+    local fullType = getItemFullType(item)
+    local isWorn = (data and data.isWorn == true)
+        or (fullType and isWornFullType(fullType))
+        or (BurdJournals.isWorn and BurdJournals.isWorn(item))
+        or false
+    local isBloody = (data and (data.isBloody == true or data.wasFromBloody == true or data.hasBloodyOrigin == true))
+        or (fullType and isBloodyFullType(fullType))
+        or (BurdJournals.isBloody and BurdJournals.isBloody(item))
+        or false
+    local isCursedReward = data and data.isCursedReward == true or false
+    local isYuletide = BurdJournals.getYuletideState
+        and BurdJournals.getYuletideState(item) == BurdJournals.YULETIDE_STATE_UNWRAPPED
+        or false
+
+    return isWorn or isBloody or isCursedReward or isYuletide
+end
+
+function BurdJournals.isLootRewardsRevealed(itemOrData)
+    local data, item = getNormalizedLootRewardJournalData(itemOrData)
+    if type(data) == "table" and data.lootRewardsRevealed == true then
+        return true
+    end
+    if item
+        and BurdJournals.Client
+        and BurdJournals.Client.hasLocallyRevealedLootJournal
+        and BurdJournals.Client.hasLocallyRevealedLootJournal(item, data)
+    then
+        return true
+    end
+    return false
 end
 
 function BurdJournals.shouldHideLootRewardDetails(itemOrData)
@@ -8174,7 +11067,7 @@ function BurdJournals.shouldHideLootRewardDetails(itemOrData)
     if data.isPlayerCreated == true then
         return false
     end
-    if data.lootRewardsRevealed == true then
+    if BurdJournals.isLootRewardsRevealed and BurdJournals.isLootRewardsRevealed(itemOrData) then
         return false
     end
     if hasLootRewardContentForConcealment(data) then
@@ -8226,7 +11119,7 @@ function BurdJournals.isBloody(item)
     end
 
     local data = getItemJournalModData(item)
-    if data and data.isBloody == true then
+    if data and (data.isBloody == true or data.isCursedReward == true) then
         return true
     end
 
@@ -8489,7 +11382,7 @@ end
 
 -- Helper function to count unclaimed entries for a specific player
 -- Checks BOTH legacy claims (claimedSkills) AND per-character claims (claims[characterId].skills)
-local function countUnclaimedEntriesForPlayer(dataTable, legacyClaimedTable, journalData, player, entryType)
+local function countUnclaimedEntriesForPlayer(dataTable, legacyClaimedTable, journalData, player, entryType, includeDisabledExplicitEntries)
     if type(dataTable) ~= "table" then return 0 end
     local count = 0
 
@@ -8506,6 +11399,9 @@ local function countUnclaimedEntriesForPlayer(dataTable, legacyClaimedTable, jou
         elseif entryType == "traits" and BurdJournals.isTraitEnabledForJournal then
             enabledForJournal = BurdJournals.isTraitEnabledForJournal(journalData, key)
         end
+        if (not enabledForJournal) and includeDisabledExplicitEntries == true then
+            enabledForJournal = true
+        end
         if enabledForJournal then
             local isClaimed = false
             if player then
@@ -8520,9 +11416,14 @@ local function countUnclaimedEntriesForPlayer(dataTable, legacyClaimedTable, jou
                 end
             else
                 -- No player context: retain legacy/global fallback behavior.
-                local isClaimedLegacy = legacyClaimedTable and legacyClaimedTable[key]
-                local isClaimedLegacyUnknown = legacyUnknownClaims and legacyUnknownClaims[key]
-                isClaimed = isClaimedLegacy or isClaimedLegacyUnknown
+                if usesGlobalLootClaimTruth(journalData, entryType)
+                    and hasAnyCharacterClaimedEntry(journalData, entryType, key) then
+                    isClaimed = true
+                else
+                    local isClaimedLegacy = legacyClaimedTable and legacyClaimedTable[key]
+                    local isClaimedLegacyUnknown = legacyUnknownClaims and legacyUnknownClaims[key]
+                    isClaimed = isClaimedLegacy or isClaimedLegacyUnknown
+                end
             end
 
             if not isClaimed then
@@ -8554,12 +11455,16 @@ function BurdJournals.shouldDissolve(item, player)
     local isBloody = data.isBloody or isBloodyFromType
     local isYuletide = data.isYuletideJournal == true
         and data.yuletideState == BurdJournals.YULETIDE_STATE_UNWRAPPED
+    local isRegisteredDissolvableLoot = BurdJournals.isRegisteredDissolvableLootJournal
+        and BurdJournals.isRegisteredDissolvableLootJournal(item)
+        or false
 
-    BurdJournals.debugPrint("[BurdJournals] shouldDissolve: fullType=" .. tostring(fullType) .. ", isWorn=" .. tostring(isWorn) .. ", isBloody=" .. tostring(isBloody) .. ", isYuletide=" .. tostring(isYuletide))
+    BurdJournals.debugPrint("[BurdJournals] shouldDissolve: fullType=" .. tostring(fullType) .. ", isWorn=" .. tostring(isWorn) .. ", isBloody=" .. tostring(isBloody) .. ", isYuletide=" .. tostring(isYuletide) .. ", isRegisteredDissolvableLoot=" .. tostring(isRegisteredDissolvableLoot))
 
-    -- Unwrapped Yuletide journals always use loot-style claim/dissolve semantics,
-    -- even if a legacy/debug path drifted isPlayerCreated to true.
-    if data.isPlayerCreated and not isYuletide then
+    -- Unwrapped Yuletide journals and registered add-on loot journals always
+    -- use loot-style claim/dissolve semantics, even if a legacy/debug path
+    -- drifted isPlayerCreated to true.
+    if data.isPlayerCreated and not isYuletide and not isRegisteredDissolvableLoot then
         local isRestored = BurdJournals.isRestoredJournalData(data)
             or data.isWorn == true
             or data.isBloody == true
@@ -8577,9 +11482,10 @@ function BurdJournals.shouldDissolve(item, player)
             return false
         end
     else
-        -- Looted journals and unwrapped Yuletides must be one-shot journal types.
-        if not isWorn and not isBloody and not isYuletide then
-            BurdJournals.debugPrint("[BurdJournals] shouldDissolve: Looted journal but not worn/bloody/yuletide, cannot dissolve")
+        -- Looted journals, unwrapped Yuletides, and registered add-on reward
+        -- journals must be one-shot journal types.
+        if not isWorn and not isBloody and not isYuletide and not isRegisteredDissolvableLoot then
+            BurdJournals.debugPrint("[BurdJournals] shouldDissolve: Looted journal but not worn/bloody/yuletide/registered loot, cannot dissolve")
             return false
         end
 
@@ -8594,25 +11500,19 @@ function BurdJournals.shouldDissolve(item, player)
     end
 
     -- Check if journal has any content (using helper to avoid next())
-    local hasSkills = false
-    if type(data.skills) == "table" then
-        for skillName, _ in pairs(data.skills) do
-            local enabledForJournal = not BurdJournals.isSkillEnabledForJournal or BurdJournals.isSkillEnabledForJournal(data, skillName)
-            if enabledForJournal then
-                hasSkills = true
-                break
-            end
-        end
-    end
+    local hasSkills = tableHasEntries(data.skills)
     local hasTraits = tableHasEntries(data.traits)
     local hasRecipes = tableHasEntries(data.recipes)
     local hasStats = tableHasEntries(data.stats)
-    local hasForgetSlot = data.forgetSlot == true
+    local forgetSlotCount = BurdJournals.getForgetSlotCount and BurdJournals.getForgetSlotCount(data) or 0
+    local hasForgetSlot = forgetSlotCount > 0
         and (not BurdJournals.isForgetSlotEnabledForJournal or BurdJournals.isForgetSlotEnabledForJournal(data))
-    local forgetClaimed = hasForgetSlot
+    local claimedForgetSlots = hasForgetSlot
         and player
-        and BurdJournals.hasCharacterClaimedForgetSlot
-        and BurdJournals.hasCharacterClaimedForgetSlot(data, player)
+        and BurdJournals.getCharacterClaimedForgetSlotCount
+        and BurdJournals.getCharacterClaimedForgetSlotCount(data, player)
+        or 0
+    local forgetClaimed = hasForgetSlot and claimedForgetSlots >= forgetSlotCount
 
     -- Check claims (both legacy and per-character)
     local wasSanitized = data.sanitizedVersion and data.sanitizedVersion > 0
@@ -8638,11 +11538,11 @@ function BurdJournals.shouldDissolve(item, player)
     end
 
     -- Count unclaimed items - checks BOTH legacy AND per-character claims
-    local unclaimedSkills = countUnclaimedEntriesForPlayer(data.skills, data.claimedSkills, data, player, "skills")
-    local unclaimedTraits = countUnclaimedEntriesForPlayer(data.traits, data.claimedTraits, data, player, "traits")
-    local unclaimedRecipes = countUnclaimedEntriesForPlayer(data.recipes, data.claimedRecipes, data, player, "recipes")
-    local unclaimedStats = countUnclaimedEntriesForPlayer(data.stats, data.claimedStats, data, player, "stats")
-    local unclaimedForgetSlot = (hasForgetSlot and not forgetClaimed) and 1 or 0
+    local unclaimedSkills = countUnclaimedEntriesForPlayer(data.skills, data.claimedSkills, data, player, "skills", true)
+    local unclaimedTraits = countUnclaimedEntriesForPlayer(data.traits, data.claimedTraits, data, player, "traits", true)
+    local unclaimedRecipes = countUnclaimedEntriesForPlayer(data.recipes, data.claimedRecipes, data, player, "recipes", true)
+    local unclaimedStats = countUnclaimedEntriesForPlayer(data.stats, data.claimedStats, data, player, "stats", true)
+    local unclaimedForgetSlot = hasForgetSlot and math.max(0, forgetSlotCount - claimedForgetSlots) or 0
 
     BurdJournals.debugPrint("[BurdJournals] shouldDissolve: unclaimedSkills=" .. tostring(unclaimedSkills)
         .. ", unclaimedTraits=" .. tostring(unclaimedTraits)
@@ -8673,12 +11573,14 @@ function BurdJournals.getRemainingRewards(item, player)
     )
     local forget = 0
     if data
-        and data.forgetSlot == true
+        and BurdJournals.getForgetSlotCount
+        and BurdJournals.getForgetSlotCount(data) > 0
         and (not BurdJournals.isForgetSlotEnabledForJournal or BurdJournals.isForgetSlotEnabledForJournal(data))
         and player
-        and BurdJournals.hasCharacterClaimedForgetSlot
-        and not BurdJournals.hasCharacterClaimedForgetSlot(data, player) then
-        forget = 1
+        and BurdJournals.getCharacterClaimedForgetSlotCount then
+        local slotCount = BurdJournals.getForgetSlotCount(data)
+        local claimedCount = BurdJournals.getCharacterClaimedForgetSlotCount(data, player)
+        forget = math.max(0, slotCount - claimedCount)
     end
     return skills + traits + recipes + stats + forget
 end
@@ -8691,9 +11593,10 @@ function BurdJournals.getTotalRewards(item)
     local stats = data and data.stats and BurdJournals.countTable(data.stats) or 0
     local forget = 0
     if data
-        and data.forgetSlot == true
+        and BurdJournals.getForgetSlotCount
+        and BurdJournals.getForgetSlotCount(data) > 0
         and (not BurdJournals.isForgetSlotEnabledForJournal or BurdJournals.isForgetSlotEnabledForJournal(data)) then
-        forget = 1
+        forget = BurdJournals.getForgetSlotCount(data)
     end
     return skills + traits + recipes + stats + forget
 end
@@ -8701,6 +11604,13 @@ end
 function BurdJournals.updateJournalIcon(item)
     if not item then return end
     if not BurdJournals.isAnyJournal(item) then return end
+
+    -- Client-only description sync (BurdJournals.Tooltips is nil on the
+    -- server). This is the event-driven home for item description updates;
+    -- the tooltip render hook itself is strictly read-only.
+    if BurdJournals.Tooltips and BurdJournals.Tooltips.applyItemDescription then
+        BurdJournals.Tooltips.applyItemDescription(item)
+    end
 
     local function resolveIconTexture(iconName)
         if type(iconName) ~= "string" or iconName == "" then
@@ -8735,6 +11645,20 @@ function BurdJournals.updateJournalIcon(item)
 
     local fullType = getItemFullType(item)
     if not fullType then return end
+
+    -- Registered sealed archetypes (e.g. Blessed) swap their inventory texture
+    -- between the sealed and broken icons based on seal state.
+    local sealedIconName = BurdJournals.getSealedJournalIconName
+        and BurdJournals.getSealedJournalIconName(item)
+        or nil
+    if sealedIconName and item.setTexture then
+        local texture = resolveIconTexture(sealedIconName) or resolveScriptTexture()
+        if texture then
+            item:setTexture(texture)
+        end
+        return
+    end
+
     if fullType == BurdJournals.CURSED_ITEM_TYPE then
         if item.setTexture then
             local data = getItemJournalModData(item) or {}
@@ -8833,7 +11757,39 @@ end
 
 function BurdJournals.getJournalData(item)
     if not item then return nil end
-    return getItemJournalModData(item)
+    local journalData = getItemJournalModData(item)
+    if type(journalData) == "table"
+        and (not isClient or not isClient() or (isServer and isServer()))
+        and BurdJournals.hydrateJournalDataFromEntryStore
+    then
+        local projected = {}
+        for key, value in pairs(journalData) do
+            projected[key] = value
+        end
+        if BurdJournals.hydrateJournalDataFromEntryStore(projected, "getJournalData")
+            and BurdJournals.countJournalEntryStoreEntries
+            and BurdJournals.countJournalEntryStoreEntries(projected) > 0 then
+            return projected
+        end
+    end
+    if type(journalData) == "table"
+        and journalData.entryStoreEnabled == true
+        and BurdJournals.countJournalEntryStoreEntries
+        and BurdJournals.countJournalEntryStoreEntries(journalData) <= 0
+        and isClient and isClient()
+        and not (isServer and isServer())
+        and BurdJournals.Client
+        and BurdJournals.Client.getHydratedJournalSnapshot
+    then
+        local snapshot = BurdJournals.Client.getHydratedJournalSnapshot(
+            item,
+            BurdJournals.getJournalIdentityUUID(journalData)
+        )
+        if type(snapshot) == "table" and BurdJournals.countJournalEntryStoreEntries(snapshot) > 0 then
+            return snapshot
+        end
+    end
+    return journalData
 end
 
 local function appendJournalFingerprintToken(tokens, key, value)
@@ -9004,8 +11960,9 @@ local function collectJournalRewardFingerprintSummary(rewardData)
     if rewardData.yuletideGiftRoll ~= nil then
         parts[#parts + 1] = "giftRoll:" .. tostring(math.floor((tonumber(rewardData.yuletideGiftRoll) or 0) + 0.5))
     end
-    if rewardData.forgetSlot == true then
-        parts[#parts + 1] = "forgetSlot:1"
+    local forgetSlotCount = BurdJournals.getForgetSlotCount and BurdJournals.getForgetSlotCount(rewardData) or 0
+    if forgetSlotCount > 0 then
+        parts[#parts + 1] = "forgetSlot:" .. tostring(forgetSlotCount)
     end
 
     if #parts == 0 then
@@ -9090,58 +12047,6 @@ function BurdJournals.buildJournalLookupFingerprint(item, journalData)
     return table.concat(tokens, "|")
 end
 
-local function ensureSpecialJournalLookupData(journal, journalData, createIfMissing)
-    local lookupData = type(journalData) == "table"
-        and journalData
-        or (journal and BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil)
-    if type(lookupData) == "table" then
-        return lookupData
-    end
-    if createIfMissing == false or not (journal and journal.getModData) then
-        return lookupData
-    end
-
-    local fullType = getItemFullType(journal)
-    if fullType ~= BurdJournals.CURSED_ITEM_TYPE and fullType ~= BurdJournals.YULETIDE_ITEM_TYPE then
-        return lookupData
-    end
-
-    local modData = journal:getModData()
-    if type(modData) ~= "table" then
-        return lookupData
-    end
-
-    if type(modData.BurdJournals) ~= "table" then
-        modData.BurdJournals = {}
-    end
-    lookupData = modData.BurdJournals
-    lookupData.fullType = lookupData.fullType or fullType
-
-    if fullType == BurdJournals.CURSED_ITEM_TYPE then
-        if lookupData.isCursedReward ~= true then
-            lookupData.isCursedJournal = true
-        end
-        if type(lookupData.cursedState) ~= "string" or lookupData.cursedState == "" then
-            lookupData.cursedState = "sealed"
-        end
-    elseif fullType == BurdJournals.YULETIDE_ITEM_TYPE then
-        lookupData.isYuletideJournal = true
-        if lookupData.yuletideState ~= "unwrapped" then
-            lookupData.yuletideState = "wrapped"
-        end
-        if BurdJournals.normalizeYuletideWrappedVariant then
-            lookupData.yuletideWrappedVariant = BurdJournals.normalizeYuletideWrappedVariant(lookupData.yuletideWrappedVariant)
-        end
-    end
-    if (type(lookupData.uuid) ~= "string" or lookupData.uuid == "")
-        and BurdJournals.resolveJournalUUIDForRuntime
-    then
-        lookupData.uuid = BurdJournals.resolveJournalUUIDForRuntime(lookupData, journal, true)
-    end
-
-    return lookupData
-end
-
 function BurdJournals.findJournalByLookupFingerprintInContainer(container, fingerprint)
     if not container or type(fingerprint) ~= "string" or fingerprint == "" then
         return nil
@@ -9175,6 +12080,14 @@ function BurdJournals.findJournalByLookupFingerprintInContainer(container, finge
         end
     end
     return nil
+end
+
+-- Fingerprints are only a stale-ID recovery hint inside the requester's own
+-- inventory. World/container interaction must opt into an explicit resolver.
+function BurdJournals.findJournalByLookupFingerprintInPlayerInventory(player, fingerprint)
+    local inventory = player and player.getInventory and player:getInventory() or nil
+    if not inventory then return nil end
+    return BurdJournals.findJournalByLookupFingerprintInContainer(inventory, fingerprint)
 end
 
 function BurdJournals.findJournalByLookupFingerprint(player, fingerprint)
@@ -9260,18 +12173,32 @@ end
 
 function BurdJournals.buildJournalCommandLookupArgs(journal, journalData, createIfMissing)
     local lookupJournal = journal
-    local lookupData = ensureSpecialJournalLookupData(lookupJournal, journalData, createIfMissing)
-    local lookupUUID = lookupData and lookupData.uuid or nil
+    local lookupData = type(journalData) == "table" and journalData or (journal and BurdJournals.getJournalData(journal) or nil)
+    local lookupUUID = BurdJournals.getJournalIdentityUUID(lookupData)
+    local strictMPClient = BurdJournals.clientShouldUseServerAuthority()
+    local allowLocalUUIDCreation = createIfMissing ~= false and not strictMPClient
 
     if type(lookupData) == "table" and BurdJournals.resolveJournalUUIDForRuntime then
-        lookupUUID = BurdJournals.resolveJournalUUIDForRuntime(lookupData, lookupJournal, createIfMissing ~= false)
+        lookupUUID = BurdJournals.resolveJournalUUIDForRuntime(lookupData, lookupJournal, allowLocalUUIDCreation)
             or lookupUUID
+    end
+
+    local shouldIncludeFingerprint = true
+    if type(lookupData) == "table" then
+        local entryCount = BurdJournals.countJournalEntryStoreEntries
+            and BurdJournals.countJournalEntryStoreEntries(lookupData)
+            or 0
+        local fingerprintEntryLimit = math.max(1, tonumber(BurdJournals.FULL_SYNC_ENTRY_LIMIT) or 180)
+        if lookupData.entryStoreEnabled == true or entryCount >= fingerprintEntryLimit then
+            shouldIncludeFingerprint = false
+        end
     end
 
     return {
         journalId = lookupJournal and lookupJournal.getID and lookupJournal:getID() or nil,
         journalUUID = lookupUUID,
-        journalFingerprint = BurdJournals.buildJournalLookupFingerprint(lookupJournal, lookupData),
+        journalFingerprint = shouldIncludeFingerprint and BurdJournals.buildJournalLookupFingerprint(lookupJournal, lookupData) or nil,
+        createIfMissing = createIfMissing ~= false,
     }
 end
 
@@ -9280,21 +12207,54 @@ function BurdJournals.buildJournalCommandPayload(journal, journalData, createIfM
         and BurdJournals.buildJournalCommandLookupArgs(journal, journalData, createIfMissing)
         or {
             journalId = journal and journal.getID and journal:getID() or nil,
-            journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+            journalUUID = BurdJournals.getJournalIdentityUUID and BurdJournals.getJournalIdentityUUID(journalData) or nil,
             journalFingerprint = nil,
         }
 
     local payloadData = type(journalData) == "table" and journalData
         or (journal and BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil)
-    if type(payloadData) == "table" and BurdJournals.normalizeJournalData then
-        payloadData = BurdJournals.normalizeJournalData(payloadData) or payloadData
-    end
+    local payloadEntryCount = type(payloadData) == "table"
+        and BurdJournals.countJournalEntryStoreEntries
+        and BurdJournals.countJournalEntryStoreEntries(payloadData)
+        or 0
+    local payloadEntryLimit = math.max(1, tonumber(BurdJournals.FULL_SYNC_ENTRY_LIMIT) or 180)
+    local shouldSendPlayerPayload = type(payloadData) == "table"
+        and payloadData.isPlayerCreated == true
+        and createIfMissing ~= false
+        and (
+            (journal and journal.__bsjServerProxy == true)
+            or payloadData.isDebugSpawned == true
+            or payloadData.isDebugEdited == true
+            or payloadData.debugBackupEnabled == true
+        )
+    local omitPayloadData = type(payloadData) == "table"
+        and (
+            payloadData.isPlayerCreated == true and not shouldSendPlayerPayload
+            or payloadData.entryStoreEnabled == true and not shouldSendPlayerPayload
+            or payloadEntryCount >= payloadEntryLimit and not shouldSendPlayerPayload
+        )
 
     lookupArgs.itemFullType = journal and journal.getFullType and journal:getFullType()
         or (type(payloadData) == "table" and payloadData.fullType)
         or nil
+    if lookupArgs.itemFullType == "BurdJournals.BlankSurvivalJournal"
+        and journal
+        and BurdJournals.isFilledJournal
+        and BurdJournals.isFilledJournal(journal)
+    then
+        lookupArgs.itemFullType = "BurdJournals.FilledSurvivalJournal"
+    end
 
-    if type(payloadData) == "table" and payloadData.isPlayerCreated ~= true then
+    if omitPayloadData then
+        lookupArgs.journalData = nil
+        return lookupArgs
+    end
+
+    if type(payloadData) == "table" and BurdJournals.normalizeJournalData then
+        payloadData = BurdJournals.normalizeJournalData(payloadData) or payloadData
+    end
+
+    if type(payloadData) == "table" and (payloadData.isPlayerCreated ~= true or shouldSendPlayerPayload) then
         lookupArgs.journalData = payloadData
     else
         lookupArgs.journalData = nil
@@ -9320,9 +12280,52 @@ function BurdJournals.formatText(template, ...)
 
     local formatText = tostring(template)
     local args = {...}
+    local argCount = #args
+    local escapedPercentToken = "\1BSJ_ESCAPED_PERCENT\1"
+
+    local function formatSequentialPercentText(sourceText)
+        if argCount <= 0 then
+            return sourceText
+        end
+
+        local normalized = string.gsub(tostring(sourceText or ""), "%%%%", escapedPercentToken)
+        local argIndex = 0
+        local changed = false
+
+        normalized = string.gsub(normalized, "%%[-+ #0%.%d]*[cdiouxXeEfgGqs]", function(spec)
+            argIndex = argIndex + 1
+            local value = args[argIndex]
+            if value == nil then
+                return spec
+            end
+
+            changed = true
+            local ok, formatted = safePcall(function()
+                return _nativeStringFormat(spec, value)
+            end)
+            if ok and formatted ~= nil then
+                return formatted
+            end
+            return tostring(value)
+        end)
+
+        if not changed then
+            normalized = string.gsub(normalized, "%%[sd]", function(spec)
+                argIndex = argIndex + 1
+                local value = args[argIndex]
+                if value == nil then
+                    return spec
+                end
+                changed = true
+                return tostring(value)
+            end)
+        end
+
+        normalized = string.gsub(normalized, escapedPercentToken, "%%")
+        return normalized
+    end
 
     if string.find(formatText, "%%[1-9]%d*%$[%a]") or string.find(formatText, "%%[1-9]%d*") then
-        local escapedPercentToken = "\1BSJ_ESCAPED_PERCENT\1"
         local normalized = string.gsub(formatText, "%%%%", escapedPercentToken)
         normalized = string.gsub(normalized, "%%(%d+)%$[%a]", function(indexText)
             local index = tonumber(indexText)
@@ -9342,6 +12345,10 @@ function BurdJournals.formatText(template, ...)
         end)
         normalized = string.gsub(normalized, escapedPercentToken, "%%")
         return normalized
+    end
+
+    if argCount > 0 and string.find(formatText, "%%") then
+        return formatSequentialPercentText(formatText)
     end
 
     local ok, result = safePcall(function()
@@ -9403,9 +12410,6 @@ end
 -- Helper function to resolve flavor text from flavorKey
 function BurdJournals.resolveFlavorText(data)
     if type(data) == "table" then
-        if type(data.loreNoteText) == "string" and data.loreNoteText ~= "" then
-            return data.loreNoteText
-        end
         if type(data.flavorText) == "string" and data.flavorText ~= "" then
             return data.flavorText
         end
@@ -9434,6 +12438,24 @@ function BurdJournals.resolveJournalFlavorText(data, fallbackKey)
     return nil
 end
 
+function BurdJournals.getJournalDisplayAuthor(journalData, fallback)
+    if type(journalData) == "table" then
+        local author = journalData.author
+        if type(author) == "string" and author ~= "" then
+            return author
+        end
+        local ownerCharacterName = journalData.ownerCharacterName
+        if type(ownerCharacterName) == "string" and ownerCharacterName ~= "" then
+            return ownerCharacterName
+        end
+        local ownerUsername = journalData.ownerUsername
+        if type(ownerUsername) == "string" and ownerUsername ~= "" then
+            return ownerUsername
+        end
+    end
+    return fallback
+end
+
 function BurdJournals.computeLocalizedName(item)
     if not item then return nil end
 
@@ -9444,20 +12466,20 @@ function BurdJournals.computeLocalizedName(item)
     local isBloodyFromType = string.find(fullTypeLower, "_bloody", 1, true) ~= nil
     local isUnleashedCursedReward = fullType == BurdJournals.CURSED_ITEM_TYPE
         and data.isCursedReward == true
+    local isHiddenCursedState = BurdJournals.isHiddenCursedJournal and BurdJournals.isHiddenCursedJournal(item)
     local isCursedItem = BurdJournals.isCursedJournalItem and BurdJournals.isCursedJournalItem(item)
     if isCursedItem then
-        return BurdJournals.safeGetText("UI_BurdJournals_CursedJournal", "Cursed Survival Journal")
-    end
-    if BurdJournals.isHiddenCursedJournal and BurdJournals.isHiddenCursedJournal(item) then
-        local filledName = BurdJournals.safeGetText("UI_BurdJournals_FilledJournal", "Filled Survival Journal")
-        local stateBloody = BurdJournals.safeGetText("UI_BurdJournals_StateBloody", "Bloody")
-        return filledName .. " (" .. stateBloody .. ")"
+        return BurdJournals.safeGetText("UI_BurdJournals_CursedJournal", "Cursed Journal")
     end
     if BurdJournals.isYuletideJournalItem and BurdJournals.isYuletideJournalItem(item) then
         if BurdJournals.getYuletideState(item) == BurdJournals.YULETIDE_STATE_UNWRAPPED then
             return BurdJournals.safeGetText("UI_BurdJournals_YuletideJournalUnwrapped", "Yuletide Journal")
         end
         return BurdJournals.safeGetText("UI_BurdJournals_YuletideJournalWrapped", "Yuletide Journal (Wrapped)")
+    end
+    local sealedEntry = BurdJournals.getSealedJournalType and BurdJournals.getSealedJournalType(item) or nil
+    if sealedEntry and sealedEntry.displayNameKey then
+        return BurdJournals.safeGetText(sealedEntry.displayNameKey, sealedEntry.displayName or "Sealed Journal")
     end
 
     -- Prefer explicit modData flags, but fall back to item fullType for robustness.
@@ -9467,7 +12489,8 @@ function BurdJournals.computeLocalizedName(item)
         or data.hasBloodyOrigin == true
         or isBloodyFromType
         or isUnleashedCursedReward
-    local author = data.author
+        or isHiddenCursedState
+    local author = BurdJournals.getJournalDisplayAuthor(data)
     local professionName = BurdJournals.resolveProfessionName(data)  -- Use resolver
     local isPlayerCreated = data.isPlayerCreated
 
@@ -9480,15 +12503,24 @@ function BurdJournals.computeLocalizedName(item)
 
     local baseName
     if BurdJournals.isBlankJournal(item) then
-        baseName = BurdJournals.safeGetText("UI_BurdJournals_BlankJournal", "Blank Survival Journal")
-        if stateSuffix ~= "" then
-            baseName = baseName .. " (" .. stateSuffix .. ")"
+        if isBloodyState then
+            baseName = BurdJournals.safeGetText("ItemName_BurdJournals.BlankSurvivalJournal_Bloody", "Bloody Blank Journal")
+        elseif isWornState then
+            baseName = BurdJournals.safeGetText("ItemName_BurdJournals.BlankSurvivalJournal_Worn", "Worn Blank Journal")
+        else
+            baseName = BurdJournals.safeGetText("UI_BurdJournals_BlankJournal", "Blank Survival Journal")
         end
-    elseif BurdJournals.isFilledJournal(item) or isUnleashedCursedReward then
-        baseName = BurdJournals.safeGetText("UI_BurdJournals_FilledJournal", "Filled Survival Journal")
+    elseif BurdJournals.isFilledJournal(item) or isUnleashedCursedReward or isHiddenCursedState then
+        if isBloodyState then
+            baseName = BurdJournals.safeGetText("UI_BurdJournals_BloodyJournal", "Bloody Journal")
+        elseif isWornState then
+            baseName = BurdJournals.safeGetText("UI_BurdJournals_WornJournal", "Worn Journal")
+        else
+            baseName = BurdJournals.safeGetText("UI_BurdJournals_FilledJournal", "Filled Survival Journal")
+        end
         local suffixParts = {}
 
-        if stateSuffix ~= "" then
+        if stateSuffix ~= "" and not isBloodyState and not isWornState then
             table.insert(suffixParts, stateSuffix)
         end
 
@@ -9565,7 +12597,9 @@ function BurdJournals.updateJournalName(item, forceUpdate)
         or data.wasFromWorn
         or data.isCursedJournal
         or data.isCursedReward
+        or data.isHiddenCursedJournal
         or data.isYuletideJournal
+        or (BurdJournals.getSealedJournalType and BurdJournals.getSealedJournalType(item) ~= nil)
         or isWornFromType
         or isBloodyFromType
     )
@@ -9581,9 +12615,19 @@ function BurdJournals.updateJournalName(item, forceUpdate)
     local baseName = BurdJournals.computeLocalizedName(item)
 
     if baseName and item.setName then
-        item:setName(baseName)
-        if item.setCustomName then
-            item:setCustomName(true)
+        -- Skip the Java setters when nothing changes: forced presentation
+        -- passes run on every inventory refresh, and same-value setName/
+        -- setCustomName churn is wasted per-frame work in MP.
+        local alreadyNamed = item.getName and item:getName() == baseName or false
+        local alreadyCustom = true
+        if item.isCustomName then
+            alreadyCustom = item:isCustomName() == true
+        end
+        if not (alreadyNamed and alreadyCustom) then
+            item:setName(baseName)
+            if item.setCustomName then
+                item:setCustomName(true)
+            end
         end
 
         BurdJournals._localizedItems[itemId] = true
@@ -9592,10 +12636,7 @@ end
 
 function BurdJournals.getAuthorFromJournal(item)
     local data = BurdJournals.getJournalData(item)
-    if data and data.author then
-        return data.author
-    end
-    return "Unknown"
+    return BurdJournals.getJournalDisplayAuthor(data, "Unknown")
 end
 
 function BurdJournals.countTable(tbl)
@@ -10186,15 +13227,23 @@ end
 
 BurdJournals.DR_PLAYER_CACHE_MAX_JOURNALS = 24
 BurdJournals.DR_PLAYER_CACHE_MAX_ALIASES = 96
+-- The shared (global ModData) DR cache must be bounded too: unbounded, it kept
+-- an entry + aliases for every journal any player ever read, growing with server
+-- uptime and inflating every global ModData save.
+BurdJournals.DR_GLOBAL_CACHE_MAX_JOURNALS = 512
+BurdJournals.DR_GLOBAL_CACHE_MAX_ALIASES = 2048
 BurdJournals.PLAYER_BASELINE_MAX_SKILLS = 128
 BurdJournals.PLAYER_BASELINE_MAX_TRAITS = 512
 BurdJournals.PLAYER_BASELINE_MAX_RECIPES = 2048
-BurdJournals.BASELINE_SNAPSHOT_MAX_HOURS = 1
+BurdJournals.BASELINE_SNAPSHOT_MAX_HOURS = 0.5
 BurdJournals.BASELINE_SNAPSHOT_STORE_MODDATA_KEY = "BurdJournals_BaselineSnapshotsV1"
 BurdJournals.BASELINE_SNAPSHOT_SCHEMA_VERSION = 1
 BurdJournals.BASELINE_SNAPSHOT_RESTORE_PROTECTED = "protected"
 BurdJournals.BASELINE_SNAPSHOT_RESTORE_UNLOCKED = "unlocked"
-BurdJournals.BASELINE_SNAPSHOT_DEFAULT_PER_STEAM_LIMIT = 50
+-- Each snapshot carries full skill/trait/recipe baselines (recipeBaseline scales
+-- with installed mods), so this limit directly drives global ModData save size
+-- and player-history ModData weight. Keep it small by default.
+BurdJournals.BASELINE_SNAPSHOT_DEFAULT_PER_STEAM_LIMIT = 5
 BurdJournals.RUNTIME_SHARD_COUNT = 16
 BurdJournals.RUNTIME_MAX_CHARACTERS_PER_JOURNAL = 128
 BurdJournals.RUNTIME_MAX_CLAIMS_PER_BUCKET = 1024
@@ -10202,10 +13251,23 @@ BurdJournals.RUNTIME_MAX_SKILL_READ_KEYS = 256
 BurdJournals.RUNTIME_MAX_SESSION_ID_LEN = 64
 BurdJournals.RUNTIME_TRANSMIT_DEBOUNCE_MS = 500
 BurdJournals.FULL_SYNC_SOFT_LIMIT_BYTES = 48000
+BurdJournals.FULL_SYNC_ENTRY_LIMIT = 180
+BurdJournals.MP_PLAYER_JOURNAL_INLINE_ENTRY_LIMIT = 48
+BurdJournals.MP_SLOW_RECORD_LOG_MS = 250
+BurdJournals.MP_SLOW_CONTAINER_UPDATE_LOG_MS = 100
 BurdJournals.RUNTIME_MODDATA_PREFIX = "BurdJournals_JournalRuntime_"
 BurdJournals.RUNTIME_SCHEMA_VERSION = 1
+BurdJournals.ENTRY_STORE_MODDATA_PREFIX = "BurdJournals_JournalEntries_"
+BurdJournals.ENTRY_STORE_JOURNAL_MODDATA_PREFIX = "BurdJournals_JournalEntry_"
+BurdJournals.ENTRY_STORE_SCHEMA_VERSION = 1
+BurdJournals.ENTRY_STORE_BUCKETS = {"skills", "traits", "stats", "recipes"}
+BurdJournals.ENTRY_SYNC_CHUNK_SIZE = 128
+BurdJournals.ENTRY_SYNC_CHUNK_DELAY_MS = 100
+BurdJournals.ENTRY_STORE_TRANSMIT_TO_CLIENTS = false
+BurdJournals.RECORD_ALL_MP_BATCH_SIZE = 15
+BurdJournals.RECORD_ALL_MP_MIN_BATCH_SECONDS = 1.0
 
-local function getRuntimeNowMs()
+function BurdJournals._getRuntimeNowMs()
     if getTimestampMs then
         local ts = tonumber(getTimestampMs())
         if ts and ts > 0 then
@@ -10221,13 +13283,26 @@ function BurdJournals.isStrictMPContext()
     return (client and not server) or (server and not client)
 end
 
+function BurdJournals.getJournalFullSyncEntryLimit(journalData)
+    local fullLimit = math.max(1, tonumber(BurdJournals.FULL_SYNC_ENTRY_LIMIT) or 180)
+    if BurdJournals.isStrictMPServerContext
+        and BurdJournals.isStrictMPServerContext()
+        and type(journalData) == "table"
+        and journalData.isPlayerCreated == true
+    then
+        local playerJournalLimit = math.max(1, tonumber(BurdJournals.MP_PLAYER_JOURNAL_INLINE_ENTRY_LIMIT) or 48)
+        return math.min(fullLimit, playerJournalLimit)
+    end
+    return fullLimit
+end
+
 function BurdJournals.isStrictMPServerContext()
     local client = isClient and isClient() or false
     local server = isServer and isServer() or false
     return server and not client
 end
 
-local function countTableEntriesSafe(tbl)
+function BurdJournals._countTableEntriesSafe(tbl)
     if type(tbl) ~= "table" then
         return 0
     end
@@ -10238,7 +13313,658 @@ local function countTableEntriesSafe(tbl)
     return count
 end
 
-local function collectSortedStringKeys(tbl)
+function BurdJournals._cloneEntryStoreValue(value, depth)
+    if type(value) ~= "table" then
+        return value
+    end
+    depth = (tonumber(depth) or 0) + 1
+    if depth > 8 then
+        return nil
+    end
+    local out = {}
+    for key, entryValue in pairs(value) do
+        out[key] = BurdJournals._cloneEntryStoreValue(entryValue, depth)
+    end
+    return out
+end
+
+-- Data-shape hardening: known fields per journal bucket. Third-party mods that
+-- write extra keys into a skill/stat/trait/recipe entry would otherwise get those
+-- keys deep-copied into every entry-store shard, file backup, and network payload,
+-- inflating traffic on mod-heavy (200+) servers. We keep only recognized fields.
+-- Map value = expected Lua type ("number"/"string"); use "any" to keep as-is.
+BurdJournals.ENTRY_BUCKET_FIELD_WHITELIST = {
+    skills = { xp = "number", level = "number", rawXP = "number", vhsExcludedXP = "number", vhsMediaLines = "any", mediaLines = "any" },
+    stats = { value = "any", timestamp = "number", recordedBy = "string" },
+}
+
+-- Return a slimmed, whitelisted copy of a single bucket entry value. Booleans
+-- (traits/recipes membership) collapse to `true`; unknown buckets fall back to the
+-- generic depth-limited clone so behavior is unchanged for anything unrecognized.
+function BurdJournals.normalizeEntryBucketValue(bucketName, value)
+    if bucketName == "traits" or bucketName == "recipes" then
+        if value == nil or value == false then
+            return nil
+        end
+        return true
+    end
+
+    local whitelist = BurdJournals.ENTRY_BUCKET_FIELD_WHITELIST[bucketName]
+    if not whitelist or type(value) ~= "table" then
+        return BurdJournals._cloneEntryStoreValue(value, 0)
+    end
+
+    local out = {}
+    for field, expectedType in pairs(whitelist) do
+        local fieldVal = value[field]
+        if fieldVal ~= nil then
+            if expectedType == "number" then
+                local n = tonumber(fieldVal)
+                if n ~= nil then out[field] = n end
+            elseif expectedType == "string" then
+                if type(fieldVal) == "string" then out[field] = fieldVal end
+            else
+                out[field] = BurdJournals._cloneEntryStoreValue(fieldVal, 0)
+            end
+        end
+    end
+    return out
+end
+
+function BurdJournals.countJournalEntryStoreEntries(journalData)
+    if type(journalData) ~= "table" then
+        return 0
+    end
+    local count = 0
+    for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+        count = count + BurdJournals._countTableEntriesSafe(journalData[bucketName])
+    end
+    return count
+end
+
+function BurdJournals.shouldAutoOffloadJournalEntriesForSource(journalData, sourceTag)
+    if type(journalData) ~= "table" then
+        return false
+    end
+    if journalData.entryStoreEnabled == true then
+        return true
+    end
+
+    local source = tostring(sourceTag or "")
+    if source == "syncJournalData" or source == "requestJournalEntryChunk" or source == "normalizeJournalData" then
+        return false
+    end
+
+    return true
+end
+
+function BurdJournals._buildEntryStoreCounts(entry)
+    local counts = {}
+    for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+        counts[bucketName] = BurdJournals._countTableEntriesSafe(type(entry) == "table" and entry[bucketName] or nil)
+    end
+    return counts
+end
+
+function BurdJournals.refreshJournalEntryStoreCounts(journalData, sourceTag)
+    if type(journalData) ~= "table" then
+        return 0, nil, nil, nil, nil
+    end
+    local entry, shardKey, uuid = BurdJournals.getOrCreateJournalEntryStoreEntryForData(journalData, false, nil, sourceTag)
+    if type(entry) ~= "table" then
+        return 0, nil, nil, shardKey, uuid
+    end
+    local counts = BurdJournals._buildEntryStoreCounts(entry)
+    local total = 0
+    for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+        total = total + math.max(0, tonumber(counts[bucketName]) or 0)
+    end
+    journalData.entryStoreEnabled = true
+    journalData.entryStoreVersion = BurdJournals.ENTRY_STORE_SCHEMA_VERSION
+    journalData.entryStoreUUID = uuid or journalData.entryStoreUUID or journalData.uuid
+    journalData.entryStoreShardKey = shardKey or journalData.entryStoreShardKey
+    journalData.entryStoreEntryCounts = counts
+    journalData.entryStoreUpdatedAt = entry.updatedAt
+    return total, counts, entry, shardKey, uuid
+end
+
+function BurdJournals._getJournalEntryStoreLegacyShardKeyForUUID(uuid)
+    local s = tostring(uuid or "")
+    local hash = 0
+    for i = 1, string.len(s) do
+        hash = (hash * 131 + string.byte(s, i)) % 2147483647
+    end
+    local shardCount = math.max(1, tonumber(BurdJournals.RUNTIME_SHARD_COUNT) or 16)
+    local idx = hash % shardCount
+    return BurdJournals.formatText("%s%02X", BurdJournals.ENTRY_STORE_MODDATA_PREFIX, idx)
+end
+
+function BurdJournals.getJournalEntryStoreShardKeyForUUID(uuid)
+    local s = tostring(uuid or "")
+    if s == "" then
+        return nil
+    end
+    local cleaned = string.gsub(s, "[^%w_%-]", "_")
+    if string.len(cleaned) > 64 then
+        local hash = 0
+        for i = 1, string.len(cleaned) do
+            hash = (hash * 131 + string.byte(cleaned, i)) % 2147483647
+        end
+        cleaned = string.sub(cleaned, 1, 48) .. "_" .. string.format("%08X", hash)
+    end
+    return tostring(BurdJournals.ENTRY_STORE_JOURNAL_MODDATA_PREFIX) .. cleaned
+end
+
+function BurdJournals._getJournalEntryStoreShard(shardKey, createIfMissing)
+    if not shardKey or not ModData then
+        return nil
+    end
+    local shard = nil
+    if createIfMissing and ModData.getOrCreate then
+        shard = ModData.getOrCreate(shardKey)
+    elseif ModData.get then
+        shard = ModData.get(shardKey)
+    elseif ModData.getOrCreate then
+        shard = ModData.getOrCreate(shardKey)
+    end
+    if type(shard) ~= "table" then
+        return nil
+    end
+    if type(shard.journals) ~= "table" then
+        if not createIfMissing then
+            return nil
+        end
+        shard.journals = {}
+    end
+    shard.version = tonumber(shard.version) or BurdJournals.ENTRY_STORE_SCHEMA_VERSION
+    return shard
+end
+
+function BurdJournals.persistJournalEntryStoreShard(shardKey, shard)
+    if not (shardKey and type(shard) == "table" and ModData and ModData.add) then
+        return false
+    end
+    ModData.add(shardKey, shard)
+    return true
+end
+
+function BurdJournals.purgeJournalEntryStoreUUID(uuid, explicitShardKey)
+    if type(uuid) ~= "string" or uuid == "" then
+        return 0
+    end
+
+    local shardKeys = {}
+    local seen = {}
+    local function addShardKey(shardKey)
+        if type(shardKey) == "string" and shardKey ~= "" and not seen[shardKey] then
+            seen[shardKey] = true
+            shardKeys[#shardKeys + 1] = shardKey
+        end
+    end
+    addShardKey(BurdJournals.getJournalEntryStoreShardKeyForUUID(uuid))
+    addShardKey(explicitShardKey)
+    addShardKey(BurdJournals._getJournalEntryStoreLegacyShardKeyForUUID(uuid))
+
+    local removed = 0
+    for _, shardKey in ipairs(shardKeys) do
+        local shard = BurdJournals._getJournalEntryStoreShard(shardKey, false)
+        if type(shard) == "table" and type(shard.journals) == "table" and shard.journals[uuid] ~= nil then
+            shard.journals[uuid] = nil
+            shard.updatedAt = BurdJournals._getRuntimeNowMs()
+            BurdJournals.persistJournalEntryStoreShard(shardKey, shard)
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+function BurdJournals._getJournalEntryStoreEntryFromShardKey(uuid, shardKey)
+    if type(uuid) ~= "string" or uuid == "" or type(shardKey) ~= "string" or shardKey == "" then
+        return nil, shardKey
+    end
+    local legacyShard = BurdJournals._getJournalEntryStoreShard(shardKey, false)
+    local entry = type(legacyShard) == "table" and type(legacyShard.journals) == "table" and legacyShard.journals[uuid] or nil
+    if type(entry) == "table" then
+        return entry, shardKey
+    end
+    return nil, shardKey
+end
+
+function BurdJournals._getLegacyJournalEntryStoreEntry(uuid, explicitShardKey)
+    local explicitEntry, explicitKey = BurdJournals._getJournalEntryStoreEntryFromShardKey(uuid, explicitShardKey)
+    if type(explicitEntry) == "table" then
+        return explicitEntry, explicitKey
+    end
+
+    local legacyShardKey = BurdJournals._getJournalEntryStoreLegacyShardKeyForUUID(uuid)
+    if explicitKey == legacyShardKey then
+        return nil, legacyShardKey
+    end
+    local legacyEntry = BurdJournals._getJournalEntryStoreEntryFromShardKey(uuid, legacyShardKey)
+    if type(legacyEntry) == "table" then
+        return legacyEntry, legacyShardKey
+    end
+    return nil, legacyShardKey
+end
+
+function BurdJournals._getExistingJournalEntryStoreEntry(uuid, explicitShardKey)
+    if type(uuid) ~= "string" or uuid == "" then
+        return nil, nil, nil
+    end
+    local shardKey = BurdJournals.getJournalEntryStoreShardKeyForUUID(uuid)
+    local shard = BurdJournals._getJournalEntryStoreShard(shardKey, false)
+    local entry = type(shard) == "table" and type(shard.journals) == "table" and shard.journals[uuid] or nil
+    if type(entry) == "table" then
+        return entry, shardKey, shard
+    end
+    local legacyEntry, legacyShardKey = BurdJournals._getLegacyJournalEntryStoreEntry(uuid, explicitShardKey)
+    if type(legacyEntry) == "table" then
+        return legacyEntry, legacyShardKey, BurdJournals._getJournalEntryStoreShard(legacyShardKey, false)
+    end
+    return nil, shardKey, shard
+end
+
+function BurdJournals.resolveJournalEntryStoreUUID(journalData, repairIdentity)
+    if type(journalData) ~= "table" then
+        return nil
+    end
+    local preferred = BurdJournals.getJournalIdentityUUID(journalData)
+    local itemUUID = type(journalData.uuid) == "string" and journalData.uuid ~= "" and journalData.uuid or nil
+    local storeUUID = type(journalData.entryStoreUUID) == "string" and journalData.entryStoreUUID ~= "" and journalData.entryStoreUUID or nil
+    local alternate = preferred == itemUUID and storeUUID or itemUUID
+
+    -- Conflicting fields are a legacy/desync recovery boundary. Inspect both
+    -- authoritative stores before converging so a populated store is never
+    -- orphaned merely because the other field happened to win ordering.
+    if preferred and alternate and preferred ~= alternate
+        and BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()
+    then
+        local preferredEntry, preferredKey, preferredShard = BurdJournals._getExistingJournalEntryStoreEntry(preferred, journalData.entryStoreShardKey)
+        local alternateEntry, alternateKey, alternateShard = BurdJournals._getExistingJournalEntryStoreEntry(alternate, journalData.entryStoreShardKey)
+        if type(alternateEntry) == "table" and type(preferredEntry) ~= "table" then
+            preferred, alternate = alternate, preferred
+            preferredEntry, alternateEntry = alternateEntry, preferredEntry
+            preferredKey, alternateKey = alternateKey, preferredKey
+            preferredShard, alternateShard = alternateShard, preferredShard
+        end
+        if type(preferredEntry) == "table" and type(alternateEntry) == "table" then
+            local merged = false
+            for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+                if type(preferredEntry[bucketName]) ~= "table" then
+                    preferredEntry[bucketName] = {}
+                end
+                local alternateBucket = alternateEntry[bucketName]
+                if type(alternateBucket) == "table" then
+                    for key, value in pairs(alternateBucket) do
+                        if preferredEntry[bucketName][key] == nil then
+                            preferredEntry[bucketName][key] = BurdJournals._cloneEntryStoreValue(value, 0)
+                            merged = true
+                        end
+                    end
+                end
+            end
+            if merged and type(preferredShard) == "table" then
+                preferredEntry.updatedAt = math.max(tonumber(preferredEntry.updatedAt) or 0, tonumber(alternateEntry.updatedAt) or 0)
+                preferredShard.updatedAt = BurdJournals._getRuntimeNowMs()
+                BurdJournals.persistJournalEntryStoreShard(preferredKey, preferredShard)
+            end
+        end
+    end
+
+    if repairIdentity == true and type(preferred) == "string" and preferred ~= "" then
+        journalData.uuid = preferred
+        if journalData.entryStoreEnabled == true or storeUUID ~= nil then
+            journalData.entryStoreUUID = preferred
+            journalData.entryStoreShardKey = BurdJournals.getJournalEntryStoreShardKeyForUUID(preferred)
+        end
+    end
+    return preferred
+end
+
+function BurdJournals.getOrCreateJournalEntryStoreEntryForData(journalData, createIfMissing, journal, sourceTag)
+    if type(journalData) ~= "table" then
+        return nil, nil, nil
+    end
+    local shouldCreate = createIfMissing ~= false
+    if shouldCreate and not (BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()) then
+        return nil, nil, nil
+    end
+
+    local uuid = BurdJournals.resolveJournalEntryStoreUUID(journalData, shouldCreate)
+    if (type(uuid) ~= "string" or uuid == "") and shouldCreate and BurdJournals.resolveJournalUUIDForRuntime then
+        uuid = BurdJournals.resolveJournalUUIDForRuntime(journalData, journal, true)
+    end
+    if type(uuid) ~= "string" or uuid == "" then
+        return nil, nil, nil
+    end
+
+    local shardKey = BurdJournals.getJournalEntryStoreShardKeyForUUID(uuid)
+    local shard = BurdJournals._getJournalEntryStoreShard(shardKey, shouldCreate)
+    if type(shard) ~= "table" then
+        if not shouldCreate then
+            local legacyEntry, legacyShardKey = BurdJournals._getLegacyJournalEntryStoreEntry(uuid, journalData.entryStoreShardKey)
+            if type(legacyEntry) == "table" then
+                return legacyEntry, legacyShardKey, uuid
+            end
+        end
+        return nil, shardKey, uuid
+    end
+
+    local entry = shard.journals[uuid]
+    if type(entry) ~= "table" then
+        local legacyEntry = nil
+        if shouldCreate then
+            legacyEntry = select(1, BurdJournals._getLegacyJournalEntryStoreEntry(uuid, journalData.entryStoreShardKey))
+        end
+        if type(legacyEntry) == "table" then
+            entry = legacyEntry
+            shard.journals[uuid] = entry
+            BurdJournals.persistJournalEntryStoreShard(shardKey, shard)
+        end
+    end
+    if type(entry) ~= "table" then
+        if not shouldCreate then
+            local legacyEntry, legacyShardKey = BurdJournals._getLegacyJournalEntryStoreEntry(uuid, journalData.entryStoreShardKey)
+            if type(legacyEntry) == "table" then
+                return legacyEntry, legacyShardKey, uuid
+            end
+            return nil, shardKey, uuid
+        end
+        entry = {
+            version = BurdJournals.ENTRY_STORE_SCHEMA_VERSION,
+            skills = {},
+            traits = {},
+            stats = {},
+            recipes = {},
+            updatedAt = BurdJournals._getRuntimeNowMs(),
+        }
+        shard.journals[uuid] = entry
+        BurdJournals.persistJournalEntryStoreShard(shardKey, shard)
+    end
+    entry.version = tonumber(entry.version) or BurdJournals.ENTRY_STORE_SCHEMA_VERSION
+    if sourceTag then
+        BurdJournals.debugPrint("[BurdJournals] Entry store resolved: uuid=" .. tostring(uuid)
+            .. " source=" .. tostring(sourceTag))
+    end
+    return entry, shardKey, uuid
+end
+
+function BurdJournals.hydrateJournalDataFromEntryStore(journalData, sourceTag)
+    if type(journalData) ~= "table" then
+        return false
+    end
+    if journalData.entryStoreEnabled ~= true and type(journalData.entryStoreUUID) ~= "string" then
+        return false
+    end
+
+    local entry = BurdJournals.getOrCreateJournalEntryStoreEntryForData(journalData, false, nil, sourceTag)
+    if type(entry) ~= "table" then
+        return false
+    end
+
+    local changed = false
+    for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+        local sourceBucket = entry[bucketName]
+        if type(sourceBucket) == "table" then
+            local targetBucket = type(journalData[bucketName]) == "table" and journalData[bucketName] or {}
+            for key, value in pairs(sourceBucket) do
+                if targetBucket[key] == nil then
+                    targetBucket[key] = value
+                    changed = true
+                elseif bucketName == "skills"
+                    and type(targetBucket[key]) == "table"
+                    and type(value) == "table"
+                    and tonumber(targetBucket[key].xp) ~= nil
+                    and tonumber(value.xp) ~= nil
+                    and tonumber(value.xp) > tonumber(targetBucket[key].xp)
+                then
+                    -- Skills only: a stale lower-XP resident copy must not mask
+                    -- the richer same-UUID store value (value-staleness guard).
+                    targetBucket[key] = value
+                    changed = true
+                end
+            end
+            journalData[bucketName] = targetBucket
+        end
+    end
+    return changed
+end
+
+BurdJournals._entryStoreShardLastTransmitAt = BurdJournals._entryStoreShardLastTransmitAt or {}
+BurdJournals._entryStoreShardPendingTransmit = BurdJournals._entryStoreShardPendingTransmit or {}
+
+function BurdJournals.flushPendingEntryStoreShardTransmits(force)
+    -- Persist any shard writes that were deferred during a batch, but only once
+    -- the batch is no longer active. This is the safety net that covers the async
+    -- batch processor (which manages batch-quiet depth directly and may not call
+    -- endBatchQuiet), guaranteeing deferred shards reach disk within a tick or two.
+    if BurdJournals.flushDeferredEntryStoreDirtyShards
+        and not (BurdJournals.Server and BurdJournals.Server.shouldDeferBatchTransmit and BurdJournals.Server.shouldDeferBatchTransmit()) then
+        BurdJournals.flushDeferredEntryStoreDirtyShards()
+    end
+    if not (ModData and ModData.transmit) then
+        return
+    end
+    local now = BurdJournals._getRuntimeNowMs()
+    local debounceMs = math.max(0, tonumber(BurdJournals.RUNTIME_TRANSMIT_DEBOUNCE_MS) or 500)
+    if BurdJournals.ENTRY_STORE_TRANSMIT_TO_CLIENTS ~= true then
+        for shardKey, pendingAt in pairs(BurdJournals._entryStoreShardPendingTransmit) do
+            local lastAt = tonumber(BurdJournals._entryStoreShardLastTransmitAt[shardKey]) or 0
+            if force or ((now - lastAt) >= debounceMs and (now - tonumber(pendingAt or 0)) >= debounceMs) then
+                BurdJournals._entryStoreShardLastTransmitAt[shardKey] = now
+                BurdJournals._entryStoreShardPendingTransmit[shardKey] = nil
+                BurdJournals.debugPrint("[BurdJournals] Entry store shard persisted without client transmit: " .. tostring(shardKey))
+            end
+        end
+        return
+    end
+    for shardKey, pendingAt in pairs(BurdJournals._entryStoreShardPendingTransmit) do
+        local lastAt = tonumber(BurdJournals._entryStoreShardLastTransmitAt[shardKey]) or 0
+        if force or ((now - lastAt) >= debounceMs and (now - tonumber(pendingAt or 0)) >= debounceMs) then
+            ModData.transmit(shardKey)
+            BurdJournals._entryStoreShardLastTransmitAt[shardKey] = now
+            BurdJournals._entryStoreShardPendingTransmit[shardKey] = nil
+            BurdJournals.debugPrint("[BurdJournals] Entry store shard transmit: " .. tostring(shardKey))
+        end
+    end
+end
+
+-- When dirtyUUIDs is a table, only the listed journal UUIDs get a file backup
+-- rewrite (deep copy + JSON encode + sync disk write). When nil, every journal
+-- in the shard is backed up (legacy behavior for whole-shard dirties).
+local function persistEntryStoreShardNow(shardKey, sourceTag, dirtyUUIDs)
+    local shard = BurdJournals._getJournalEntryStoreShard(shardKey, false)
+    if type(shard) ~= "table"
+        or BurdJournals.persistJournalEntryStoreShard(shardKey, shard) ~= true
+    then
+        return false
+    end
+    if type(shard) == "table" then
+        if BurdJournals.Server and BurdJournals.Server.writeJournalEntryFileBackup and type(shard.journals) == "table" then
+            for uuid, entry in pairs(shard.journals) do
+                if dirtyUUIDs == nil or dirtyUUIDs[tostring(uuid)] then
+                    -- Backups are recovery-only; queue them for the server tick
+                    -- (one JSON write per tick) instead of blocking this path.
+                    if BurdJournals.Server.queueJournalEntryFileBackup then
+                        BurdJournals.Server.queueJournalEntryFileBackup(uuid, shardKey, sourceTag)
+                    else
+                        BurdJournals.Server.writeJournalEntryFileBackup(uuid, entry, sourceTag)
+                    end
+                end
+            end
+        end
+    end
+    return true
+end
+
+-- Flush shard persistence + per-journal file backups that were deferred during a
+-- quiet batch. Called once at the end of the batch instead of once per entry.
+-- Only the journal UUIDs that were actually touched get file backups rewritten.
+function BurdJournals.flushDeferredEntryStoreDirtyShards()
+    local pending = BurdJournals._entryStorePendingDirtyShards
+    if type(pending) ~= "table" or not BurdJournals.hasAnyEntries(pending) then
+        BurdJournals._entryStorePendingDirtyShards = nil
+        return false
+    end
+    BurdJournals._entryStorePendingDirtyShards = nil
+    local failed = nil
+    for shardKey, dirtyInfo in pairs(pending) do
+        local dirtyUUIDs = type(dirtyInfo) == "table" and dirtyInfo or nil
+        if persistEntryStoreShardNow(shardKey, "flushDeferredEntryStoreDirtyShards", dirtyUUIDs) ~= true then
+            failed = failed or {}
+            failed[shardKey] = dirtyInfo
+        end
+    end
+    if failed then
+        BurdJournals._entryStorePendingDirtyShards = failed
+        return false
+    end
+    return true
+end
+
+function BurdJournals.markEntryStoreShardDirty(shardKey, forceTransmit, dirtyUUID)
+    if not shardKey or not (BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()) then
+        return false
+    end
+    local normalizedUUID = (dirtyUUID ~= nil and tostring(dirtyUUID) ~= "") and tostring(dirtyUUID) or nil
+    -- During a quiet batch, defer the expensive shard persist + per-journal file
+    -- backups to a single flush at batch end. Without this, a batch of N entries
+    -- re-persists the shard and rewrites a file backup for every journal in it N
+    -- times, which is the dominant cause of the dedicated-server lag spikes.
+    local deferring = forceTransmit ~= true
+        and BurdJournals.Server and BurdJournals.Server.shouldDeferBatchTransmit
+        and BurdJournals.Server.shouldDeferBatchTransmit()
+    if deferring then
+        BurdJournals._entryStorePendingDirtyShards = BurdJournals._entryStorePendingDirtyShards or {}
+        local existing = BurdJournals._entryStorePendingDirtyShards[shardKey]
+        if existing == true then
+            -- Whole-shard dirty already requested; keep backing up everything.
+        elseif normalizedUUID then
+            if type(existing) ~= "table" then existing = {} end
+            existing[normalizedUUID] = true
+            BurdJournals._entryStorePendingDirtyShards[shardKey] = existing
+        else
+            BurdJournals._entryStorePendingDirtyShards[shardKey] = true
+        end
+        BurdJournals._entryStoreShardPendingTransmit[shardKey] = BurdJournals._getRuntimeNowMs()
+        return true
+    end
+    if persistEntryStoreShardNow(shardKey, "markEntryStoreShardDirty", normalizedUUID and { [normalizedUUID] = true } or nil) ~= true then
+        return false
+    end
+    BurdJournals._entryStoreShardPendingTransmit[shardKey] = BurdJournals._getRuntimeNowMs()
+    if forceTransmit == true then
+        BurdJournals.flushPendingEntryStoreShardTransmits(true)
+    end
+    return true
+end
+
+function BurdJournals.transmitJournalEntryStoreForData(journalData, forceTransmit)
+    local _, shardKey = BurdJournals.getOrCreateJournalEntryStoreEntryForData(journalData, false)
+    if not shardKey then
+        return false
+    end
+    local dirtyUUID = type(journalData) == "table"
+        and (journalData.entryStoreUUID or journalData.uuid)
+        or nil
+    return BurdJournals.markEntryStoreShardDirty(shardKey, forceTransmit == true, dirtyUUID)
+end
+
+function BurdJournals.offloadJournalEntriesToStoreIfNeeded(item, sourceTag, force, suppressTransmit)
+    if not (BurdJournals.isStrictMPServerContext and BurdJournals.isStrictMPServerContext()) then
+        return false, nil, 0
+    end
+    if not (item and item.getModData) then
+        return false, nil, 0
+    end
+    local modData = item:getModData()
+    local journalData = modData and modData.BurdJournals or nil
+    if type(journalData) ~= "table" or journalData.isPlayerCreated ~= true then
+        return false, nil, 0
+    end
+
+    local entryCount = BurdJournals.countJournalEntryStoreEntries(journalData)
+    local threshold = BurdJournals.getJournalFullSyncEntryLimit and BurdJournals.getJournalFullSyncEntryLimit(journalData)
+        or math.max(1, tonumber(BurdJournals.FULL_SYNC_ENTRY_LIMIT) or 180)
+    if force ~= true and entryCount < threshold and journalData.entryStoreEnabled ~= true then
+        return false, nil, entryCount
+    end
+
+    if entryCount <= 0 then
+        if journalData.entryStoreEnabled == true then
+            local _, shardKey = BurdJournals.getOrCreateJournalEntryStoreEntryForData(journalData, false)
+            if shardKey and suppressTransmit ~= true then
+                BurdJournals.markEntryStoreShardDirty(shardKey, false)
+            end
+            return false, shardKey, entryCount
+        end
+        return false, nil, entryCount
+    end
+
+    local entry, shardKey, uuid = BurdJournals.getOrCreateJournalEntryStoreEntryForData(journalData, true, item, sourceTag)
+    if type(entry) ~= "table" then
+        return false, shardKey, entryCount
+    end
+
+    local originalBuckets = {}
+    for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+        local bucket = journalData[bucketName]
+        originalBuckets[bucketName] = type(bucket) == "table" and BurdJournals._cloneEntryStoreValue(bucket, 0) or bucket
+        local targetBucket = type(entry[bucketName]) == "table" and entry[bucketName] or {}
+        if type(bucket) == "table" then
+            for key, value in pairs(bucket) do
+                local normalizedValue = BurdJournals.normalizeEntryBucketValue(bucketName, value)
+                -- Skills only: never let a stale lower-XP resident copy overwrite
+                -- a richer same-UUID store value (value-staleness guard).
+                local existingValue = targetBucket[key]
+                local keepRicherStoreSkill = bucketName == "skills"
+                    and type(existingValue) == "table"
+                    and type(normalizedValue) == "table"
+                    and tonumber(existingValue.xp) ~= nil
+                    and tonumber(normalizedValue.xp) ~= nil
+                    and tonumber(existingValue.xp) > tonumber(normalizedValue.xp)
+                if not keepRicherStoreSkill then
+                    targetBucket[key] = normalizedValue
+                end
+            end
+        end
+        entry[bucketName] = targetBucket
+        journalData[bucketName] = {}
+    end
+
+    entry.updatedAt = BurdJournals._getRuntimeNowMs()
+    local persisted = BurdJournals.persistJournalEntryStoreShard(shardKey, BurdJournals._getJournalEntryStoreShard(shardKey, false))
+    if persisted ~= true then
+        for _, bucketName in ipairs(BurdJournals.ENTRY_STORE_BUCKETS or {}) do
+            journalData[bucketName] = originalBuckets[bucketName]
+        end
+        BurdJournals.debugPrint("[BurdJournals] Entry store offload aborted before clearing inline data: uuid="
+            .. tostring(uuid) .. " source=" .. tostring(sourceTag or "unknown"))
+        return false, shardKey, entryCount
+    end
+    if BurdJournals.Server and BurdJournals.Server.queueJournalEntryFileBackup then
+        BurdJournals.Server.queueJournalEntryFileBackup(uuid, shardKey, sourceTag or "offloadJournalEntriesToStoreIfNeeded")
+    elseif BurdJournals.Server and BurdJournals.Server.writeJournalEntryFileBackup then
+        BurdJournals.Server.writeJournalEntryFileBackup(uuid, entry, sourceTag or "offloadJournalEntriesToStoreIfNeeded")
+    end
+    journalData.entryStoreEnabled = true
+    journalData.entryStoreVersion = BurdJournals.ENTRY_STORE_SCHEMA_VERSION
+    journalData.entryStoreUUID = uuid
+    journalData.entryStoreShardKey = shardKey
+    journalData.entryStoreEntryCounts = BurdJournals._buildEntryStoreCounts(entry)
+    journalData.entryStoreUpdatedAt = entry.updatedAt
+
+    if suppressTransmit ~= true then
+        BurdJournals.markEntryStoreShardDirty(shardKey, false, uuid)
+    end
+    BurdJournals.debugPrint("[BurdJournals] Offloaded journal entries to global store: uuid="
+        .. tostring(uuid) .. " entries=" .. tostring(entryCount)
+        .. " source=" .. tostring(sourceTag or "unknown"))
+    return true, shardKey, entryCount
+end
+
+
+function BurdJournals._collectSortedStringKeys(tbl)
     local keys = {}
     if type(tbl) ~= "table" then
         return keys
@@ -10252,7 +13978,7 @@ local function collectSortedStringKeys(tbl)
     return keys
 end
 
-local function sanitizeRuntimeSessionId(value)
+function BurdJournals._sanitizeRuntimeSessionId(value)
     if value == nil then
         return nil
     end
@@ -10267,11 +13993,11 @@ local function sanitizeRuntimeSessionId(value)
     return s
 end
 
-local function ensureRuntimeBooleanMap(source, limit)
+function BurdJournals._ensureRuntimeBooleanMap(source, limit)
     local cleaned = {}
     local removed = 0
     local maxEntries = math.max(1, tonumber(limit) or 1024)
-    local keys = collectSortedStringKeys(source)
+    local keys = BurdJournals._collectSortedStringKeys(source)
     local kept = 0
     for _, key in ipairs(keys) do
         if source[key] == true then
@@ -10288,11 +14014,11 @@ local function ensureRuntimeBooleanMap(source, limit)
     return cleaned, removed
 end
 
-local function ensureRuntimeNumericMap(source, limit)
+function BurdJournals._ensureRuntimeNumericMap(source, limit)
     local cleaned = {}
     local removed = 0
     local maxEntries = math.max(1, tonumber(limit) or 1024)
-    local keys = collectSortedStringKeys(source)
+    local keys = BurdJournals._collectSortedStringKeys(source)
     local kept = 0
     for _, key in ipairs(keys) do
         local value = math.max(0, tonumber(source[key]) or -1)
@@ -10310,7 +14036,7 @@ local function ensureRuntimeNumericMap(source, limit)
     return cleaned, removed
 end
 
-local function sanitizeBaselineSnapshotMap(source, maxEntries, valueMode)
+function BurdJournals._sanitizeBaselineSnapshotMap(source, maxEntries, valueMode)
     local cleaned = {}
     local dropped = 0
     local limit = math.max(1, tonumber(maxEntries) or 128)
@@ -10355,7 +14081,7 @@ end
 function BurdJournals.getBaselineSnapshotsPerSteamLimit()
     local configured = tonumber(BurdJournals.getSandboxOption("BaselineSnapshotsPerSteamLimit"))
         or tonumber(BurdJournals.BASELINE_SNAPSHOT_DEFAULT_PER_STEAM_LIMIT)
-        or 50
+        or 5
     configured = math.floor(configured)
     return math.max(1, math.min(500, configured))
 end
@@ -10403,10 +14129,22 @@ function BurdJournals.baselineHasEntries(payload)
     if BurdJournals.getBaselineEntryCount(payload.mediaSkillBaseline) > 0 then
         return true
     end
+    if BurdJournals.getBaselineEntryCount(payload.mediaSkillExportBaseline) > 0 then
+        return true
+    end
     if BurdJournals.getBaselineEntryCount(payload.traitBaseline) > 0 then
         return true
     end
     if BurdJournals.getBaselineEntryCount(payload.recipeBaseline) > 0 then
+        return true
+    end
+    if BurdJournals.getBaselineEntryCount(payload.skillExportBaseline) > 0 then
+        return true
+    end
+    if BurdJournals.getBaselineEntryCount(payload.traitExportBaseline) > 0 then
+        return true
+    end
+    if BurdJournals.getBaselineEntryCount(payload.recipeExportBaseline) > 0 then
         return true
     end
     return false
@@ -10417,39 +14155,87 @@ function BurdJournals.getBaselineSnapshotCounts(payload)
     return {
         skills = BurdJournals.getBaselineEntryCount(payload.skillBaseline),
         mediaSkills = BurdJournals.getBaselineEntryCount(payload.mediaSkillBaseline),
+        mediaSkillExports = BurdJournals.getBaselineEntryCount(payload.mediaSkillExportBaseline),
         traits = BurdJournals.getBaselineEntryCount(payload.traitBaseline),
         recipes = BurdJournals.getBaselineEntryCount(payload.recipeBaseline),
+        skillExports = BurdJournals.getBaselineEntryCount(payload.skillExportBaseline),
+        traitExports = BurdJournals.getBaselineEntryCount(payload.traitExportBaseline),
+        recipeExports = BurdJournals.getBaselineEntryCount(payload.recipeExportBaseline),
     }
 end
 
 function BurdJournals.sanitizeBaselinePayloadForSnapshot(payload)
     local source = type(payload) == "table" and payload or {}
-    local skillBaseline = sanitizeBaselineSnapshotMap(
+    local skillBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
         source.skillBaseline,
         BurdJournals.PLAYER_BASELINE_MAX_SKILLS,
         "numeric"
     )
-    local mediaSkillBaseline = sanitizeBaselineSnapshotMap(
+    local mediaSkillBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
         source.mediaSkillBaseline,
         BurdJournals.PLAYER_BASELINE_MAX_SKILLS,
         "numeric"
     )
-    local traitBaseline = sanitizeBaselineSnapshotMap(
+    local mediaSkillExportBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
+        source.mediaSkillExportBaseline,
+        BurdJournals.PLAYER_BASELINE_MAX_SKILLS,
+        "numeric"
+    )
+    local traitBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
         source.traitBaseline,
         BurdJournals.PLAYER_BASELINE_MAX_TRAITS,
         "boolean"
     )
-    local recipeBaseline = sanitizeBaselineSnapshotMap(
+    local recipeBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
         source.recipeBaseline,
         BurdJournals.PLAYER_BASELINE_MAX_RECIPES,
         "boolean"
     )
+    local skillExportBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
+        source.skillExportBaseline,
+        BurdJournals.PLAYER_BASELINE_MAX_SKILLS,
+        "numeric"
+    )
+    local traitExportBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
+        source.traitExportBaseline,
+        BurdJournals.PLAYER_BASELINE_MAX_TRAITS,
+        "boolean"
+    )
+    local recipeExportBaseline = BurdJournals._sanitizeBaselineSnapshotMap(
+        source.recipeExportBaseline,
+        BurdJournals.PLAYER_BASELINE_MAX_RECIPES,
+        "boolean"
+    )
+
+    -- Older builds promoted traits restored from player journals into both
+    -- maps to prevent journal recycling. The overlap polluted the actual
+    -- character-creation baseline and made those traits survive reconnect as
+    -- if the character had spawned with them. Export provenance identifies
+    -- those legacy entries unambiguously: genuine starting traits were never
+    -- eligible to be exported. Keep the export history, but remove the false
+    -- starting-baseline entries.
+    local legacyClaimPromotions = {}
+    for traitId, isStarting in pairs(traitBaseline) do
+        if isStarting == true
+            and BurdJournals.isTraitInLookup
+            and BurdJournals.isTraitInLookup(traitExportBaseline, traitId)
+        then
+            legacyClaimPromotions[#legacyClaimPromotions + 1] = traitId
+        end
+    end
+    for _, traitId in ipairs(legacyClaimPromotions) do
+        traitBaseline[traitId] = nil
+    end
 
     return {
         skillBaseline = skillBaseline,
         mediaSkillBaseline = mediaSkillBaseline,
+        mediaSkillExportBaseline = mediaSkillExportBaseline,
         traitBaseline = traitBaseline,
         recipeBaseline = recipeBaseline,
+        skillExportBaseline = skillExportBaseline,
+        traitExportBaseline = traitExportBaseline,
+        recipeExportBaseline = recipeExportBaseline,
     }
 end
 
@@ -10465,7 +14251,7 @@ function BurdJournals.normalizeBaselineRestoreMode(restoreMode)
     return BurdJournals.BASELINE_SNAPSHOT_RESTORE_PROTECTED
 end
 
-local function computeRuntimeShardIndex(uuid)
+function BurdJournals._computeRuntimeShardIndex(uuid)
     local s = tostring(uuid or "")
     if s == "" then
         return 0
@@ -10479,11 +14265,11 @@ local function computeRuntimeShardIndex(uuid)
 end
 
 function BurdJournals.getJournalRuntimeShardKeyForUUID(uuid)
-    local idx = computeRuntimeShardIndex(uuid)
+    local idx = BurdJournals._computeRuntimeShardIndex(uuid)
     return BurdJournals.formatText("%s%02X", BurdJournals.RUNTIME_MODDATA_PREFIX, idx)
 end
 
-local function getOrCreateRuntimeShard(shardKey)
+function BurdJournals._getOrCreateRuntimeShard(shardKey)
     if not shardKey or not ModData or not ModData.getOrCreate then
         return nil
     end
@@ -10510,11 +14296,11 @@ function BurdJournals.ensureRuntimeCharacterClaimsShape(charClaims)
     if type(charClaims.drSkillReadCounts) ~= "table" then charClaims.drSkillReadCounts = {} end
 
     local maxBucket = math.max(1, tonumber(BurdJournals.RUNTIME_MAX_CLAIMS_PER_BUCKET) or 1024)
-    local cleanedSkills, removedSkills = ensureRuntimeBooleanMap(charClaims.skills, maxBucket)
-    local cleanedTraits, removedTraits = ensureRuntimeBooleanMap(charClaims.traits, maxBucket)
-    local cleanedRecipes, removedRecipes = ensureRuntimeBooleanMap(charClaims.recipes, maxBucket)
-    local cleanedStats, removedStats = ensureRuntimeBooleanMap(charClaims.stats, maxBucket)
-    local cleanedDR, removedDR = ensureRuntimeNumericMap(charClaims.drSkillReadCounts, maxBucket)
+    local cleanedSkills, removedSkills = BurdJournals._ensureRuntimeBooleanMap(charClaims.skills, maxBucket)
+    local cleanedTraits, removedTraits = BurdJournals._ensureRuntimeBooleanMap(charClaims.traits, maxBucket)
+    local cleanedRecipes, removedRecipes = BurdJournals._ensureRuntimeBooleanMap(charClaims.recipes, maxBucket)
+    local cleanedStats, removedStats = BurdJournals._ensureRuntimeBooleanMap(charClaims.stats, maxBucket)
+    local cleanedDR, removedDR = BurdJournals._ensureRuntimeNumericMap(charClaims.drSkillReadCounts, maxBucket)
     charClaims.skills = cleanedSkills
     charClaims.traits = cleanedTraits
     charClaims.recipes = cleanedRecipes
@@ -10548,11 +14334,11 @@ function BurdJournals.enforceJournalRuntimeEntryCaps(runtimeEntry)
     runtimeEntry.readCount = math.max(0, tonumber(runtimeEntry.readCount) or 0)
     runtimeEntry.readSessionCount = math.max(0, tonumber(runtimeEntry.readSessionCount) or 0)
     runtimeEntry.currentSessionReadCount = math.max(0, tonumber(runtimeEntry.currentSessionReadCount) or 0)
-    runtimeEntry.currentSessionId = sanitizeRuntimeSessionId(runtimeEntry.currentSessionId)
+    runtimeEntry.currentSessionId = BurdJournals._sanitizeRuntimeSessionId(runtimeEntry.currentSessionId)
     runtimeEntry.drLegacyMode3Migrated = runtimeEntry.drLegacyMode3Migrated == true
 
     local maxChars = math.max(1, tonumber(BurdJournals.RUNTIME_MAX_CHARACTERS_PER_JOURNAL) or 128)
-    local claimKeys = collectSortedStringKeys(runtimeEntry.claims)
+    local claimKeys = BurdJournals._collectSortedStringKeys(runtimeEntry.claims)
     local removedCharacters = 0
     if #claimKeys > maxChars then
         for i = maxChars + 1, #claimKeys do
@@ -10574,7 +14360,7 @@ function BurdJournals.enforceJournalRuntimeEntryCaps(runtimeEntry)
         end
     end
 
-    local cleanedSkillReads, removedSkillReadEntries = ensureRuntimeNumericMap(
+    local cleanedSkillReads, removedSkillReadEntries = BurdJournals._ensureRuntimeNumericMap(
         runtimeEntry.skillReadCounts,
         math.max(1, tonumber(BurdJournals.RUNTIME_MAX_SKILL_READ_KEYS) or 256)
     )
@@ -10593,20 +14379,19 @@ BurdJournals._runtimeShardLastTransmitAt = BurdJournals._runtimeShardLastTransmi
 BurdJournals._runtimeShardPendingTransmit = BurdJournals._runtimeShardPendingTransmit or {}
 
 function BurdJournals.flushPendingRuntimeShardTransmits(force)
-    if not (ModData and ModData.transmit) then
-        return
-    end
-    local now = getRuntimeNowMs()
+    local now = BurdJournals._getRuntimeNowMs()
     local debounceMs = math.max(0, tonumber(BurdJournals.RUNTIME_TRANSMIT_DEBOUNCE_MS) or 500)
     for shardKey, pendingAt in pairs(BurdJournals._runtimeShardPendingTransmit) do
         local lastAt = tonumber(BurdJournals._runtimeShardLastTransmitAt[shardKey]) or 0
         if force or ((now - lastAt) >= debounceMs and (now - tonumber(pendingAt or 0)) >= debounceMs) then
-            -- Runtime shard transmits are supplemental server cache sync. Persistent
-            -- gameplay state still lives on server-authoritative item/player data.
-            ModData.transmit(shardKey)
+            -- Runtime shards are server-authoritative persistence. Clients cannot
+            -- read them through the runtime API and receive only their targeted
+            -- deltas in command responses, so broadcasting an entire growing shard
+            -- would be pure network and deserialization cost. Global ModData is
+            -- saved with the world without ModData.transmit().
             BurdJournals._runtimeShardLastTransmitAt[shardKey] = now
             BurdJournals._runtimeShardPendingTransmit[shardKey] = nil
-            BurdJournals.debugPrint("[BurdJournals] Runtime shard transmit: " .. tostring(shardKey))
+            BurdJournals.debugPrint("[BurdJournals] Runtime shard persisted without client transmit: " .. tostring(shardKey))
         end
     end
 end
@@ -10615,7 +14400,7 @@ function BurdJournals.markRuntimeShardDirty(shardKey, forceTransmit)
     if not shardKey or not BurdJournals.isStrictMPServerContext or not BurdJournals.isStrictMPServerContext() then
         return false
     end
-    local now = getRuntimeNowMs()
+    local now = BurdJournals._getRuntimeNowMs()
     BurdJournals._runtimeShardPendingTransmit[shardKey] = now
     local debounceMs = math.max(0, tonumber(BurdJournals.RUNTIME_TRANSMIT_DEBOUNCE_MS) or 500)
     local lastAt = tonumber(BurdJournals._runtimeShardLastTransmitAt[shardKey]) or 0
@@ -10626,11 +14411,113 @@ function BurdJournals.markRuntimeShardDirty(shardKey, forceTransmit)
     return false
 end
 
+function BurdJournals.purgeJournalRuntimeUUID(uuid, explicitShardKey)
+    if type(uuid) ~= "string" or uuid == "" or not ModData then
+        return 0
+    end
+
+    local shardKeys = {}
+    local seen = {}
+    local function addShardKey(shardKey)
+        if type(shardKey) == "string" and shardKey ~= "" and not seen[shardKey] then
+            seen[shardKey] = true
+            shardKeys[#shardKeys + 1] = shardKey
+        end
+    end
+    addShardKey(BurdJournals.getJournalRuntimeShardKeyForUUID(uuid))
+    addShardKey(explicitShardKey)
+
+    local removed = 0
+    for _, shardKey in ipairs(shardKeys) do
+        local shard = ModData.get and ModData.get(shardKey) or nil
+        if type(shard) == "table" and type(shard.journals) == "table" and shard.journals[uuid] ~= nil then
+            shard.journals[uuid] = nil
+            shard.updatedAt = BurdJournals._getRuntimeNowMs()
+            if ModData.add then
+                ModData.add(shardKey, shard)
+            end
+            BurdJournals.markRuntimeShardDirty(shardKey, false)
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+-- Debounced broadcast of the shared journal DR cache + per-player DR fallback
+-- stores. On listen/host servers captureJournalDRState() used to fire a full
+-- ModData.transmit("BurdJournals_JournalDRCache") plus player:transmitModData()
+-- on every single skill claim, which froze all connected clients. These helpers
+-- coalesce those broadcasts and honor batch-quiet deferral.
+BurdJournals._drCacheLastTransmitAt = BurdJournals._drCacheLastTransmitAt or 0
+BurdJournals._drCachePendingTransmit = BurdJournals._drCachePendingTransmit or false
+BurdJournals._drPlayerTransmitPending = BurdJournals._drPlayerTransmitPending or {}
+
+function BurdJournals.flushPendingDRCacheTransmit(force)
+    if not force
+        and BurdJournals.Server and BurdJournals.Server.shouldDeferBatchTransmit
+        and BurdJournals.Server.shouldDeferBatchTransmit() then
+        return
+    end
+    local now = BurdJournals._getRuntimeNowMs()
+    local debounceMs = math.max(0, tonumber(BurdJournals.RUNTIME_TRANSMIT_DEBOUNCE_MS) or 500)
+    if BurdJournals._drCachePendingTransmit then
+        if force or (now - (tonumber(BurdJournals._drCacheLastTransmitAt) or 0)) >= debounceMs then
+            -- Never ModData.transmit the shared DR cache: no client reads it in MP
+            -- (the only client call site is gated to SP/host, which access the
+            -- table in-process), and global ModData persists with the world save
+            -- without transmitting. Broadcasting it re-shipped every journal ever
+            -- read to every client during claim sessions.
+            BurdJournals._drCacheLastTransmitAt = now
+            BurdJournals._drCachePendingTransmit = false
+        end
+    end
+    for key, pending in pairs(BurdJournals._drPlayerTransmitPending) do
+        if force or (now - (tonumber(pending and pending.at) or 0)) >= debounceMs then
+            local ply = pending and pending.player
+            if ply and ply.transmitModData then
+                -- Required authoritative synchronization. Clear the pending
+                -- entry only after the call returns successfully so a failure
+                -- remains visible and retryable on the next tick.
+                ply:transmitModData()
+                BurdJournals._drPlayerTransmitPending[key] = nil
+            elseif ply then
+                BurdJournals.debugPrint("[BurdJournals] Dropped invalid DR transmit entry without player transmitModData API: " .. tostring(key))
+                BurdJournals._drPlayerTransmitPending[key] = nil
+            else
+                BurdJournals._drPlayerTransmitPending[key] = nil
+            end
+        end
+    end
+end
+
+function BurdJournals.markDRCacheDirty(player, forceTransmit)
+    BurdJournals._drCachePendingTransmit = true
+    if player then
+        local key = nil
+        if player.getOnlineID then key = tostring(player:getOnlineID()) end
+        if (not key or key == "" or key == "-1") and player.getUsername then
+            key = tostring(player:getUsername())
+        end
+        key = key or tostring(player)
+        BurdJournals._drPlayerTransmitPending[key] = {
+            player = player,
+            at = BurdJournals._getRuntimeNowMs(),
+        }
+    end
+    if not forceTransmit
+        and BurdJournals.Server and BurdJournals.Server.shouldDeferBatchTransmit
+        and BurdJournals.Server.shouldDeferBatchTransmit() then
+        return false
+    end
+    BurdJournals.flushPendingDRCacheTransmit(forceTransmit == true)
+    return true
+end
+
 function BurdJournals.runtimeTouchJournalEntry(runtimeEntry, shardKey, sourceTag, forceTransmit)
     if type(runtimeEntry) ~= "table" then
         return false
     end
-    runtimeEntry.updatedAt = getRuntimeNowMs()
+    runtimeEntry.updatedAt = BurdJournals._getRuntimeNowMs()
     local changedByCaps = BurdJournals.enforceJournalRuntimeEntryCaps(runtimeEntry)
     if changedByCaps then
         BurdJournals.debugPrint("[BurdJournals] Runtime caps trimmed during " .. tostring(sourceTag or "unknown"))
@@ -10642,8 +14529,25 @@ function BurdJournals.resolveJournalUUIDForRuntime(journalData, journal, createI
     if type(journalData) ~= "table" then
         return nil
     end
-    local uuid = journalData.uuid
+    local previousUUID = journalData.uuid
+    local previousEntryStoreUUID = journalData.entryStoreUUID
+    local uuid = BurdJournals.resolveJournalEntryStoreUUID
+        and BurdJournals.resolveJournalEntryStoreUUID(journalData, createIfMissing ~= false)
+        or BurdJournals.getJournalIdentityUUID(journalData)
     if type(uuid) == "string" and uuid ~= "" then
+        -- entryStoreUUID is the durable identity of an offloaded journal. On
+        -- authoritative/local creation paths, repair the legacy shell instead
+        -- of minting a second UUID and splitting runtime state from its entries.
+        if (previousUUID ~= journalData.uuid or previousEntryStoreUUID ~= journalData.entryStoreUUID)
+            and createIfMissing ~= false
+        then
+            if journal and journal.transmitModData
+                and (not BurdJournals.shouldTransmitJournalItemModData
+                    or BurdJournals.shouldTransmitJournalItemModData(journal, "resolveJournalUUIDForRuntimeAlias"))
+            then
+                journal:transmitModData()
+            end
+        end
         return uuid
     end
 
@@ -10655,7 +14559,7 @@ function BurdJournals.resolveJournalUUIDForRuntime(journalData, journal, createI
     end
     if (type(uuid) ~= "string" or uuid == "") and createIfMissing ~= false then
         uuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
-            or ("journal-" .. tostring(getRuntimeNowMs()))
+        or ("journal-" .. tostring(BurdJournals._getRuntimeNowMs()))
     end
     if type(uuid) ~= "string" or uuid == "" then
         return nil
@@ -10663,7 +14567,10 @@ function BurdJournals.resolveJournalUUIDForRuntime(journalData, journal, createI
 
     if journalData.uuid ~= uuid then
         journalData.uuid = uuid
-        if journal and journal.transmitModData then
+        if journal and journal.transmitModData
+            and (not BurdJournals.shouldTransmitJournalItemModData
+                or BurdJournals.shouldTransmitJournalItemModData(journal, "resolveJournalUUIDForRuntime"))
+        then
             journal:transmitModData()
         end
     end
@@ -10685,7 +14592,7 @@ function BurdJournals.getOrCreateJournalRuntimeEntryForData(journalData, createI
     end
 
     local shardKey = BurdJournals.getJournalRuntimeShardKeyForUUID(uuid)
-    local shard = getOrCreateRuntimeShard(shardKey)
+    local shard = BurdJournals._getOrCreateRuntimeShard(shardKey)
     if type(shard) ~= "table" then
         return nil, nil, uuid
     end
@@ -10704,7 +14611,7 @@ function BurdJournals.getOrCreateJournalRuntimeEntryForData(journalData, createI
             currentSessionReadCount = 0,
             skillReadCounts = {},
             drLegacyMode3Migrated = false,
-            updatedAt = getRuntimeNowMs(),
+            updatedAt = BurdJournals._getRuntimeNowMs(),
         }
         journals[uuid] = runtimeEntry
     end
@@ -10851,8 +14758,8 @@ local function mergeLegacyRuntimeClaimsIntoEntry(runtimeEntry, journalData)
 
     local skillReads = journalData.skillReadCounts
     if type(skillReads) == "table" then
-        local merged, removed = ensureRuntimeNumericMap(skillReads, math.max(1, tonumber(BurdJournals.RUNTIME_MAX_SKILL_READ_KEYS) or 256))
-        if removed > 0 or countTableEntriesSafe(merged) > 0 then
+        local merged, removed = BurdJournals._ensureRuntimeNumericMap(skillReads, math.max(1, tonumber(BurdJournals.RUNTIME_MAX_SKILL_READ_KEYS) or 256))
+        if removed > 0 or BurdJournals._countTableEntriesSafe(merged) > 0 then
             runtimeEntry.skillReadCounts = merged
             changed = true
         end
@@ -10862,7 +14769,7 @@ local function mergeLegacyRuntimeClaimsIntoEntry(runtimeEntry, journalData)
     runtimeEntry.readSessionCount = math.max(runtimeEntry.readSessionCount or 0, math.max(0, tonumber(journalData.readSessionCount) or 0))
     runtimeEntry.currentSessionReadCount = math.max(runtimeEntry.currentSessionReadCount or 0, math.max(0, tonumber(journalData.currentSessionReadCount) or 0))
     if journalData.currentSessionId ~= nil then
-        runtimeEntry.currentSessionId = sanitizeRuntimeSessionId(journalData.currentSessionId)
+        runtimeEntry.currentSessionId = BurdJournals._sanitizeRuntimeSessionId(journalData.currentSessionId)
     end
     if journalData.drLegacyMode3Migrated == true then
         runtimeEntry.drLegacyMode3Migrated = true
@@ -10890,11 +14797,11 @@ function BurdJournals.migrateJournalRuntimeToGlobalIfNeeded(journal, player, sou
         return false
     end
 
-    local hadEntryData = countTableEntriesSafe(runtimeEntry.claims) > 0
+    local hadEntryData = BurdJournals._countTableEntriesSafe(runtimeEntry.claims) > 0
         or (tonumber(runtimeEntry.readCount) or 0) > 0
         or (tonumber(runtimeEntry.readSessionCount) or 0) > 0
         or (tonumber(runtimeEntry.currentSessionReadCount) or 0) > 0
-        or countTableEntriesSafe(runtimeEntry.skillReadCounts) > 0
+        or BurdJournals._countTableEntriesSafe(runtimeEntry.skillReadCounts) > 0
 
     local mergedLegacy = false
     if not hadEntryData then
@@ -10928,7 +14835,10 @@ function BurdJournals.migrateJournalRuntimeToGlobalIfNeeded(journal, player, sou
         BurdJournals.debugPrint("[BurdJournals] Runtime migration merged legacy fields for uuid=" .. tostring(journalData.uuid))
     end
 
-    if stripped and journal.transmitModData then
+    if stripped and journal.transmitModData
+        and (not BurdJournals.shouldTransmitJournalItemModData
+            or BurdJournals.shouldTransmitJournalItemModData(journal, "migrateJournalRuntimeToGlobalIfNeeded"))
+    then
         journal:transmitModData()
     end
     return mergedLegacy or stripped
@@ -10937,16 +14847,27 @@ end
 function BurdJournals.getBaselineSnapshotMaxHours()
     local configured = tonumber(BurdJournals.BASELINE_SNAPSHOT_MAX_HOURS)
     if not configured or configured <= 0 then
-        return 1
+        return 0.5
     end
     return configured
+end
+
+function BurdJournals.getBaselineLifecycleHours(player)
+    if not player then
+        return 0
+    end
+    local liveHours = player.getHoursSurvived and tonumber(player:getHoursSurvived()) or 0
+    local modData = player.getModData and player:getModData() or nil
+    local bj = modData and type(modData.BurdJournals) == "table" and modData.BurdJournals or nil
+    local restoredHours = bj and tonumber(bj.restoredHoursSurvived) or 0
+    return math.max(0, liveHours or 0, restoredHours or 0)
 end
 
 function BurdJournals.isWithinBaselineSnapshotWindow(player)
     if not player then
         return false
     end
-    local hoursAlive = player.getHoursSurvived and tonumber(player:getHoursSurvived()) or 0
+    local hoursAlive = BurdJournals.getBaselineLifecycleHours(player)
     return hoursAlive <= BurdJournals.getBaselineSnapshotMaxHours()
 end
 
@@ -11067,7 +14988,7 @@ local function sanitizeNumericBaselineMap(source, maxEntries)
     local removed = 0
     local limit = math.max(1, tonumber(maxEntries) or 512)
 
-    local keys = collectSortedStringKeys(source)
+    local keys = BurdJournals._collectSortedStringKeys(source)
     for _, key in ipairs(keys) do
         local value = source[key]
         local keyStr = type(key) == "string" and key or nil
@@ -11100,7 +15021,7 @@ local function sanitizeBooleanBaselineMap(source, maxEntries)
     local removed = 0
     local limit = math.max(1, tonumber(maxEntries) or 1024)
 
-    local keys = collectSortedStringKeys(source)
+    local keys = BurdJournals._collectSortedStringKeys(source)
     for _, key in ipairs(keys) do
         local value = source[key]
         local keyStr = type(key) == "string" and key or nil
@@ -11478,7 +15399,7 @@ function BurdJournals.getJournalDRCacheKey(journal, allowCreate)
         return nil
     end
 
-    local currentUuid = drReadField(data, "uuid")
+    local currentUuid = BurdJournals.getJournalIdentityUUID(data)
     if type(currentUuid) == "string" and currentUuid ~= "" then
         return currentUuid
     end
@@ -11489,7 +15410,10 @@ function BurdJournals.getJournalDRCacheKey(journal, allowCreate)
     local generatedUuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
         or ("journal-" .. tostring(getTimestampMs and getTimestampMs() or os.time()) .. "-" .. tostring(journal:getID()))
     if drWriteField(data, "uuid", generatedUuid) then
-        if journal.transmitModData then
+        if journal.transmitModData
+            and (not BurdJournals.shouldTransmitJournalItemModData
+                or BurdJournals.shouldTransmitJournalItemModData(journal, "getJournalDRCacheKey"))
+        then
             journal:transmitModData()
         end
         return generatedUuid
@@ -11568,13 +15492,15 @@ function BurdJournals.captureJournalDRState(journal, sourceTag, player)
     for _, alias in ipairs(aliases) do
         aliasMap[alias] = journalKey
     end
+    -- Keep the shared cache bounded to the most recently touched journals; it
+    -- previously grew without limit for the life of the save.
+    trimJournalDRCache(
+        cache,
+        BurdJournals.DR_GLOBAL_CACHE_MAX_JOURNALS,
+        BurdJournals.DR_GLOBAL_CACHE_MAX_ALIASES
+    )
 
-    if ModData and ModData.transmit then
-        -- Keep the shared DR cache mirrored when available, but player journal
-        -- DR data remains duplicated in player ModData as the fallback store.
-        ModData.transmit("BurdJournals_JournalDRCache")
-    end
-
+    local playerCacheUpdated = false
     local playerCache = getOrCreatePlayerJournalDRCache(player)
     if playerCache then
         local playerJournals = ensureDRCacheMap(playerCache, "journals")
@@ -11592,10 +15518,11 @@ function BurdJournals.captureJournalDRState(journal, sourceTag, player)
             BurdJournals.DR_PLAYER_CACHE_MAX_JOURNALS,
             BurdJournals.DR_PLAYER_CACHE_MAX_ALIASES
         )
-        if player.transmitModData then
-            player:transmitModData()
-        end
+        playerCacheUpdated = true
     end
+    -- Coalesce the shared DR cache broadcast and the per-player DR fallback sync
+    -- instead of transmitting on every claim (was a listen-server freeze source).
+    BurdJournals.markDRCacheDirty(playerCacheUpdated and player or nil, false)
     BurdJournals.debugPrint(
         "[BurdJournals] Captured DR cache key="
         .. tostring(journalKey)
@@ -11671,7 +15598,10 @@ function BurdJournals.restoreJournalDRStateIfMissing(journal, sourceTag, player)
     drWriteField(data, "skillReadCounts", copyDRSkillReadCounts(backup.skillReadCounts))
     drWriteField(data, "drLegacyMode3Migrated", backup.drLegacyMode3Migrated == true)
 
-    if journal.transmitModData then
+    if journal.transmitModData
+        and (not BurdJournals.shouldTransmitJournalItemModData
+            or BurdJournals.shouldTransmitJournalItemModData(journal, "restoreJournalDRStateIfMissing"))
+    then
         journal:transmitModData()
     end
     BurdJournals.captureJournalDRState(journal, "restore:" .. tostring(sourceTag or "unknown"), player)
@@ -11699,6 +15629,8 @@ BurdJournals.RANDOM_FIRST_NAMES = {
     "Sarah", "Karen", "Nancy", "Lisa", "Betty", "Margaret", "Sandra", "Ashley",
     "Joshua", "Kenneth", "Kevin", "Brian", "George", "Timothy", "Ronald", "Edward",
     "Kimberly", "Emily", "Donna", "Michelle", "Dorothy", "Carol", "Amanda", "Melissa",
+    "Rose", "Noelle", "Brad", "Earl", "Maggie", "Frank", "Diane", "Wayne",
+    "Shelby", "Calvin", "Ruth", "Vernon", "Tina", "Glenn", "Nora", "Wade",
 }
 
 BurdJournals.RANDOM_LAST_NAMES = {
@@ -11708,9 +15640,14 @@ BurdJournals.RANDOM_LAST_NAMES = {
     "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker", "Young",
     "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores",
     "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell",
+    "Spalding", "McCoy", "Graves", "Hobbs", "Whitaker", "Hargrove", "Boone", "Mercer",
+    "Keller", "Pike", "Hale", "Finch", "Dawson", "Caldwell", "Briggs", "Sawyer",
 }
 
 function BurdJournals.generateRandomSurvivorName()
+    if BurdJournals.ensureCustomContentLoaded then
+        BurdJournals.ensureCustomContentLoaded("generateRandomSurvivorName")
+    end
     local firstName = BurdJournals.RANDOM_FIRST_NAMES[ZombRand(#BurdJournals.RANDOM_FIRST_NAMES) + 1]
     local lastName = BurdJournals.RANDOM_LAST_NAMES[ZombRand(#BurdJournals.RANDOM_LAST_NAMES) + 1]
     return firstName .. " " .. lastName
@@ -11739,6 +15676,16 @@ BurdJournals.PROFESSIONS = {
     {id = "mechanics", name = "Mechanic", nameKey = "UI_BurdJournals_ProfMechanic", flavorKey = "UI_BurdJournals_FlavorMechanic"},
     {id = "veteran", name = "Veteran", nameKey = "UI_BurdJournals_ProfVeteran", flavorKey = "UI_BurdJournals_FlavorVeteran"},
     {id = "unemployed", name = "Unemployed", nameKey = "UI_BurdJournals_ProfUnemployed", flavorKey = "UI_BurdJournals_FlavorUnemployed"},
+    {id = "paramedic", name = "Paramedic", nameKey = "UI_BurdJournals_ProfParamedic", flavorKey = "UI_BurdJournals_FlavorParamedic"},
+    {id = "hazmattech", name = "Hazmat Technician", nameKey = "UI_BurdJournals_ProfHazmatTech", flavorKey = "UI_BurdJournals_FlavorHazmatTech"},
+    {id = "quarantineguard", name = "Quarantine Guard", nameKey = "UI_BurdJournals_ProfQuarantineGuard", flavorKey = "UI_BurdJournals_FlavorQuarantineGuard"},
+    {id = "broadcasttech", name = "Broadcast Technician", nameKey = "UI_BurdJournals_ProfBroadcastTech", flavorKey = "UI_BurdJournals_FlavorBroadcastTech"},
+    {id = "lineman", name = "Utility Lineman", nameKey = "UI_BurdJournals_ProfLineman", flavorKey = "UI_BurdJournals_FlavorLineman"},
+    {id = "truckdriver", name = "Truck Driver", nameKey = "UI_BurdJournals_ProfTruckDriver", flavorKey = "UI_BurdJournals_FlavorTruckDriver"},
+    {id = "teacher", name = "Teacher", nameKey = "UI_BurdJournals_ProfTeacher", flavorKey = "UI_BurdJournals_FlavorTeacher"},
+    {id = "mailcarrier", name = "Mail Carrier", nameKey = "UI_BurdJournals_ProfMailCarrier", flavorKey = "UI_BurdJournals_FlavorMailCarrier"},
+    {id = "labassistant", name = "Lab Assistant", nameKey = "UI_BurdJournals_ProfLabAssistant", flavorKey = "UI_BurdJournals_FlavorLabAssistant"},
+    {id = "refugeevolunteer", name = "Aid Volunteer", nameKey = "UI_BurdJournals_ProfAidVolunteer", flavorKey = "UI_BurdJournals_FlavorAidVolunteer"},
 }
 
 BurdJournals.VANILLA_PROFESSION_SKILLS = {
@@ -11764,6 +15711,16 @@ BurdJournals.VANILLA_PROFESSION_SKILLS = {
     mechanics = {"Metalworking", "Mechanics", "Maintenance"},
     veteran = {"Aiming", "Reloading", "LongBlade", "Fitness", "Sneak"},
     unemployed = {"Tailoring"},
+    paramedic = {"Doctor", "FirstAid", "Sprinting", "Fitness"},
+    hazmattech = {"Doctor", "FirstAid", "Electricity", "Mechanics", "Tailoring"},
+    quarantineguard = {"Aiming", "Reloading", "Blunt", "Fitness", "Strength"},
+    broadcasttech = {"Electricity", "Mechanics", "Maintenance"},
+    lineman = {"Electricity", "Mechanics", "Strength", "Maintenance"},
+    truckdriver = {"Mechanics", "Maintenance", "Strength"},
+    teacher = {"Tailoring", "FirstAid"},
+    mailcarrier = {"Sprinting", "Fitness", "Sneak"},
+    labassistant = {"Doctor", "FirstAid", "Electricity"},
+    refugeevolunteer = {"FirstAid", "Foraging"},
 }
 
 BurdJournals._professionProfilesBySource = BurdJournals._professionProfilesBySource or {}
@@ -12324,6 +16281,9 @@ function BurdJournals.resolveProfessionForGeneratedEntries(defaultProfessionId, 
 end
 
 function BurdJournals.getRandomProfession()
+    if BurdJournals.ensureCustomContentLoaded then
+        BurdJournals.ensureCustomContentLoaded("getRandomProfession")
+    end
     local professions = BurdJournals.PROFESSIONS
     local prof = professions[ZombRand(#professions) + 1]
 
@@ -12417,6 +16377,9 @@ local function hasBaselinePayloadEntries(payload)
         or type(payload.mediaSkillBaseline) == "table"
         or type(payload.traitBaseline) == "table"
         or type(payload.recipeBaseline) == "table"
+        or type(payload.skillExportBaseline) == "table"
+        or type(payload.traitExportBaseline) == "table"
+        or type(payload.recipeExportBaseline) == "table"
 end
 
 local function getClientRuntimeCachedBaseline(player)
@@ -12532,6 +16495,68 @@ function BurdJournals.getSkillBaseline(player, skillName)
     return 0
 end
 
+function BurdJournals.getSkillExportBaseline(player, skillName)
+    if not player or not skillName then return 0 end
+
+    local cachedExportXP = nil
+    local cachedBaseline = getCachedBaselineFromServer(player)
+    if cachedBaseline and type(cachedBaseline.skillExportBaseline) == "table" then
+        local cachedValue = cachedBaseline.skillExportBaseline[skillName]
+        if cachedValue ~= nil then
+            cachedExportXP = math.max(0, tonumber(cachedValue) or 0)
+        end
+    end
+
+    local storedExportXP = nil
+    local modData = player:getModData()
+    if modData.BurdJournals and modData.BurdJournals.skillExportBaseline then
+        local storedValue = modData.BurdJournals.skillExportBaseline[skillName]
+        if storedValue ~= nil then
+            storedExportXP = math.max(0, tonumber(storedValue) or 0)
+        end
+    end
+
+    if cachedExportXP ~= nil then
+        return cachedExportXP
+    end
+    if storedExportXP ~= nil then
+        return storedExportXP
+    end
+
+    return 0
+end
+
+function BurdJournals.getMediaSkillExportBaseline(player, skillName)
+    if not player or not skillName then return 0 end
+
+    local cachedExportXP = nil
+    local cachedBaseline = getCachedBaselineFromServer(player)
+    if cachedBaseline and type(cachedBaseline.mediaSkillExportBaseline) == "table" then
+        local cachedValue = cachedBaseline.mediaSkillExportBaseline[skillName]
+        if cachedValue ~= nil then
+            cachedExportXP = math.max(0, tonumber(cachedValue) or 0)
+        end
+    end
+
+    local storedExportXP = nil
+    local modData = player:getModData()
+    if modData.BurdJournals and modData.BurdJournals.mediaSkillExportBaseline then
+        local storedValue = modData.BurdJournals.mediaSkillExportBaseline[skillName]
+        if storedValue ~= nil then
+            storedExportXP = math.max(0, tonumber(storedValue) or 0)
+        end
+    end
+
+    if cachedExportXP ~= nil then
+        return cachedExportXP
+    end
+    if storedExportXP ~= nil then
+        return storedExportXP
+    end
+
+    return 0
+end
+
 -- Set skill baseline for a specific skill (level-based, converts to XP internally)
 -- This allows admins/debuggers to manually adjust individual skill baselines
 function BurdJournals.setSkillBaseline(player, skillName, level)
@@ -12548,12 +16573,8 @@ function BurdJournals.setSkillBaseline(player, skillName, level)
     -- Calculate XP required for the specified level
     -- Use our verified threshold tables for consistent values
     local baselineXP = 0
-    if level > 0 then
-        if isPassive then
-            baselineXP = BurdJournals.PASSIVE_XP_THRESHOLDS[level] or 0
-        else
-            baselineXP = BurdJournals.STANDARD_XP_THRESHOLDS[level] or 0
-        end
+    if level > 0 and BurdJournals.getXPThresholdForLevel then
+        baselineXP = math.max(0, tonumber(BurdJournals.getXPThresholdForLevel(skillName, level)) or 0)
     end
     
     -- Store in mod data
@@ -12579,21 +16600,11 @@ function BurdJournals.getSkillBaselineLevel(player, skillName)
     local baselineXP = BurdJournals.getSkillBaseline(player, skillName)
     if baselineXP <= 0 then return 0 end
     
-    -- Convert XP to level using our verified threshold tables
-    local isPassive = (skillName == "Fitness" or skillName == "Strength")
-    local thresholds = isPassive and BurdJournals.PASSIVE_XP_THRESHOLDS or BurdJournals.STANDARD_XP_THRESHOLDS
-    
-    local level = 0
-    for lvl = 1, 10 do
-        local threshold = thresholds[lvl] or 0
-        if baselineXP >= threshold then
-            level = lvl
-        else
-            break
-        end
+    if BurdJournals.getSkillLevelFromXP then
+        return math.max(0, tonumber(BurdJournals.getSkillLevelFromXP(baselineXP, skillName)) or 0)
     end
-    
-    return level
+
+    return 0
 end
 
 -- Set trait baseline (whether the trait is considered a "starting" trait)
@@ -12632,18 +16643,20 @@ end
 -- Set recipe baseline (whether the recipe is considered a "starting" recipe)
 function BurdJournals.setRecipeBaseline(player, recipeName, isBaseline)
     if not player or not recipeName then return false end
+    local canonicalRecipeName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or recipeName
     
     local modData = player:getModData()
     modData.BurdJournals = modData.BurdJournals or {}
     modData.BurdJournals.recipeBaseline = modData.BurdJournals.recipeBaseline or {}
     
     if isBaseline then
-        modData.BurdJournals.recipeBaseline[recipeName] = true
+        modData.BurdJournals.recipeBaseline[canonicalRecipeName] = true
     else
         modData.BurdJournals.recipeBaseline[recipeName] = nil
+        modData.BurdJournals.recipeBaseline[canonicalRecipeName] = nil
     end
 
-    BurdJournals.debugPrint("[BurdJournals] Set recipe baseline: " .. recipeName .. " = " .. tostring(isBaseline))
+    BurdJournals.debugPrint("[BurdJournals] Set recipe baseline: " .. canonicalRecipeName .. " = " .. tostring(isBaseline))
     return true
 end
 
@@ -12700,7 +16713,6 @@ function BurdJournals.getPlayerBaselineData(player)
         end
     end
     
-    -- Get recipes - simplified for now
     local recipeBaseline = BurdJournals.getRecipeBaseline(player)
     data.recipeCount = 0
     for _ in pairs(recipeBaseline) do
@@ -12749,7 +16761,7 @@ function BurdJournals.isStartingTrait(player, traitId)
     if BurdJournals.isPassiveSkillTrait(traitId) then
         return false
     end
-    
+
     local baseline = BurdJournals.getTraitBaseline(player)
     if type(baseline) ~= "table" then
         return false
@@ -12785,12 +16797,24 @@ function BurdJournals.getTraitBaseline(player)
     return modData.BurdJournals.traitBaseline or {}
 end
 
+function BurdJournals.getTraitExportBaseline(player)
+    if not player then return {} end
+    local cachedBaseline = getCachedBaselineFromServer(player)
+    if cachedBaseline and type(cachedBaseline.traitExportBaseline) == "table" then
+        return cachedBaseline.traitExportBaseline
+    end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return {} end
+    return modData.BurdJournals.traitExportBaseline or {}
+end
+
 function BurdJournals.isStartingRecipe(player, recipeName)
     if not player then return false end
     if not recipeName then return false end
     local baseline = BurdJournals.getRecipeBaseline(player)
     if type(baseline) ~= "table" then return false end
-    return baseline[recipeName] == true
+    local baselineKey = BurdJournals.resolveRecipeKey and BurdJournals.resolveRecipeKey(baseline, recipeName) or recipeName
+    return baselineKey ~= nil and baseline[baselineKey] == true
 end
 
 function BurdJournals.getRecipeBaseline(player)
@@ -12802,6 +16826,17 @@ function BurdJournals.getRecipeBaseline(player)
     local modData = player:getModData()
     if not modData.BurdJournals then return {} end
     return modData.BurdJournals.recipeBaseline or {}
+end
+
+function BurdJournals.getRecipeExportBaseline(player)
+    if not player then return {} end
+    local cachedBaseline = getCachedBaselineFromServer(player)
+    if cachedBaseline and type(cachedBaseline.recipeExportBaseline) == "table" then
+        return cachedBaseline.recipeExportBaseline
+    end
+    local modData = player:getModData()
+    if not modData.BurdJournals then return {} end
+    return modData.BurdJournals.recipeExportBaseline or {}
 end
 
 function BurdJournals.getEarnedXP(player, skillName)
@@ -13092,9 +17127,27 @@ function BurdJournals.playerHasTrait(player, traitIdOrObj)
 
     local traitObj = nil
     local traitId = nil
+    local traitCandidates = {}
+    local seenCandidates = {}
+    local function addTraitCandidate(value)
+        if value == nil then return end
+        local id = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(value) or tostring(value)
+        if id == "" then return end
+        local key = string.lower(tostring(id))
+        if not seenCandidates[key] then
+            seenCandidates[key] = true
+            table.insert(traitCandidates, tostring(id))
+        end
+    end
 
     if type(traitIdOrObj) == "string" then
         traitId = traitIdOrObj
+        addTraitCandidate(traitId)
+        if BurdJournals.getTraitAliases then
+            for _, alias in ipairs(BurdJournals.getTraitAliases(traitId)) do
+                addTraitCandidate(alias)
+            end
+        end
     else
         traitObj = traitIdOrObj
         -- Ensure we pass a CharacterTrait object when possible
@@ -13112,11 +17165,11 @@ function BurdJournals.playerHasTrait(player, traitIdOrObj)
             end
         end
     end
+    if traitId and #traitCandidates == 0 then
+        addTraitCandidate(traitId)
+    end
 
     if not traitObj and traitId then
-        local traitIdLower = string.lower(traitId)
-        local traitIdNorm = string.lower(traitId:gsub("%s", ""))
-
         if CharacterTraitDefinition and CharacterTraitDefinition.getTraits then
             local allTraits = CharacterTraitDefinition.getTraits()
             for i = 0, allTraits:size() - 1 do
@@ -13138,9 +17191,21 @@ function BurdJournals.playerHasTrait(player, traitIdOrObj)
                 local defLabelNorm = defLabelLower:gsub("%s", "")
                 local defNameNorm = defNameLower:gsub("%s", "")
 
-                local exactMatch = (defLabel == traitId) or (defName == traitId)
-                local lowerMatch = (defLabelLower == traitIdLower) or (defNameLower == traitIdLower)
-                local normalizedMatch = (defLabelNorm == traitIdNorm) or (defNameNorm == traitIdNorm)
+                local exactMatch = false
+                local lowerMatch = false
+                local normalizedMatch = false
+                for _, candidate in ipairs(traitCandidates) do
+                    local candidateLower = string.lower(candidate)
+                    local candidateNorm = candidateLower:gsub("%s", "")
+                    exactMatch = exactMatch or (defLabel == candidate) or (defName == candidate)
+                    lowerMatch = lowerMatch or (defLabelLower == candidateLower) or (defNameLower == candidateLower)
+                    normalizedMatch = normalizedMatch or (defLabelNorm == candidateNorm) or (defNameNorm == candidateNorm)
+                    if BurdJournals.traitIdsMatch then
+                        lowerMatch = lowerMatch
+                            or BurdJournals.traitIdsMatch(defLabel, candidate)
+                            or BurdJournals.traitIdsMatch(defName, candidate)
+                    end
+                end
 
                 if exactMatch or lowerMatch or normalizedMatch then
                     if defType and (not instanceof or instanceof(defType, "CharacterTrait")) then
@@ -13155,21 +17220,24 @@ function BurdJournals.playerHasTrait(player, traitIdOrObj)
     end
 
     if not traitObj and traitId and CharacterTrait then
-        local lookups = {
-            string.upper(traitId),
-            traitId:gsub("(%u)", "_%1"):sub(2):upper(),
-            traitId,
-        }
-        for _, key in ipairs(lookups) do
-            if CharacterTrait[key] then
-                local ct = CharacterTrait[key]
-                if type(ct) == "string" and CharacterTrait.get and ResourceLocation and ResourceLocation.of then
-                    traitObj = CharacterTrait.get(ResourceLocation.of(ct))
-                else
-                    traitObj = ct
+        for _, candidate in ipairs(traitCandidates) do
+            local lookups = {
+                string.upper(candidate),
+                candidate:gsub("(%u)", "_%1"):sub(2):upper(),
+                candidate,
+            }
+            for _, key in ipairs(lookups) do
+                if CharacterTrait[key] then
+                    local ct = CharacterTrait[key]
+                    if type(ct) == "string" and CharacterTrait.get and ResourceLocation and ResourceLocation.of then
+                        traitObj = CharacterTrait.get(ResourceLocation.of(ct))
+                    else
+                        traitObj = ct
+                    end
+                    if traitObj then break end
                 end
-                if traitObj then break end
             end
+            if traitObj then break end
         end
     end
 
@@ -13180,22 +17248,25 @@ function BurdJournals.playerHasTrait(player, traitIdOrObj)
     if traitId and player.getTraits then
         local runtimeTraits = player:getTraits()
         if runtimeTraits then
-            local normalizedId = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(traitId) or tostring(traitId)
             if runtimeTraits.contains then
-                local okContains, contains = pcall(function()
-                    return runtimeTraits:contains(normalizedId)
-                end)
-                if okContains and contains == true then
-                    return true
+                for _, candidate in ipairs(traitCandidates) do
+                    local okContains, contains = pcall(function()
+                        return runtimeTraits:contains(candidate)
+                    end)
+                    if okContains and contains == true then
+                        return true
+                    end
                 end
             end
             if runtimeTraits.size and runtimeTraits.get then
-                local normalizedLower = string.lower(tostring(normalizedId))
                 for i = 0, runtimeTraits:size() - 1 do
                     local listedTrait = runtimeTraits:get(i)
                     local listedNorm = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(listedTrait) or tostring(listedTrait)
-                    if string.lower(tostring(listedNorm)) == normalizedLower then
-                        return true
+                    for _, candidate in ipairs(traitCandidates) do
+                        if string.lower(tostring(listedNorm)) == string.lower(tostring(candidate))
+                            or (BurdJournals.traitIdsMatch and BurdJournals.traitIdsMatch(tostring(listedNorm), candidate)) then
+                            return true
+                        end
                     end
                 end
             end
@@ -13203,7 +17274,11 @@ function BurdJournals.playerHasTrait(player, traitIdOrObj)
     end
 
     if traitId and type(player.HasTrait) == "function" then
-        return player:HasTrait(traitId) == true
+        for _, candidate in ipairs(traitCandidates) do
+            if player:HasTrait(candidate) == true then
+                return true
+            end
+        end
     end
 
     return false
@@ -14013,6 +18088,7 @@ end
 
 function BurdJournals.safeAddTrait(player, traitId, opts)
     if not player or not traitId then return false end
+    local skipTraitXpBoost = opts and opts.skipTraitXpBoost == true
 
     if BurdJournals.playerHasTrait(player, traitId) then
 
@@ -14122,16 +18198,16 @@ function BurdJournals.safeAddTrait(player, traitId, opts)
             local traitForBoost = traitDef and traitDef.getType and traitDef:getType() or traitObj
             local nativeTraitXpAdjusted = false
             local okNative = false
-            if player.modifyTraitXPBoost and traitForBoost then
+            if not skipTraitXpBoost and player.modifyTraitXPBoost and traitForBoost then
                 okNative = pcall(function()
                     player:modifyTraitXPBoost(traitForBoost, false)
                 end)
             end
-            local observedNativeAdjust = detectNativeTraitXpAdjustment(player, nativeXpSnapshot, 1)
+            local observedNativeAdjust = not skipTraitXpBoost and detectNativeTraitXpAdjustment(player, nativeXpSnapshot, 1) or nil
             if observedNativeAdjust ~= nil then
                 nativeTraitXpAdjusted = (observedNativeAdjust == true)
             else
-                nativeTraitXpAdjusted = (okNative == true)
+                nativeTraitXpAdjusted = false
             end
 
             if BurdJournals.applyTraitLifecycleSideEffects then
@@ -14140,7 +18216,7 @@ function BurdJournals.safeAddTrait(player, traitId, opts)
                     traitObj = traitObj,
                     resolvedTraitId = runtimeTraitId,
                     nativeTraitXpAdjusted = nativeTraitXpAdjusted,
-                    skipTraitReconciliation = opts and opts.skipTraitReconciliation == true,
+                    skipTraitReconciliation = (opts and opts.skipTraitReconciliation == true) or skipTraitXpBoost,
                     source = "safeAddTrait",
                 })
             end
@@ -14174,16 +18250,16 @@ function BurdJournals.safeAddTrait(player, traitId, opts)
             local traitForBoost = traitDef and traitDef.getType and traitDef:getType() or runtimeTraitId
             local nativeTraitXpAdjusted = false
             local okNative = false
-            if player.modifyTraitXPBoost and traitForBoost then
+            if not skipTraitXpBoost and player.modifyTraitXPBoost and traitForBoost then
                 okNative = pcall(function()
                     player:modifyTraitXPBoost(traitForBoost, false)
                 end)
             end
-            local observedNativeAdjust = detectNativeTraitXpAdjustment(player, nativeXpSnapshot, 1)
+            local observedNativeAdjust = not skipTraitXpBoost and detectNativeTraitXpAdjustment(player, nativeXpSnapshot, 1) or nil
             if observedNativeAdjust ~= nil then
                 nativeTraitXpAdjusted = (observedNativeAdjust == true)
             else
-                nativeTraitXpAdjusted = (okNative == true)
+                nativeTraitXpAdjusted = false
             end
 
             if BurdJournals.applyTraitLifecycleSideEffects then
@@ -14192,7 +18268,7 @@ function BurdJournals.safeAddTrait(player, traitId, opts)
                     traitObj = traitObj or runtimeTraitId,
                     resolvedTraitId = runtimeTraitId,
                     nativeTraitXpAdjusted = nativeTraitXpAdjusted,
-                    skipTraitReconciliation = opts and opts.skipTraitReconciliation == true,
+                    skipTraitReconciliation = (opts and opts.skipTraitReconciliation == true) or skipTraitXpBoost,
                     source = "safeAddTrait",
                 })
             end
@@ -14359,9 +18435,6 @@ function BurdJournals.safeRemoveTrait(player, traitId, opts)
             end
 
             local removed = not BurdJournals.playerHasTrait(player, traitObj)
-            if removed and BurdJournals.playerHasTrait(player, traitId) then
-                removed = false
-            end
 
             if removed then
                 local traitForBoost = traitDef and traitDef.getType and traitDef:getType() or traitObj
@@ -14413,9 +18486,6 @@ function BurdJournals.safeRemoveTrait(player, traitId, opts)
         end
 
         local removed = not BurdJournals.playerHasTrait(player, runtimeTraitId)
-        if removed and BurdJournals.playerHasTrait(player, traitId) then
-            removed = false
-        end
 
         if removed then
             local traitForBoost = traitDef and traitDef.getType and traitDef:getType() or runtimeTraitId
@@ -14635,12 +18705,13 @@ function BurdJournals.buildMagazineRecipeCache(forceRefresh)
                         for j = 0, learnedRecipes:size() - 1 do
                             local recipeName = learnedRecipes:get(j)
                             if recipeName then
-                                if BurdJournals.isRecipeExcluded(recipeName) then
+                                local canonicalRecipeName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(tostring(recipeName)) or tostring(recipeName)
+                                if BurdJournals.isRecipeExcluded(recipeName) or BurdJournals.isRecipeExcluded(canonicalRecipeName) then
                                     BurdJournals.debugPrint("[BurdJournals]   - Recipe (EXCLUDED): " .. tostring(recipeName))
                                 else
-                                    BurdJournals.debugPrint("[BurdJournals]   - Recipe: " .. tostring(recipeName))
-                                    if not cache[recipeName] then
-                                        cache[recipeName] = fullType
+                                    BurdJournals.debugPrint("[BurdJournals]   - Recipe: " .. tostring(canonicalRecipeName))
+                                    if not cache[canonicalRecipeName] then
+                                        cache[canonicalRecipeName] = fullType
                                     end
                                 end
                             end
@@ -14661,12 +18732,23 @@ end
 
 function BurdJournals.isMagazineRecipe(recipeName)
     local cache = BurdJournals.buildMagazineRecipeCache()
-    return cache[recipeName] ~= nil
+    if cache[recipeName] ~= nil then
+        return true
+    end
+    local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or nil
+    return canonicalName ~= nil and cache[canonicalName] ~= nil
 end
 
 function BurdJournals.getMagazineForRecipe(recipeName)
     local cache = BurdJournals.buildMagazineRecipeCache()
-    return cache[recipeName]
+    if cache[recipeName] ~= nil then
+        return cache[recipeName]
+    end
+    local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or nil
+    if canonicalName and cache[canonicalName] ~= nil then
+        return cache[canonicalName]
+    end
+    return nil
 end
 
 function BurdJournals.buildMagazineToRecipesCache(forceRefresh)
@@ -14702,16 +18784,17 @@ function BurdJournals.buildMagazineToRecipesCache(forceRefresh)
                         local recipeList = cache[fullType] or {}
                         for j = 0, learnedRecipes:size() - 1 do
                             local recipeName = learnedRecipes:get(j)
-                            if recipeName and not BurdJournals.isRecipeExcluded(recipeName) then
+                            local canonicalRecipeName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(tostring(recipeName)) or tostring(recipeName)
+                            if recipeName and not BurdJournals.isRecipeExcluded(recipeName) and not BurdJournals.isRecipeExcluded(canonicalRecipeName) then
                                 local isDupe = false
                                 for _, existing in ipairs(recipeList) do
-                                    if existing == recipeName then
+                                    if existing == canonicalRecipeName then
                                         isDupe = true
                                         break
                                     end
                                 end
                                 if not isDupe then
-                                    table.insert(recipeList, recipeName)
+                                    table.insert(recipeList, canonicalRecipeName)
                                 end
                             end
                         end
@@ -14798,6 +18881,69 @@ local function getRecipeScriptManager()
     return getScriptManager and getScriptManager() or nil
 end
 
+function BurdJournals.addUniqueRecipeAlias(aliases, seen, value)
+    if value == nil then return end
+    local text = tostring(value)
+    if text == "" or seen[text] then return end
+    seen[text] = true
+    aliases[#aliases + 1] = text
+end
+
+function BurdJournals.addDelimitedRecipeSuffixAliases(aliases, seen, value)
+    if type(value) ~= "string" or value == "" then return end
+    local dotSuffix = string.match(value, "%.([^%.]+)$")
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, dotSuffix)
+    local colonSuffix = string.match(value, ":([^:]+)$")
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, colonSuffix)
+end
+
+function BurdJournals.safeRecipeObjectString(recipe, methodName)
+    if not recipe or not methodName or not recipe[methodName] then return nil end
+    local ok, value = safePcall(function()
+        return recipe[methodName](recipe)
+    end)
+    if ok and value ~= nil then
+        local text = tostring(value)
+        if text ~= "" then
+            return text
+        end
+    end
+    return nil
+end
+
+function BurdJournals.getRecipeObjectAliases(recipe)
+    local aliases, seen = {}, {}
+    if not recipe then
+        return aliases
+    end
+
+    if type(recipe) == "string" then
+        BurdJournals.addUniqueRecipeAlias(aliases, seen, recipe)
+        BurdJournals.addDelimitedRecipeSuffixAliases(aliases, seen, recipe)
+        return aliases
+    end
+
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, BurdJournals.safeRecipeObjectString(recipe, "getFullName"))
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, BurdJournals.safeRecipeObjectString(recipe, "getFullType"))
+
+    local moduleName = BurdJournals.safeRecipeObjectString(recipe, "getModule")
+    local name = BurdJournals.safeRecipeObjectString(recipe, "getName")
+    if moduleName and name then
+        BurdJournals.addUniqueRecipeAlias(aliases, seen, moduleName .. "." .. name)
+        BurdJournals.addUniqueRecipeAlias(aliases, seen, moduleName .. ":" .. name)
+    end
+
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, name)
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, BurdJournals.safeRecipeObjectString(recipe, "getOriginalName"))
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, tostring(recipe))
+
+    for i = 1, #aliases do
+        BurdJournals.addDelimitedRecipeSuffixAliases(aliases, seen, aliases[i])
+    end
+
+    return aliases
+end
+
 local function getKnownRecipeArray(player)
     if not player then
         return {}
@@ -14805,6 +18951,11 @@ local function getKnownRecipeArray(player)
 
     local knownRecipesList = player.getKnownRecipes and player:getKnownRecipes() or nil
     return listToStringArray(knownRecipesList) or {}
+end
+
+local function getKnownRecipeState(player)
+    local knownRecipesArray = getKnownRecipeArray(player)
+    return knownRecipesArray, arrayToSet(knownRecipesArray)
 end
 
 local function removeStringFromListCompat(listObj, value)
@@ -14860,34 +19011,42 @@ local function isRecipeActuallyKnownCompat(player, recipeName)
     end
 
     local scriptManager = getRecipeScriptManager()
+    local recipeAliases = { recipeName }
+    local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or nil
+    if canonicalName and canonicalName ~= recipeName then
+        recipeAliases[#recipeAliases + 1] = canonicalName
+    end
     if player.isRecipeActuallyKnown then
-        local okDirect, directKnown = safePcall(function()
-            return player:isRecipeActuallyKnown(recipeName)
-        end)
-        if okDirect and directKnown then
-            return true
-        end
+        for i = 1, #recipeAliases do
+            local lookupName = recipeAliases[i]
+            local okDirect, directKnown = safePcall(function()
+                return player:isRecipeActuallyKnown(lookupName)
+            end)
+            if okDirect and directKnown then
+                return true
+            end
 
-        if scriptManager and scriptManager.getCraftRecipe then
-            local craftRecipe = scriptManager:getCraftRecipe(recipeName)
-            if craftRecipe then
-                local okCraft, craftKnown = safePcall(function()
-                    return player:isRecipeActuallyKnown(craftRecipe)
-                end)
-                if okCraft and craftKnown then
-                    return true
+            if scriptManager and scriptManager.getCraftRecipe then
+                local craftRecipe = scriptManager:getCraftRecipe(lookupName)
+                if craftRecipe then
+                    local okCraft, craftKnown = safePcall(function()
+                        return player:isRecipeActuallyKnown(craftRecipe)
+                    end)
+                    if okCraft and craftKnown then
+                        return true
+                    end
                 end
             end
-        end
 
-        if scriptManager and scriptManager.getBuildableRecipe then
-            local buildableRecipe = scriptManager:getBuildableRecipe(recipeName)
-            if buildableRecipe then
-                local okBuild, buildKnown = safePcall(function()
-                    return player:isRecipeActuallyKnown(buildableRecipe)
-                end)
-                if okBuild and buildKnown then
-                    return true
+            if scriptManager and scriptManager.getBuildableRecipe then
+                local buildableRecipe = scriptManager:getBuildableRecipe(lookupName)
+                if buildableRecipe then
+                    local okBuild, buildKnown = safePcall(function()
+                        return player:isRecipeActuallyKnown(buildableRecipe)
+                    end)
+                    if okBuild and buildKnown then
+                        return true
+                    end
                 end
             end
         end
@@ -14895,15 +19054,155 @@ local function isRecipeActuallyKnownCompat(player, recipeName)
 
     local seeNotLearnt = (SandboxVars and SandboxVars.SeeNotLearntRecipe) and true or false
     if not seeNotLearnt and player.isRecipeKnown then
-        local okClassic, classicKnown = safePcall(function()
-            return player:isRecipeKnown(recipeName)
-        end)
-        if okClassic and classicKnown then
-            return true
+        for i = 1, #recipeAliases do
+            local lookupName = recipeAliases[i]
+            local okClassic, classicKnown = safePcall(function()
+                return player:isRecipeKnown(lookupName)
+            end)
+            if okClassic and classicKnown then
+                return true
+            end
         end
     end
 
     return false
+end
+
+local authoritativeKnownRecipeCache = {}
+local knownRecipeCompatCache = {}
+local AUTHORITATIVE_KNOWN_RECIPE_CACHE_MS = 250
+local recipeDisplayNameCache = {}
+local magazineDisplayNameCache = {}
+local recipeModSourceCache = {}
+local recipeModIdCache = {}
+local transferableRecipeMetadataCache = {}
+
+local function getAuthoritativeKnownRecipeCacheKey(player)
+    if not player then
+        return nil
+    end
+
+    local characterId = BurdJournals.getPlayerCharacterId and BurdJournals.getPlayerCharacterId(player) or nil
+    if characterId then
+        return "character:" .. tostring(characterId)
+    end
+
+    local onlineId = player.getOnlineID and player:getOnlineID() or nil
+    if onlineId ~= nil then
+        return "online:" .. tostring(onlineId)
+    end
+
+    local username = player.getUsername and player:getUsername() or nil
+    if type(username) == "string" and username ~= "" then
+        return "username:" .. username
+    end
+
+    return nil
+end
+
+local function getKnownRecipeCompatCacheState(player, createIfMissing)
+    local cacheKey = getAuthoritativeKnownRecipeCacheKey(player)
+    if not cacheKey then
+        return nil, nil
+    end
+
+    local nowMs = (getTimestampMs and getTimestampMs()) or ((os and os.time and os.time() or 0) * 1000)
+    local cachedState = knownRecipeCompatCache[cacheKey]
+    if type(cachedState) == "table"
+        and tonumber(cachedState.expiresAt) ~= nil
+        and nowMs > 0
+        and nowMs > tonumber(cachedState.expiresAt)
+    then
+        cachedState = nil
+        knownRecipeCompatCache[cacheKey] = nil
+    end
+
+    if not cachedState and createIfMissing then
+        cachedState = {
+            values = {},
+            expiresAt = (nowMs > 0) and (nowMs + AUTHORITATIVE_KNOWN_RECIPE_CACHE_MS) or nil,
+        }
+        knownRecipeCompatCache[cacheKey] = cachedState
+    end
+
+    return cacheKey, cachedState
+end
+
+local function getKnownRecipeCompatCacheEntry(player, recipeName)
+    if type(recipeName) ~= "string" or recipeName == "" then
+        return false, false
+    end
+
+    local _, cachedState = getKnownRecipeCompatCacheState(player, false)
+    if type(cachedState) ~= "table" or type(cachedState.values) ~= "table" then
+        return false, false
+    end
+
+    local cachedValue = cachedState.values[recipeName]
+    if cachedValue == nil then
+        return false, false
+    end
+
+    return true, cachedValue == true
+end
+
+local function setKnownRecipeCompatCacheEntry(player, recipeName, isKnown)
+    if type(recipeName) ~= "string" or recipeName == "" then
+        return isKnown == true
+    end
+
+    local _, cachedState = getKnownRecipeCompatCacheState(player, true)
+    if type(cachedState) == "table" then
+        if type(cachedState.values) ~= "table" then
+            cachedState.values = {}
+        end
+        cachedState.values[recipeName] = isKnown == true
+        local nowMs = (getTimestampMs and getTimestampMs()) or ((os and os.time and os.time() or 0) * 1000)
+        if nowMs > 0 then
+            cachedState.expiresAt = nowMs + AUTHORITATIVE_KNOWN_RECIPE_CACHE_MS
+        end
+    end
+
+    return isKnown == true
+end
+
+local function getRecipeLookupCacheKey(recipeName, magazineSource)
+    local normalizedRecipeName = type(recipeName) == "string" and recipeName or ""
+    local normalizedMagazineSource = type(magazineSource) == "string" and magazineSource or ""
+    if normalizedRecipeName == "" and normalizedMagazineSource == "" then
+        return nil
+    end
+    return normalizedRecipeName .. "\31" .. normalizedMagazineSource
+end
+
+local function getCachedRecipeLookupValue(cacheTable, recipeName, magazineSource)
+    local cacheKey = getRecipeLookupCacheKey(recipeName, magazineSource)
+    if not cacheKey then
+        return nil, nil
+    end
+    local cachedValue = cacheTable[cacheKey]
+    if cachedValue ~= nil then
+        return cacheKey, cachedValue
+    end
+    return cacheKey, nil
+end
+
+local function setCachedRecipeLookupValue(cacheTable, cacheKey, value)
+    if cacheKey ~= nil then
+        cacheTable[cacheKey] = value
+    end
+    return value
+end
+
+function BurdJournals.invalidateAuthoritativeKnownRecipeCache(player)
+    local cacheKey = getAuthoritativeKnownRecipeCacheKey(player)
+    if cacheKey then
+        authoritativeKnownRecipeCache[cacheKey] = nil
+        knownRecipeCompatCache[cacheKey] = nil
+    else
+        authoritativeKnownRecipeCache = {}
+        knownRecipeCompatCache = {}
+    end
 end
 
 function BurdJournals.getAuthoritativeKnownRecipeSet(player)
@@ -14912,25 +19211,183 @@ function BurdJournals.getAuthoritativeKnownRecipeSet(player)
         return authoritativeRecipes
     end
 
-    local knownRecipesArray = getKnownRecipeArray(player)
+    local cacheKey = getAuthoritativeKnownRecipeCacheKey(player)
+    local nowMs = (getTimestampMs and getTimestampMs()) or ((os and os.time and os.time() or 0) * 1000)
+    if cacheKey and nowMs > 0 then
+        local cached = authoritativeKnownRecipeCache[cacheKey]
+        if cached
+            and type(cached.recipes) == "table"
+            and tonumber(cached.expiresAt) ~= nil
+            and nowMs <= tonumber(cached.expiresAt)
+        then
+            return cached.recipes
+        end
+    end
+
+    local knownRecipesArray, knownRecipeSet = getKnownRecipeState(player)
+    authoritativeRecipes = knownRecipeSet
     for i = 1, #knownRecipesArray do
         local recipeName = knownRecipesArray[i]
         if type(recipeName) == "string" and recipeName ~= "" then
             authoritativeRecipes[recipeName] = true
+            local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or nil
+            if canonicalName and canonicalName ~= "" then
+                authoritativeRecipes[canonicalName] = true
+            end
         end
     end
 
     local seeNotLearnt = (SandboxVars and SandboxVars.SeeNotLearntRecipe) and true or false
-    if not seeNotLearnt then
+    if not seeNotLearnt and #knownRecipesArray == 0 then
         local recipeToMag = BurdJournals.buildMagazineRecipeCache and BurdJournals.buildMagazineRecipeCache() or {}
         for recipeName, _ in pairs(recipeToMag) do
-            if not authoritativeRecipes[recipeName] and isRecipeActuallyKnownCompat(player, recipeName) then
+            local hasCompatCached, compatKnown = getKnownRecipeCompatCacheEntry(player, recipeName)
+            if not hasCompatCached then
+                compatKnown = setKnownRecipeCompatCacheEntry(player, recipeName, isRecipeActuallyKnownCompat(player, recipeName))
+            end
+            if not authoritativeRecipes[recipeName] and compatKnown then
                 authoritativeRecipes[recipeName] = true
             end
         end
     end
 
+    if cacheKey and nowMs > 0 then
+        authoritativeKnownRecipeCache[cacheKey] = {
+            recipes = authoritativeRecipes,
+            expiresAt = nowMs + AUTHORITATIVE_KNOWN_RECIPE_CACHE_MS,
+        }
+    end
+
     return authoritativeRecipes
+end
+
+local recipeLookupCache = nil
+
+local function addRecipeLookupAlias(cache, alias, canonicalName, recipe)
+    if type(alias) ~= "string" or alias == "" or type(canonicalName) ~= "string" or canonicalName == "" then
+        return
+    end
+    cache.exact[alias] = recipe
+    cache.aliasToCanonical[alias] = canonicalName
+    cache.lower[string.lower(alias)] = canonicalName
+end
+
+local function buildRecipeLookupCache()
+    local cache = {
+        exact = {},
+        lower = {},
+        aliasToCanonical = {},
+        count = 0,
+    }
+
+    local scriptManager = getRecipeScriptManager()
+
+    local recipes = getAllRecipes and getAllRecipes() or nil
+    if recipes and recipes.size and recipes.get then
+        local recipeCount = recipes:size() or 0
+        cache.count = recipeCount
+        for i = 0, recipeCount - 1 do
+            local recipe = recipes:get(i)
+            if recipe and recipe.getName then
+                local aliases = BurdJournals.getRecipeObjectAliases(recipe)
+                local canonicalName = aliases[1]
+                if canonicalName and canonicalName ~= "" then
+                    local candidateName = canonicalName
+                    cache.exact[candidateName] = recipe
+                    for j = 1, #aliases do
+                        addRecipeLookupAlias(cache, aliases[j], canonicalName, recipe)
+                    end
+                end
+            end
+        end
+    end
+
+    cache.scriptManager = scriptManager
+    recipeLookupCache = cache
+    return cache
+end
+
+function BurdJournals.getRecipeLookupCache()
+    local cache = recipeLookupCache
+    local recipes = getAllRecipes and getAllRecipes() or nil
+    local recipeCount = recipes and recipes.size and (recipes:size() or 0) or 0
+    if not cache or cache.count ~= recipeCount then
+        cache = buildRecipeLookupCache()
+    end
+    return cache
+end
+
+function BurdJournals.getRecipeCanonicalName(recipeName)
+    if type(recipeName) ~= "string" or recipeName == "" then
+        return nil
+    end
+
+    local cache = BurdJournals.getRecipeLookupCache and BurdJournals.getRecipeLookupCache() or nil
+    if cache then
+        if cache.aliasToCanonical and cache.aliasToCanonical[recipeName] then
+            return cache.aliasToCanonical[recipeName]
+        end
+        local canonicalName = cache.lower and cache.lower[string.lower(recipeName)] or nil
+        if canonicalName then
+            return canonicalName
+        end
+    end
+
+    return recipeName
+end
+
+function BurdJournals.getRecipeNameAliases(recipeName)
+    local aliases, seen = {}, {}
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, recipeName)
+
+    local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or nil
+    BurdJournals.addUniqueRecipeAlias(aliases, seen, canonicalName)
+
+    local script = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(canonicalName or recipeName) or nil
+    local objectAliases = BurdJournals.getRecipeObjectAliases(script)
+    for i = 1, #objectAliases do
+        BurdJournals.addUniqueRecipeAlias(aliases, seen, objectAliases[i])
+    end
+
+    for i = 1, #aliases do
+        BurdJournals.addDelimitedRecipeSuffixAliases(aliases, seen, aliases[i])
+    end
+
+    return aliases
+end
+
+function BurdJournals.resolveRecipeKey(recipeTable, recipeName)
+    if type(recipeTable) ~= "table" or type(recipeName) ~= "string" or recipeName == "" then
+        return nil
+    end
+
+    if recipeTable[recipeName] ~= nil then
+        return recipeName
+    end
+
+    local aliases = BurdJournals.getRecipeNameAliases and BurdJournals.getRecipeNameAliases(recipeName) or { recipeName }
+    for i = 1, #aliases do
+        local alias = aliases[i]
+        if alias and recipeTable[alias] ~= nil then
+            return alias
+        end
+    end
+
+    local lowered = {}
+    for i = 1, #aliases do
+        local alias = aliases[i]
+        if type(alias) == "string" and alias ~= "" then
+            lowered[string.lower(alias)] = true
+        end
+    end
+
+    for key, _ in pairs(recipeTable) do
+        if type(key) == "string" and lowered[string.lower(key)] then
+            return key
+        end
+    end
+
+    return nil
 end
 
 function BurdJournals.getRecipeScript(recipeName)
@@ -14938,47 +19395,49 @@ function BurdJournals.getRecipeScript(recipeName)
         return nil
     end
 
-    local scriptManager = getRecipeScriptManager()
-    if scriptManager and scriptManager.getRecipe then
-        local directRecipe = scriptManager:getRecipe(recipeName)
-        if directRecipe then
-            return directRecipe
+    local cache = BurdJournals.getRecipeLookupCache and BurdJournals.getRecipeLookupCache() or nil
+    local scriptManager = cache and cache.scriptManager or getRecipeScriptManager()
+    local lookupNames = {}
+    lookupNames[#lookupNames + 1] = recipeName
+    if cache then
+        local canonicalName = (cache.aliasToCanonical and cache.aliasToCanonical[recipeName])
+            or (cache.lower and cache.lower[string.lower(recipeName)])
+        if canonicalName and canonicalName ~= recipeName then
+            lookupNames[#lookupNames + 1] = canonicalName
         end
     end
 
-    if scriptManager and scriptManager.getCraftRecipe then
-        local craftRecipe = scriptManager:getCraftRecipe(recipeName)
-        if craftRecipe then
-            return craftRecipe
-        end
-    end
-
-    if scriptManager and scriptManager.getBuildableRecipe then
-        local buildableRecipe = scriptManager:getBuildableRecipe(recipeName)
-        if buildableRecipe then
-            return buildableRecipe
-        end
-    end
-
-    local recipes = getAllRecipes and getAllRecipes() or nil
-    if recipes and recipes.size and recipes.get then
-        local recipeCount = recipes:size() or 0
-        for i = 0, recipeCount - 1 do
-            local recipe = recipes:get(i)
-            if recipe and recipe.getName and recipe:getName() == recipeName then
-                return recipe
+    for i = 1, #lookupNames do
+        local lookupName = lookupNames[i]
+        if scriptManager and scriptManager.getRecipe then
+            local directRecipe = scriptManager:getRecipe(lookupName)
+            if directRecipe then
+                return directRecipe
             end
         end
 
-        local recipeNameLower = string.lower(recipeName)
-        for i = 0, recipeCount - 1 do
-            local recipe = recipes:get(i)
-            if recipe and recipe.getName then
-                local candidateName = recipe:getName()
-                if candidateName and string.lower(candidateName) == recipeNameLower then
-                    return recipe
-                end
+        if scriptManager and scriptManager.getCraftRecipe then
+            local craftRecipe = scriptManager:getCraftRecipe(lookupName)
+            if craftRecipe then
+                return craftRecipe
             end
+        end
+
+        if scriptManager and scriptManager.getBuildableRecipe then
+            local buildableRecipe = scriptManager:getBuildableRecipe(lookupName)
+            if buildableRecipe then
+                return buildableRecipe
+            end
+        end
+    end
+
+    if cache then
+        if cache.exact and cache.exact[recipeName] then
+            return cache.exact[recipeName]
+        end
+        local canonicalName = cache.lower and cache.lower[string.lower(recipeName)] or nil
+        if canonicalName and cache.exact then
+            return cache.exact[canonicalName]
         end
     end
 
@@ -14989,16 +19448,25 @@ local function getTransferableRecipeMetadata(recipeName, includeAllKnownWhenCapt
     if type(recipeName) ~= "string" or recipeName == "" then
         return false, nil, false
     end
+    local canonicalName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or recipeName
+    recipeName = canonicalName or recipeName
+    local cacheKey = tostring(recipeName) .. "\31" .. tostring(includeAllKnownWhenCapture == true)
+    local cached = transferableRecipeMetadataCache[cacheKey]
+    if type(cached) == "table" then
+        return cached.isTransferable == true, cached.magazineType, cached.needsLearning == true
+    end
 
     local magazineType = BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(recipeName) or nil
     local recipeScript = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
     local needsLearning = recipeScript and recipeScript.needToBeLearn and recipeScript:needToBeLearn() or false
+    local isTransferable = includeAllKnownWhenCapture == true or magazineType ~= nil or needsLearning == true
 
-    if includeAllKnownWhenCapture or magazineType or needsLearning then
-        return true, magazineType, needsLearning
-    end
-
-    return false, magazineType, needsLearning
+    transferableRecipeMetadataCache[cacheKey] = {
+        isTransferable = isTransferable == true,
+        magazineType = magazineType,
+        needsLearning = needsLearning == true,
+    }
+    return isTransferable == true, magazineType, needsLearning == true
 end
 
 function BurdJournals.isTransferableRecipeKnown(player, recipeName, includeAllKnownWhenCapture)
@@ -15028,7 +19496,7 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting, incl
     local recipes = {}
     local authoritativeKnownRecipes = BurdJournals.getAuthoritativeKnownRecipeSet(player)
     local recipeToMag = BurdJournals.buildMagazineRecipeCache()
-    local includeAllKnown = includeAllKnownWhenCapture == true and not excludeStarting
+    local includeAllKnown = includeAllKnownWhenCapture == true or excludeStarting == true
 
     local magCount = 0
     for _ in pairs(recipeToMag) do magCount = magCount + 1 end
@@ -15040,9 +19508,10 @@ function BurdJournals.collectPlayerMagazineRecipes(player, excludeStarting, incl
     local includedByBaselineCount = 0
     for recipeName, _ in pairs(authoritativeKnownRecipes) do
         authoritativeCount = authoritativeCount + 1
-        local isTransferable, magazineType, needsLearning = getTransferableRecipeMetadata(recipeName, includeAllKnown)
+        local canonicalRecipeName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or recipeName
+        local isTransferable, magazineType, needsLearning = getTransferableRecipeMetadata(canonicalRecipeName, includeAllKnown)
         if isTransferable then
-            recipes[recipeName] = true
+            recipes[canonicalRecipeName] = true
             if magazineType then
                 mappedCount = mappedCount + 1
             elseif needsLearning then
@@ -15099,14 +19568,31 @@ function BurdJournals.playerKnowsRecipe(player, recipeName)
     local DEBUG_RECIPE_CHECK = false
 
     local authoritativeRecipes = BurdJournals.getAuthoritativeKnownRecipeSet(player)
-    if authoritativeRecipes[recipeName] == true then
+    local recipeAliases = BurdJournals.getRecipeNameAliases and BurdJournals.getRecipeNameAliases(recipeName) or { recipeName }
+    for i = 1, #recipeAliases do
+        local alias = recipeAliases[i]
+        if authoritativeRecipes[alias] == true then
+            if DEBUG_RECIPE_CHECK then
+                BurdJournals.debugPrint("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via authoritative known recipe alias " .. tostring(alias))
+            end
+            return true
+        end
+    end
+
+    local canonicalRecipeName = BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or recipeName
+    if authoritativeRecipes[canonicalRecipeName] == true then
         if DEBUG_RECIPE_CHECK then
             BurdJournals.debugPrint("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via authoritative known recipe state")
         end
         return true
     end
 
-    if isRecipeActuallyKnownCompat(player, recipeName) then
+    local hasCompatCached, compatKnown = getKnownRecipeCompatCacheEntry(player, canonicalRecipeName)
+    if not hasCompatCached then
+        compatKnown = setKnownRecipeCompatCacheEntry(player, canonicalRecipeName, isRecipeActuallyKnownCompat(player, canonicalRecipeName))
+    end
+
+    if compatKnown then
         if DEBUG_RECIPE_CHECK then
             BurdJournals.debugPrint("[BurdJournals DEBUG] playerKnowsRecipe(" .. recipeName .. ") -> TRUE via isRecipeActuallyKnownCompat()")
         end
@@ -15132,7 +19618,7 @@ function BurdJournals.validateRecipeName(recipeName)
 
     local scriptRecipe = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
     if scriptRecipe then
-        return recipeName
+        return BurdJournals.getRecipeCanonicalName and BurdJournals.getRecipeCanonicalName(recipeName) or recipeName
     end
 
     local recipes, recipeCount = getAllRecipesList()
@@ -15152,9 +19638,13 @@ function BurdJournals.validateRecipeName(recipeName)
     for i = 0, recipeCount - 1 do
         local recipe = recipes:get(i)
         if recipe and recipe.getName then
-            local name = recipe:getName()
-            if name and string.lower(name) == recipeNameLower then
-                return name
+            local aliases = BurdJournals.getRecipeObjectAliases(recipe)
+            local canonicalName = aliases[1]
+            for j = 1, #aliases do
+                local name = aliases[j]
+                if name and string.lower(name) == recipeNameLower then
+                    return canonicalName or name
+                end
             end
         end
     end
@@ -15186,8 +19676,23 @@ function BurdJournals.learnRecipeWithVerification(player, recipeName, logPrefix)
     local learnTarget = validatedName or recipeName
     local learned = false
 
-    if player.learnRecipe then
+    local knownRecipesList = player.getKnownRecipes and player:getKnownRecipes() or nil
+    if knownRecipesList and knownRecipesList.add and not listContainsString(knownRecipesList, learnTarget) then
+        local okDirectAdd = safePcall(function()
+            knownRecipesList:add(learnTarget)
+        end)
+        if okDirectAdd then
+            BurdJournals.invalidateAuthoritativeKnownRecipeCache(player)
+            if BurdJournals.playerKnowsRecipe(player, learnTarget) then
+                BurdJournals.debugPrint(logPrefix .. " Learned recipe via known recipe list: " .. learnTarget)
+                learned = true
+            end
+        end
+    end
+
+    if not learned and player.learnRecipe then
         player:learnRecipe(learnTarget)
+        BurdJournals.invalidateAuthoritativeKnownRecipeCache(player)
         if BurdJournals.playerKnowsRecipe(player, learnTarget) then
             BurdJournals.debugPrint(logPrefix .. " Learned recipe via learnRecipe(): " .. learnTarget)
             learned = true
@@ -15223,6 +19728,7 @@ function BurdJournals.learnRecipeWithVerification(player, recipeName, logPrefix)
                 player:learnRecipe(learnTarget)
             end
 
+            BurdJournals.invalidateAuthoritativeKnownRecipeCache(player)
             if BurdJournals.playerKnowsRecipe(player, learnTarget) then
                 BurdJournals.debugPrint(logPrefix .. " Learned recipe via magazine system: " .. learnTarget)
                 learned = true
@@ -15277,6 +19783,7 @@ function BurdJournals.forgetRecipeWithVerification(player, recipeName, logPrefix
         removeStringFromListCompat(readBooks, magazineType)
     end
 
+    BurdJournals.invalidateAuthoritativeKnownRecipeCache(player)
     local stillKnown = BurdJournals.playerKnowsRecipe(player, forgetTarget)
     if stillKnown then
         BurdJournals.writeLogLine(logPrefix .. " FAILED to forget recipe: " .. tostring(forgetTarget))
@@ -15459,34 +19966,49 @@ end
 function BurdJournals.getRecipeDisplayName(recipeName)
     if not recipeName then return "Unknown Recipe" end
 
+    local cacheKey = tostring(recipeName)
+    local cached = recipeDisplayNameCache[cacheKey]
+    if cached ~= nil then
+        return cached
+    end
+
     local scriptRecipe = BurdJournals.getRecipeScript and BurdJournals.getRecipeScript(recipeName) or nil
     local translatedRecipeName = getTranslatedRecipeDisplayName(recipeName, scriptRecipe)
     if translatedRecipeName then
+        recipeDisplayNameCache[cacheKey] = translatedRecipeName
         return translatedRecipeName
     end
     if scriptRecipe then
         if scriptRecipe.getTranslationName then
             local translatedName = scriptRecipe:getTranslationName()
             if isMeaningfulRecipeDisplayName(translatedName, recipeName) then
-                return BurdJournals.normalizeRecipeName(translatedName)
+                local normalizedName = BurdJournals.normalizeRecipeName(translatedName)
+                recipeDisplayNameCache[cacheKey] = normalizedName
+                return normalizedName
             end
         end
         if scriptRecipe.getDisplayName then
             local displayName = scriptRecipe:getDisplayName()
             if isMeaningfulRecipeDisplayName(displayName, recipeName) then
-                return BurdJournals.normalizeRecipeName(displayName)
+                local normalizedName = BurdJournals.normalizeRecipeName(displayName)
+                recipeDisplayNameCache[cacheKey] = normalizedName
+                return normalizedName
             end
         end
         if scriptRecipe.getOriginalname then
             local scriptOriginalName = scriptRecipe:getOriginalname()
             if isMeaningfulRecipeDisplayName(scriptOriginalName, recipeName) then
-                return BurdJournals.normalizeRecipeName(scriptOriginalName)
+                local normalizedName = BurdJournals.normalizeRecipeName(scriptOriginalName)
+                recipeDisplayNameCache[cacheKey] = normalizedName
+                return normalizedName
             end
         end
         if scriptRecipe.getName then
             local scriptDisplayName = scriptRecipe:getName()
             if isMeaningfulRecipeDisplayName(scriptDisplayName, recipeName) then
-                return BurdJournals.normalizeRecipeName(scriptDisplayName)
+                local normalizedName = BurdJournals.normalizeRecipeName(scriptDisplayName)
+                recipeDisplayNameCache[cacheKey] = normalizedName
+                return normalizedName
             end
         end
     end
@@ -15499,7 +20021,9 @@ function BurdJournals.getRecipeDisplayName(recipeName)
                 if recipe.getOriginalname then
                     local origName = recipe:getOriginalname()
                     if isMeaningfulRecipeDisplayName(origName, recipeName) then
-                        return BurdJournals.normalizeRecipeName(origName)
+                        local normalizedName = BurdJournals.normalizeRecipeName(origName)
+                        recipeDisplayNameCache[cacheKey] = normalizedName
+                        return normalizedName
                     end
                 end
                 break
@@ -15507,7 +20031,9 @@ function BurdJournals.getRecipeDisplayName(recipeName)
         end
     end
 
-    return BurdJournals.normalizeRecipeName(recipeName)
+    local fallbackName = BurdJournals.normalizeRecipeName(recipeName)
+    recipeDisplayNameCache[cacheKey] = fallbackName
+    return fallbackName
 end
 
 function BurdJournals.normalizeRecipeName(recipeName)
@@ -15555,12 +20081,19 @@ end
 function BurdJournals.getMagazineDisplayName(magazineType)
     if not magazineType then return "Unknown Magazine" end
 
+    local cacheKey = tostring(magazineType)
+    local cached = magazineDisplayNameCache[cacheKey]
+    if cached ~= nil then
+        return cached
+    end
+
     local scriptManager = getScriptManager and getScriptManager() or nil
     if scriptManager and scriptManager.getItem then
         local script = scriptManager:getItem(magazineType)
         if script and script.getDisplayName then
             local displayName = script:getDisplayName()
             if displayName and displayName ~= "" then
+                magazineDisplayNameCache[cacheKey] = displayName
                 return displayName
             end
         end
@@ -15574,6 +20107,7 @@ function BurdJournals.getMagazineDisplayName(magazineType)
 
     fallback = fallback:gsub("(%l)(%u)", "%1 %2")
     fallback = fallback:gsub("(%a)(%d)", "%1 %2")
+    magazineDisplayNameCache[cacheKey] = fallback
     return fallback
 end
 
@@ -16460,15 +20994,19 @@ function BurdJournals.getTraitModId(traitId)
 end
 
 function BurdJournals.getRecipeModSource(recipeName, magazineSource)
+    local cacheKey, cachedSource = getCachedRecipeLookupValue(recipeModSourceCache, recipeName, magazineSource)
+    if cachedSource ~= nil then
+        return cachedSource
+    end
 
     if magazineSource and magazineSource ~= "" then
-        return BurdJournals.getModSourceFromFullType(magazineSource)
+        return setCachedRecipeLookupValue(recipeModSourceCache, cacheKey, BurdJournals.getModSourceFromFullType(magazineSource))
     end
 
     if recipeName then
         local magazine = BurdJournals.getMagazineForRecipe(recipeName)
         if magazine then
-            return BurdJournals.getModSourceFromFullType(magazine)
+            return setCachedRecipeLookupValue(recipeModSourceCache, cacheKey, BurdJournals.getModSourceFromFullType(magazine))
         end
 
         local recipe = BurdJournals.getRecipeByName and BurdJournals.getRecipeByName(recipeName) or nil
@@ -16494,24 +21032,29 @@ function BurdJournals.getRecipeModSource(recipeName, magazineSource)
             if moduleName and moduleName ~= "" then
                 local source = BurdJournals.getModSourceFromPrefix(moduleName)
                 if source then
-                    return source
+                    return setCachedRecipeLookupValue(recipeModSourceCache, cacheKey, source)
                 end
             end
         end
     end
 
-    return "Modded"
+    return setCachedRecipeLookupValue(recipeModSourceCache, cacheKey, "Modded")
 end
 
 function BurdJournals.getRecipeModId(recipeName, magazineSource)
+    local cacheKey, cachedId = getCachedRecipeLookupValue(recipeModIdCache, recipeName, magazineSource)
+    if cachedId ~= nil then
+        return cachedId
+    end
+
     if magazineSource and magazineSource ~= "" then
-        return BurdJournals.getModIdFromFullType(magazineSource)
+        return setCachedRecipeLookupValue(recipeModIdCache, cacheKey, BurdJournals.getModIdFromFullType(magazineSource))
     end
 
     if recipeName then
         local magazine = BurdJournals.getMagazineForRecipe(recipeName)
         if magazine then
-            return BurdJournals.getModIdFromFullType(magazine)
+            return setCachedRecipeLookupValue(recipeModIdCache, cacheKey, BurdJournals.getModIdFromFullType(magazine))
         end
 
         local recipe = BurdJournals.getRecipeByName and BurdJournals.getRecipeByName(recipeName) or nil
@@ -16537,13 +21080,13 @@ function BurdJournals.getRecipeModId(recipeName, magazineSource)
             if moduleName and moduleName ~= "" then
                 local sourceId = BurdJournals.getModIdFromPrefix(moduleName)
                 if sourceId then
-                    return sourceId
+                    return setCachedRecipeLookupValue(recipeModIdCache, cacheKey, sourceId)
                 end
             end
         end
     end
 
-    return "Modded"
+    return setCachedRecipeLookupValue(recipeModIdCache, cacheKey, "Modded")
 end
 
 function BurdJournals.diagnoseModSource(itemType, name, context)

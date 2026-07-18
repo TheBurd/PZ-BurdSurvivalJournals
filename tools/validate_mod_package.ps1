@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Validates the BSJ dev mod layout for versioned Build 42 packaging.
 #>
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals",
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals",
     [ValidateSet("auto", "json", "legacy")][string]$ExpectedTranslationFormat = "auto"
 )
 
@@ -208,3 +208,4 @@ if ($failures.Count -gt 0) {
 }
 
 exit 0
+

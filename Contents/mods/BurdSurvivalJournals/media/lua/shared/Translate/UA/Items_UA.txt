@@ -1,9 +1,9 @@
-п»їItems_UA = {
-    DisplayName_BlankSurvivalJournal = "РџРѕСЂРѕР¶РЅС–Р№ Р¶СѓСЂРЅР°Р» РІРёР¶РёРІР°РЅРЅСЏ",
-    DisplayName_BlankSurvivalJournal_Worn = "РџРѕС‚РµСЂС‚РёР№ РїРѕСЂРѕР¶РЅС–Р№ Р¶СѓСЂРЅР°Р»",
-    DisplayName_BlankSurvivalJournal_Bloody = "РљСЂРёРІР°РІРёР№ РїРѕСЂРѕР¶РЅС–Р№ Р¶СѓСЂРЅР°Р»",
-    DisplayName_FilledSurvivalJournal = "Р—Р°РїРѕРІРЅРµРЅРёР№ Р¶СѓСЂРЅР°Р» РІРёР¶РёРІР°РЅРЅСЏ",
-    DisplayName_FilledSurvivalJournal_Worn = "Р—РЅРѕС€РµРЅРёР№ Р¶СѓСЂРЅР°Р» РІРёР¶РёРІР°РЅРЅСЏ",
-    DisplayName_FilledSurvivalJournal_Bloody = "РљСЂРёРІР°РІРёР№ Р¶СѓСЂРЅР°Р» РІРёР¶РёРІР°РЅРЅСЏ",
-    DisplayName_CursedJournal = "РџСЂРѕРєР»СЏС‚РёР№ Р¶СѓСЂРЅР°Р»",
+Items_UA = {
+    DisplayName_BlankSurvivalJournal = "Порожній журнал виживання",
+    DisplayName_BlankSurvivalJournal_Worn = "Потертий порожній журнал",
+    DisplayName_BlankSurvivalJournal_Bloody = "Кривавий порожній журнал",
+    DisplayName_FilledSurvivalJournal = "Заповнений журнал виживання",
+    DisplayName_FilledSurvivalJournal_Worn = "Зношений журнал виживання",
+    DisplayName_FilledSurvivalJournal_Bloody = "Кривавий журнал виживання",
+    DisplayName_CursedJournal = "Проклятий журнал",
 }

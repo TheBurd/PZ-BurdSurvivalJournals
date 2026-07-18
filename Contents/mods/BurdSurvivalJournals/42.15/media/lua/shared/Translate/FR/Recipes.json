@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "Restaurer le journal (Adhésif + Cuir)",
     "Recipe_RestoreJournal_Adhesive_Leather": "Restaurer le journal (Adhésif + Cuir)",
     "RestoreJournal_Adhesive_AnyCover": "Restaurer le journal (Adhésif + Tissu)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "Restaurer le journal (Adhésif + Tissu)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "Restaurer le journal (Adhésif + Tissu)",
+    "CraftNotebook_Makeshift": "Fabriquer un carnet",
+    "Recipe_CraftNotebook_Makeshift": "Fabriquer un carnet",
+    "CraftJournal_Bound": "Fabriquer un journal",
+    "Recipe_CraftJournal_Bound": "Fabriquer un journal"
 }

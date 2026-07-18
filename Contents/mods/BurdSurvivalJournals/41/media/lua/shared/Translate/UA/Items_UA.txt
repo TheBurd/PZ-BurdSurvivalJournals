@@ -1,9 +1,0 @@
-﻿Items_UA = {
-    DisplayName_BlankSurvivalJournal = "Порожній журнал виживання",
-    DisplayName_BlankSurvivalJournal_Worn = "Потертий порожній журнал",
-    DisplayName_BlankSurvivalJournal_Bloody = "Кривавий порожній журнал",
-    DisplayName_FilledSurvivalJournal = "Заповнений журнал виживання",
-    DisplayName_FilledSurvivalJournal_Worn = "Зношений журнал виживання",
-    DisplayName_FilledSurvivalJournal_Bloody = "Кривавий журнал виживання",
-    DisplayName_CursedJournal = "Проклятий журнал",
-}

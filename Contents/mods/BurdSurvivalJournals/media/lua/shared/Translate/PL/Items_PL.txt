@@ -1,9 +1,9 @@
-﻿Items_PL = {
+Items_PL = {
     DisplayName_BlankSurvivalJournal = "Pusty dziennik przetrwania",
     DisplayName_BlankSurvivalJournal_Worn = "Zuzyty pusty dziennik",
     DisplayName_BlankSurvivalJournal_Bloody = "Zakrwawiony pusty dziennik",
     DisplayName_FilledSurvivalJournal = "Wypelniony dziennik przetrwania",
     DisplayName_FilledSurvivalJournal_Worn = "Zuzyty dziennik przetrwania",
     DisplayName_FilledSurvivalJournal_Bloody = "Zakrwawiony dziennik przetrwania",
-    DisplayName_CursedJournal = "Przeklęty dziennik",
+    DisplayName_CursedJournal = "Przekl�ty dziennik",
 }

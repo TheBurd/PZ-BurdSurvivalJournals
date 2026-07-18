@@ -1,10 +1,10 @@
 ItemName_CH = {
-    ItemName_BurdJournals.BlankSurvivalJournal = "空白生存日志",
-    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "破旧空白生存日志",
-    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "沾血空白生存日志",
+    ItemName_BurdJournals.BlankSurvivalJournal = "绌虹櫧鐢熷瓨鏃ュ織",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "鐮存棫绌虹櫧鐢熷瓨鏃ュ織",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "娌捐绌虹櫧鐢熷瓨鏃ュ織",
     ItemName_BurdJournals.FilledSurvivalJournal = "已填写生存日志",
-    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "破旧生存日志",
-    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "沾血生存日志",
-    ItemName_BurdJournals.CursedJournal = "诅咒日志",
-    ItemName_BurdJournals.YuletideJournal = "聖誕日誌",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "鐮存棫鐢熷瓨鏃ュ織",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "娌捐鐢熷瓨鏃ュ織",
+    ItemName_BurdJournals.CursedJournal = "璇呭拻鏃ュ織",
+    ItemName_BurdJournals.YuletideJournal = "鑱栬獣鏃ヨ獙",
 }

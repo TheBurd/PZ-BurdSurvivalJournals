@@ -1,9 +1,9 @@
 {
-    "DisplayName_BlankSurvivalJournal": "Чистый дневник выживания",
-    "DisplayName_BlankSurvivalJournal_Worn": "Потрёпанный чистый дневник",
-    "DisplayName_BlankSurvivalJournal_Bloody": "Окровавленный чистый дневник",
-    "DisplayName_FilledSurvivalJournal": "Заполненный дневник выживания",
-    "DisplayName_FilledSurvivalJournal_Worn": "Потрёпанный дневник выживания",
-    "DisplayName_FilledSurvivalJournal_Bloody": "Окровавленный дневник выживания",
+    "DisplayName_BlankSurvivalJournal": "Чистый журнал выживающего",
+    "DisplayName_BlankSurvivalJournal_Worn": "Потрёпанный чистый журнал",
+    "DisplayName_BlankSurvivalJournal_Bloody": "Окровавленный чистый журнал",
+    "DisplayName_FilledSurvivalJournal": "Заполненный журнал выживающего",
+    "DisplayName_FilledSurvivalJournal_Worn": "Потрёпанный журнал выживающего",
+    "DisplayName_FilledSurvivalJournal_Bloody": "Окровавленный журнал выживающего",
     "DisplayName_CursedJournal": "Проклятый журнал"
 }

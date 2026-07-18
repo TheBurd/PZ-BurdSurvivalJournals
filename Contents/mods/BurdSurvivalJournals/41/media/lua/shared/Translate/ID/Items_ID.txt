@@ -1,9 +1,0 @@
-﻿Items_ID = {
-    DisplayName_BlankSurvivalJournal = "Jurnal Kelangsungan Hidup Kosong",
-    DisplayName_BlankSurvivalJournal_Worn = "Jurnal Kosong yang Dipakai",
-    DisplayName_BlankSurvivalJournal_Bloody = "Jurnal Kosong Berdarah",
-    DisplayName_FilledSurvivalJournal = "Jurnal Kelangsungan Hidup yang Terisi",
-    DisplayName_FilledSurvivalJournal_Worn = "Jurnal Kelangsungan Hidup yang Dipakai",
-    DisplayName_FilledSurvivalJournal_Bloody = "Jurnal Kelangsungan Hidup Berdarah",
-    DisplayName_CursedJournal = "Jurnal Terkutuk",
-}

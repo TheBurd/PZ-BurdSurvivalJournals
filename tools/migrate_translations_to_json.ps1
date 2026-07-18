@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Convert legacy BSJ translation files to the Build 42.15+ JSON format.
 #>
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals",
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals",
     [switch]$RemoveLegacyFiles
 )
 
@@ -55,3 +55,4 @@ Write-Host ("Migration complete. Converted {0} file(s)." -f $converted) -Foregro
 if ($RemoveLegacyFiles) {
     Write-Host ("Removed {0} legacy file(s)." -f $removed) -ForegroundColor Green
 }
+

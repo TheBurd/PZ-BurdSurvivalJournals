@@ -1,4 +1,4 @@
-# Burd's Survival Journals
+﻿# Burd's Survival Journals
 
 A Project Zomboid mod for Build 42 that lets you record your survival skills in personal journals and learn from fallen survivors.
 
@@ -18,7 +18,7 @@ Subscribe to the mod on the [Steam Workshop](https://steamcommunity.com/sharedfi
 
 ### Manual Installation
 1. Download or clone this repository
-2. Copy the `Contents/mods/BurdSurvivalJournals` folder to your Project Zomboid mods directory:
+2. Copy the `mods/BurdSurvivalJournals` folder to your Project Zomboid mods directory:
    - Windows: `%UserProfile%\Zomboid\mods\`
    - Linux: `~/Zomboid/mods/`
    - Mac: `~/Zomboid/mods/`
@@ -52,3 +52,4 @@ All rights reserved. This mod is provided for personal use with Project Zomboid.
 ---
 
 *Record your journey. Share your knowledge. Survive together.*
+

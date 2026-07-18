@@ -1,4 +1,4 @@
-﻿IG_UI_ID = {
+IG_UI_ID = {
     ContextMenu_BurdJournals_OpenJournal = "Buka Jurnal...",
     ContextMenu_BurdJournals_Read = "Membaca",
     ContextMenu_BurdJournals_Rename = "Ganti nama",

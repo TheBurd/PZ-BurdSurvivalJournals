@@ -1,9 +1,9 @@
-﻿Items_CN = {
-    DisplayName_BlankSurvivalJournal = "空白生存日志",
-    DisplayName_BlankSurvivalJournal_Worn = "破旧空白生存日志",
-    DisplayName_BlankSurvivalJournal_Bloody = "沾血空白生存日志",
+Items_CH = {
+    DisplayName_BlankSurvivalJournal = "绌虹櫧鐢熷瓨鏃ュ織",
+    DisplayName_BlankSurvivalJournal_Worn = "閻瓨妫粚铏规閻㈢喎鐡ㄩ弮銉ョ箶",
+    DisplayName_BlankSurvivalJournal_Bloody = "濞屾崘顢呯粚铏规閻㈢喎鐡ㄩ弮銉ョ箶",
     DisplayName_FilledSurvivalJournal = "已填写生存日志",
-    DisplayName_FilledSurvivalJournal_Worn = "破旧生存日志",
-    DisplayName_FilledSurvivalJournal_Bloody = "沾血生存日志",
-    DisplayName_CursedJournal = "诅咒日志",
+    DisplayName_FilledSurvivalJournal_Worn = "鐮存棫鐢熷瓨鏃ュ織",
+    DisplayName_FilledSurvivalJournal_Bloody = "娌捐鐢熷瓨鏃ュ織",
+    DisplayName_CursedJournal = "鐠囧懎鎷婚弮銉ョ箶",
 }

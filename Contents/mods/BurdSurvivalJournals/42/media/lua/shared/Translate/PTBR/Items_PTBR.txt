@@ -1,9 +1,9 @@
-ï»¿Items_PTBR = {
-    DisplayName_BlankSurvivalJournal = "DiÃ¡rio de SobrevivÃªncia em Branco",
-    DisplayName_BlankSurvivalJournal_Worn = "DiÃ¡rio em Branco Desgastado",
-    DisplayName_BlankSurvivalJournal_Bloody = "DiÃ¡rio em Branco Ensanguentado",
-    DisplayName_FilledSurvivalJournal = "DiÃ¡rio de SobrevivÃªncia Preenchido",
-    DisplayName_FilledSurvivalJournal_Worn = "DiÃ¡rio de SobrevivÃªncia Desgastado",
-    DisplayName_FilledSurvivalJournal_Bloody = "DiÃ¡rio de SobrevivÃªncia Ensanguentado",
-    DisplayName_CursedJournal = "DiÃ¡rio AmaldiÃ§oado",
+Items_PTBR = {
+    DisplayName_BlankSurvivalJournal = "Diário de Sobrevivência em Branco",
+    DisplayName_BlankSurvivalJournal_Worn = "Diário em Branco Desgastado",
+    DisplayName_BlankSurvivalJournal_Bloody = "Diário em Branco Ensanguentado",
+    DisplayName_FilledSurvivalJournal = "Diário de Sobrevivência Preenchido",
+    DisplayName_FilledSurvivalJournal_Worn = "Diário de Sobrevivência Desgastado",
+    DisplayName_FilledSurvivalJournal_Bloody = "Diário de Sobrevivência Ensanguentado",
+    DisplayName_CursedJournal = "Diário Amaldiçoado",
 }

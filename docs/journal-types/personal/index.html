@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Journals | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../../index.html">
+                <img src="../../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../../index.html">Home</a>
+                <a href="../../getting-started/">Getting Started</a>
+                <a class="is-active" href="../">Journal Types</a>
+                <a href="../../mechanics/">Mechanics</a>
+                <a href="../../events-and-loot/">Events &amp; Loot</a>
+                <a href="../../configuration/">Configuration</a>
+                <a href="../../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../../translations/">Translations</a>
+                <a href="../../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="journal-page-hero wiki-panel" data-journal="personal">
+                <div class="journal-page-copy">
+                    <span class="eyebrow">Journal Dossier</span>
+                    <h1>Personal journals</h1>
+                    <p>Personal journals are the player-authored side of BSJ. They exist to record earned progress and hand that progress back later under the server's recovery rules.</p>
+                    <div class="badge-row">
+                        <span class="badge badge-success">Skills, traits, recipes, and stats</span>
+                        <span class="badge badge-info">Persistent or restored state</span>
+                        <span class="badge">Ownership and sharing rules</span>
+                    </div>
+                    <div class="wiki-actions">
+                        <a class="wiki-btn" href="../">Back To Journal Types</a>
+                        <a class="wiki-btn-secondary" href="../../mechanics/">Read Mechanics</a>
+                    </div>
+                </div>
+                <div class="journal-page-media">
+                    <div class="journal-hero-shot">
+                        <img src="../../assets/BSJ-B42-HeroPlayerJournal.jpg" alt="Personal journal hero art">
+                    </div>
+                    <div class="journal-quick-facts">
+                        <h3>At a glance</h3>
+                        <dl>
+                            <div><dt>Obtained from</dt><dd>Crafting or restoring journal blanks into player-owned recovery journals.</dd></div>
+                            <div><dt>Main role</dt><dd>Store and reclaim earned character progress.</dd></div>
+                            <div><dt>Special state</dt><dd>Can show as <strong>PERSISTENT</strong> or <strong>RESTORED</strong>.</dd></div>
+                            <div><dt>Most affected by</dt><dd>Baseline restriction, sharing rules, restore dissolution, and tab toggles.</dd></div>
+                        </dl>
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-grid">
+                <article class="wiki-panel" data-journal="personal">
+                    <h2>What it is</h2>
+                    <p>Personal journals are the clean, player-managed side of the system. They are the only family built around long-term ownership, repeat access, and server-controlled recovery rules instead of random loot generation.</p>
+                    <p>When the right tabs are enabled, they can record skills, traits, recipes, and player stats such as kills or hours survived.</p>
+                </article>
+                <article class="wiki-panel" data-journal="personal">
+                    <h2>Why players use them</h2>
+                    <ul>
+                        <li>Recover earned progress after death or character turnover.</li>
+                        <li>Build a controlled progression backup rather than relying only on world loot.</li>
+                        <li>Track more than skills once the trait, recipe, and stat tabs are enabled.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="personal">
+                    <h2>How the state system works</h2>
+                    <p>Personal journals can present as persistent or restored. The UI strings explicitly separate these states, because restored journals can keep their loot-origin identity even after becoming player-owned.</p>
+                    <div class="split-grid">
+                        <div class="wiki-card">
+                            <h3>Persistent</h3>
+                            <p>Reusable recovery journal behavior with no auto-dissolve after claims.</p>
+                        </div>
+                        <div class="wiki-card">
+                            <h3>Restored</h3>
+                            <p>Salvaged journal behavior. Depending on the server, it may dissolve after all claims or behave like a reusable persistent journal.</p>
+                        </div>
+                    </div>
+                </article>
+                <article class="wiki-panel" data-journal="personal">
+                    <h2>Key sandbox controls</h2>
+                    <ul>
+                        <li><strong>Only Record Earned Progress</strong> blocks profession starting bonuses and similar baseline data from being recorded as free recovery value.</li>
+                        <li><strong>Enable Trait Recording (Player)</strong>, <strong>Enable Recipe Recording (Player)</strong>, and <strong>Enable Stat Recording</strong> decide which tabs exist.</li>
+                        <li><strong>Allow Others to Open</strong> and <strong>Allow Others to Claim</strong> control multiplayer sharing behavior.</li>
+                        <li><strong>Allow Restored Journal Dissolution</strong> decides how restored journals behave after their rewards are fully claimed.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="personal">
+                    <h2>Reference image</h2>
+                    <div class="detail-shot">
+                        <img src="../../assets/BSJ-PlayerJournalDetails.png" alt="Personal journal detail panel">
+                    </div>
+                </article>
+                <article class="wiki-panel trivia-panel" data-journal="personal">
+                    <span class="eyebrow">Trivia</span>
+                    <h2>Personal journal notes</h2>
+                    <ul class="trivia-list">
+                        <li>Personal journals are the only family that clearly centers authorship and permission rules instead of random discovery.</li>
+                        <li>The restored badge exists because not every player-owned journal starts life as a pristine crafted journal.</li>
+                        <li>BSJ's baseline restriction turns personal journals into an anti-exploit tool as much as a recovery system.</li>
+                    </ul>
+                </article>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Personal journals are the backbone of the recovery side of BSJ.</p></div>
+            <div class="footer-links"><a href="../">Journal Types</a><a href="../../mechanics/">Mechanics</a><a href="../../configuration/">Configuration</a></div>
+        </footer>
+    </div>
+</body>
+</html>

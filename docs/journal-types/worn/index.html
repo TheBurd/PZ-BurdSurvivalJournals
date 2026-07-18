@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Worn Journals | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../../index.html">
+                <img src="../../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../../index.html">Home</a>
+                <a href="../../getting-started/">Getting Started</a>
+                <a class="is-active" href="../">Journal Types</a>
+                <a href="../../mechanics/">Mechanics</a>
+                <a href="../../events-and-loot/">Events &amp; Loot</a>
+                <a href="../../configuration/">Configuration</a>
+                <a href="../../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../../translations/">Translations</a>
+                <a href="../../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="journal-page-hero wiki-panel" data-journal="worn">
+                <div class="journal-page-copy">
+                    <span class="eyebrow">Journal Dossier</span>
+                    <h1>Worn journals</h1>
+                    <p>Worn journals are the quieter side of the loot-journal ecosystem: container finds, survivor leftovers, and low-profile reward sources that can still carry far more than plain skill XP.</p>
+                    <div class="badge-row">
+                        <span class="badge">Container loot</span>
+                        <span class="badge">Traits and recipes possible</span>
+                        <span class="badge">Forget slot possible</span>
+                    </div>
+                    <div class="wiki-actions">
+                        <a class="wiki-btn" href="../">Back To Journal Types</a>
+                        <a class="wiki-btn-secondary" href="../../events-and-loot/">Loot Reference</a>
+                    </div>
+                </div>
+                <div class="journal-page-media">
+                    <div class="journal-hero-shot">
+                        <img src="../../assets/BSJ-B42-HeroWornJournal.jpg" alt="Worn journal hero art">
+                    </div>
+                    <div class="journal-quick-facts">
+                        <h3>At a glance</h3>
+                        <dl>
+                            <div><dt>Obtained from</dt><dd>Shelves, desks, cabinets, and other eligible world containers.</dd></div>
+                            <div><dt>Main role</dt><dd>Moderate loot rewards with a softer profile than corpse drops.</dd></div>
+                            <div><dt>Can contain</dt><dd>Skills by default, with optional recipes, traits, passive skills, and forget slots.</dd></div>
+                            <div><dt>Most affected by</dt><dd>Loot spawn chance, reward caps, and trait/recipe/forget-slot toggles.</dd></div>
+                        </dl>
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-grid">
+                <article class="wiki-panel" data-journal="worn">
+                    <h2>What it is</h2>
+                    <p>Worn journals are world-found survivor notes. They fill the role of exploratory loot rather than player-authored storage, which makes them a good early reference point for new players learning how BSJ feels without touching the full recovery system yet.</p>
+                </article>
+                <article class="wiki-panel" data-journal="worn">
+                    <h2>What can roll on them</h2>
+                    <ul>
+                        <li>Skill entries with configurable minimum and maximum counts.</li>
+                        <li>Recipe rewards if worn recipes are enabled and the recipe chance succeeds.</li>
+                        <li>Trait rewards if worn traits are enabled and the trait chance succeeds.</li>
+                        <li>A forget slot if that optional reward lane is enabled.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="worn">
+                    <h2>Why they matter</h2>
+                    <p>The current sandbox options make worn journals much more flexible than their older reputation. They can stay close to the classic lightweight skill-note model, or they can become mini jackpot containers with multiple reward tabs.</p>
+                </article>
+                <article class="wiki-panel" data-journal="worn">
+                    <h2>Key sandbox controls</h2>
+                    <ul>
+                        <li><strong>Enable Worn Journal Spawns</strong> and <strong>Worn Spawn Chance %</strong> control whether they appear at all.</li>
+                        <li><strong>Worn Min/Max Skills</strong> and <strong>Worn Min/Max XP</strong> define the basic skill lane.</li>
+                        <li><strong>Enable Worn Journal Recipes</strong> and <strong>Worn Recipe Chance %</strong> turn recipe rewards on or off.</li>
+                        <li><strong>Enable Worn Journal Traits</strong> and <strong>Enable Worn Forget Slot</strong> decide whether they can cross into higher-impact progression rewards.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="worn">
+                    <h2>Reference image</h2>
+                    <div class="detail-shot">
+                        <img src="../../assets/BSJ-WornJournalDetails.png" alt="Worn journal detail panel">
+                    </div>
+                </article>
+                <article class="wiki-panel trivia-panel" data-journal="worn">
+                    <span class="eyebrow">Trivia</span>
+                    <h2>Worn journal notes</h2>
+                    <ul class="trivia-list">
+                        <li>Worn journals are the family most players still mentally file under the old "skills only" behavior, even though the sandbox now supports much more.</li>
+                        <li>The worn family is the clearest example of BSJ hiding disabled tabs while preserving existing journal data for later re-enabling.</li>
+                        <li>Because worn journals come from containers rather than corpses, they tend to feel like environmental storytelling instead of combat payoff.</li>
+                    </ul>
+                </article>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Worn journals cover the container-loot side of BSJ progression.</p></div>
+            <div class="footer-links"><a href="../">Journal Types</a><a href="../../events-and-loot/">Events &amp; Loot</a><a href="../../configuration/">Configuration</a></div>
+        </footer>
+    </div>
+</body>
+</html>

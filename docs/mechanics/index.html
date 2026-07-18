@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mechanics | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../index.html">
+                <img src="../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../index.html">Home</a>
+                <a href="../getting-started/">Getting Started</a>
+                <a href="../journal-types/">Journal Types</a>
+                <a class="is-active" href="./">Mechanics</a>
+                <a href="../events-and-loot/">Events &amp; Loot</a>
+                <a href="../configuration/">Configuration</a>
+                <a href="../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../translations/">Translations</a>
+                <a href="../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="wiki-page-hero wiki-panel">
+                <span class="eyebrow">Systems Guide</span>
+                <h1>What journals actually do</h1>
+                <p>BSJ is no longer just “record skills, read them later.” The current build layers in reward types, claim rules, restoration states, batching, and server-specific progression safety.</p>
+            </section>
+            <section class="wiki-panel">
+                <div class="toc-links">
+                    <a href="#recording">Recording</a>
+                    <a href="#claiming">Claiming</a>
+                    <a href="#states">Restored vs persistent</a>
+                    <a href="#limits">Claim limits</a>
+                    <a href="#forget">Forget slots</a>
+                    <a href="#batching">Batching</a>
+                </div>
+            </section>
+            <section id="recording" class="wiki-panel">
+                <h2>Recording progress</h2>
+                <ul>
+                    <li>Personal journals can record skills, traits, recipes, and stats if those tabs are enabled.</li>
+                    <li>Baseline restriction prevents starting profession bonuses from being stored as if they were earned later.</li>
+                    <li>Some compatibility toggles exist to exclude progress sources that servers may not want journals to replay.</li>
+                </ul>
+            </section>
+            <section id="claiming" class="wiki-panel">
+                <h2>Claiming and learning</h2>
+                <ul>
+                    <li>Most rewards are learned through timed actions instead of instant buttons.</li>
+                    <li>Reading speed can be influenced by the Reading skill if that option is enabled.</li>
+                    <li>Skill book multipliers can optionally affect loot-journal XP while leaving personal journals on their own recovery model.</li>
+                </ul>
+            </section>
+            <section id="states" class="wiki-panel">
+                <h2>Persistent vs restored journals</h2>
+                <div class="split-grid">
+                    <div class="wiki-card"><h3>Persistent journals</h3><p>These behave like reusable personal journals and do not auto-dissolve just because their contents were claimed once.</p></div>
+                    <div class="wiki-card"><h3>Restored journals</h3><p>These preserve their loot-origin state and can either persist or dissolve based on server settings.</p></div>
+                </div>
+            </section>
+            <section id="limits" class="wiki-panel">
+                <h2>Limited-claim loot journals</h2>
+                <p>Servers can force worn, bloody, and cursed reward journals to dissolve after a set number of successful claims.</p>
+                <ul>
+                    <li>This is a loot-journal rule, not the default model for normal persistent personal journals.</li>
+                    <li>Already-known or blocked claims are handled differently from successful claims.</li>
+                </ul>
+            </section>
+            <section id="forget" class="wiki-panel">
+                <h2>Forget slots</h2>
+                <p>Forget slots are special journal rewards that let a player remove a negative trait rather than gain a normal upgrade.</p>
+                <ul>
+                    <li>Worn, bloody, cursed, and Yuletide journals can all be configured to roll them.</li>
+                    <li>They give loot journals value even when their raw stats are not a direct upgrade for the current character.</li>
+                </ul>
+            </section>
+            <section id="batching" class="wiki-panel">
+                <h2>Batch actions</h2>
+                <ul>
+                    <li>Batch size controls how many entries “Record All” or “Absorb All” processes in one action.</li>
+                    <li>Batch time multiplier controls how long grouped actions take.</li>
+                    <li>Servers can keep the classic one-at-a-time feel or move toward faster large-journal handling.</li>
+                </ul>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Use this page to understand progression logic, not just the UI labels.</p></div>
+            <div class="footer-links"><a href="../configuration/">Configuration</a><a href="../multiplayer-and-admin/">Multiplayer &amp; Admin</a><a href="../faq/">FAQ</a></div>
+        </footer>
+    </div>
+</body>
+</html>

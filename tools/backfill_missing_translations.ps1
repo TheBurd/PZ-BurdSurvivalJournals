@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Backfills missing translation keys using EN as the source of truth.
 
@@ -9,7 +9,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals",
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals",
     [string]$TodoReportPath = ""
 )
 
@@ -167,3 +167,4 @@ Write-Host ""
 Write-Host ("Backfill complete. Added {0} keys total." -f $totalAdded) -ForegroundColor Green
 Write-Host ("TODO_TRANSLATE_TOTAL: {0}" -f $todoItems.Count)
 Write-Host ("TODO_TRANSLATE_REPORT: {0}" -f $TodoReportPath)
+

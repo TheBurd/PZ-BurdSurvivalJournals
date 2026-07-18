@@ -1,4 +1,4 @@
-﻿Recipes_ID = {
+Recipes_ID = {
     EraseFilledJournal = "Hapus Jurnal yang Terisi",
     Recipe_EraseFilledJournal = "Hapus Jurnal yang Terisi",
     Bind_Thread_Leather = "Bind Survival Journal (Benang + Kulit)",
@@ -17,4 +17,8 @@
     Recipe_RestoreJournal_Adhesive_Leather = "Jurnal Pemulihan (Perekat + Kulit)",
     RestoreJournal_Adhesive_AnyCover = "Jurnal Pemulihan (Perekat + Kain)",
     Recipe_RestoreJournal_Adhesive_AnyCover = "Jurnal Pemulihan (Perekat + Kain)",
+    CraftNotebook_Makeshift = "Buat Buku Catatan",
+    Recipe_CraftNotebook_Makeshift = "Buat Buku Catatan",
+    CraftJournal_Bound = "Buat Jurnal",
+    Recipe_CraftJournal_Bound = "Buat Jurnal",
 }

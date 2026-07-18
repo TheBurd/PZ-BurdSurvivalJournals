@@ -1,9 +1,0 @@
-﻿Items_KO = {
-    DisplayName_BlankSurvivalJournal = "빈 생존 일지",
-    DisplayName_BlankSurvivalJournal_Worn = "낡은 백지 일지",
-    DisplayName_BlankSurvivalJournal_Bloody = "블러디 빈 일지",
-    DisplayName_FilledSurvivalJournal = "채워진 생존 일지",
-    DisplayName_FilledSurvivalJournal_Worn = "낡은 생존 일지",
-    DisplayName_FilledSurvivalJournal_Bloody = "블러디 서바이벌 일지",
-    DisplayName_CursedJournal = "저주받은 일지",
-}

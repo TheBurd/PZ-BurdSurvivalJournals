@@ -1,4 +1,4 @@
-﻿IG_UI_CN = {
+IG_UI_CN = {
     ContextMenu_BurdJournals_OpenJournal = "打开日志...",
     ContextMenu_BurdJournals_Read = "阅读",
     ContextMenu_BurdJournals_Rename = "重命名",

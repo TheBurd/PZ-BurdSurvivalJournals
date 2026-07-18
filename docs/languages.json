@@ -6,10 +6,11 @@
     "repo": "PZ-BurdSurvivalJournals",
     "branch": "master",
     "translationPaths": {
-      "build42": "Contents/mods/BurdSurvivalJournals/42/media/lua/shared/Translate",
-      "build4215": "Contents/mods/BurdSurvivalJournals/42.15/media/lua/shared/Translate"
+      "build42": "mods/BurdSurvivalJournals/42/media/lua/shared/Translate",
+      "build4215": "mods/BurdSurvivalJournals/42.15/media/lua/shared/Translate"
     }
   },
   "categories": ["ContextMenu", "IG_UI", "ItemName", "Recipes", "Sandbox", "Tooltip", "UI"],
   "note": "The browser tool edits 42 legacy sources and mirrors them to 42.15 JSON outputs"
 }
+

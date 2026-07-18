@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Rewrites BSJ JSON translation files so placeholder syntax matches Build 42.15.
 #>
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals"
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,3 +35,4 @@ foreach ($translationDir in (Get-BSJTranslationDirs -BasePath $BasePath)) {
 
 Write-Host ""
 Write-Host ("Normalization complete. Rewrote {0} JSON file(s)." -f $rewritten) -ForegroundColor Green
+

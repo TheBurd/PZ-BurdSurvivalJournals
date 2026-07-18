@@ -1,6 +1,12 @@
 
 require "BurdJournals_Shared"
 
+BurdJournals = BurdJournals or {}
+BurdJournals.WorldSpawn = BurdJournals.WorldSpawn or {}
+BurdJournals.WorldSpawn.handlesWornJournalContainerSpawns = true
+BurdJournals.WorldSpawn.ENABLE_BACKGROUND_JOURNAL_SCANS =
+    BurdJournals.WorldSpawn.ENABLE_BACKGROUND_JOURNAL_SCANS == true
+
 if Events then
 
     if Events.OnFillContainer then
@@ -75,6 +81,8 @@ local CONTAINER_SPAWN_WEIGHTS = {
 }
 
 local processedContainers = {}
+local lastContainerUpdateScan = {}
+local CONTAINER_UPDATE_SCAN_DEBOUNCE_MS = 1000
 
 local lastCleanup = 0
 local CLEANUP_INTERVAL = 300000
@@ -83,8 +91,24 @@ local function cleanupTracking()
     local now = getTimestampMs and getTimestampMs() or 0
     if now - lastCleanup > CLEANUP_INTERVAL then
         processedContainers = {}
+        lastContainerUpdateScan = {}  -- also prune; keyed by tostring(container), never otherwise cleared
         lastCleanup = now
     end
+end
+
+-- True if the container already holds a worn survival journal. Used (alongside
+-- the persistent parent-modData flag) to avoid spawning a second one.
+local function containerHasWornJournal(container)
+    if not container or not container.getItems then return false end
+    local items = container:getItems()
+    if not items then return false end
+    for i = 0, items:size() - 1 do
+        local it = items:get(i)
+        if it and it.getFullType and it:getFullType() == "BurdJournals.FilledSurvivalJournal_Worn" then
+            return true
+        end
+    end
+    return false
 end
 
 local function getContainerKey(container)
@@ -92,8 +116,27 @@ local function getContainerKey(container)
     local parent = container:getParent()
     if parent and parent:getSquare() then
         local sq = parent:getSquare()
-        return BurdJournals.formatText("%d_%d_%d_%s", sq:getX(), sq:getY(), sq:getZ(), tostring(container:getType()))
+        return string.format("%d_%d_%d_%s", sq:getX(), sq:getY(), sq:getZ(), tostring(container:getType()))
     end
+    return nil
+end
+
+local function addWorldSpawnJournalToContainer(container, itemType)
+    if not container or type(itemType) ~= "string" or itemType == "" then
+        return nil
+    end
+
+    if InventoryItemFactory and InventoryItemFactory.CreateItem and container.AddItem then
+        local item = InventoryItemFactory.CreateItem(itemType)
+        if item then
+            return container:AddItem(item) or item
+        end
+    end
+
+    if container.AddItem then
+        return container:AddItem(itemType)
+    end
+
     return nil
 end
 
@@ -110,14 +153,29 @@ local function onFillContainer(roomName, containerType, itemContainer)
     if not baseWeight then return end
 
     local containerKey = getContainerKey(itemContainer)
-    if containerKey then
-        if processedContainers[containerKey] then
-            return
-        end
-        processedContainers[containerKey] = true
+    if not containerKey then
+        return
     end
+    if processedContainers[containerKey] then
+        return
+    end
+    processedContainers[containerKey] = true
 
     cleanupTracking()
+
+    -- Persistent dedupe: never spawn a second worn journal in a container that
+    -- already produced one. The flag lives on the parent world object's modData
+    -- so it survives chunk reload / relog. The processedContainers table above
+    -- only prevents re-rolling within a single session and is wiped periodically.
+    local parent = itemContainer.getParent and itemContainer:getParent() or nil
+    local parentModData = parent and parent.getModData and parent:getModData() or nil
+    if parentModData and parentModData.BurdJournals_WornSpawned then
+        return
+    end
+    if containerHasWornJournal(itemContainer) then
+        if parentModData then parentModData.BurdJournals_WornSpawned = true end
+        return
+    end
 
     local spawnChance = BurdJournals.getSandboxOption("WornJournalSpawnChance") or 1.0
 
@@ -128,8 +186,10 @@ local function onFillContainer(roomName, containerType, itemContainer)
         return
     end
 
-    local journal = itemContainer:AddItem("BurdJournals.FilledSurvivalJournal_Worn")
+    local journal = addWorldSpawnJournalToContainer(itemContainer, "BurdJournals.FilledSurvivalJournal_Worn")
     if journal then
+
+        if parentModData then parentModData.BurdJournals_WornSpawned = true end
 
         local modData = journal:getModData()
         if not modData.BurdJournals or not modData.BurdJournals.skills then
@@ -149,14 +209,13 @@ if Events and Events.OnFillContainer then
 
 end
 
-BurdJournals = BurdJournals or {}
-BurdJournals.WorldSpawn = BurdJournals.WorldSpawn or {}
-
 BurdJournals.WorldSpawn.SurvivorNames = {
 
     "John", "Jane", "Mike", "Sarah", "David", "Lisa", "Tom", "Emily",
     "Chris", "Amanda", "James", "Jennifer", "Robert", "Michelle", "William", "Jessica",
     "Daniel", "Ashley", "Matthew", "Stephanie", "Anthony", "Nicole", "Mark", "Elizabeth",
+    "Rose", "Noelle", "Brad", "Earl", "Maggie", "Frank", "Diane", "Wayne",
+    "Shelby", "Calvin", "Ruth", "Vernon", "Tina", "Glenn", "Nora", "Wade",
 
     "Doc", "Sarge", "Coach", "Chief", "Gramps", "Pops", "Red",
     "Lucky", "Ace", "Shadow", "Ghost", "Hawk", "Wolf", "Bear", "Fox",
@@ -185,15 +244,25 @@ BurdJournals.WorldSpawn.Professions = {
     {id = "mechanics", name = "Mechanic", nameKey = "UI_BurdJournals_ProfMechanic", flavorKey = "UI_BurdJournals_FlavorMechanic"},
     {id = "veteran", name = "Veteran", nameKey = "UI_BurdJournals_ProfVeteran", flavorKey = "UI_BurdJournals_FlavorVeteran"},
     {id = "unemployed", name = "Unemployed", nameKey = "UI_BurdJournals_ProfUnemployed", flavorKey = "UI_BurdJournals_FlavorUnemployed"},
+    {id = "paramedic", name = "Paramedic", nameKey = "UI_BurdJournals_ProfParamedic", flavorKey = "UI_BurdJournals_FlavorParamedic"},
+    {id = "hazmattech", name = "Hazmat Technician", nameKey = "UI_BurdJournals_ProfHazmatTech", flavorKey = "UI_BurdJournals_FlavorHazmatTech"},
+    {id = "quarantineguard", name = "Quarantine Guard", nameKey = "UI_BurdJournals_ProfQuarantineGuard", flavorKey = "UI_BurdJournals_FlavorQuarantineGuard"},
+    {id = "broadcasttech", name = "Broadcast Technician", nameKey = "UI_BurdJournals_ProfBroadcastTech", flavorKey = "UI_BurdJournals_FlavorBroadcastTech"},
+    {id = "lineman", name = "Utility Lineman", nameKey = "UI_BurdJournals_ProfLineman", flavorKey = "UI_BurdJournals_FlavorLineman"},
+    {id = "truckdriver", name = "Truck Driver", nameKey = "UI_BurdJournals_ProfTruckDriver", flavorKey = "UI_BurdJournals_FlavorTruckDriver"},
+    {id = "teacher", name = "Teacher", nameKey = "UI_BurdJournals_ProfTeacher", flavorKey = "UI_BurdJournals_FlavorTeacher"},
+    {id = "mailcarrier", name = "Mail Carrier", nameKey = "UI_BurdJournals_ProfMailCarrier", flavorKey = "UI_BurdJournals_FlavorMailCarrier"},
+    {id = "labassistant", name = "Lab Assistant", nameKey = "UI_BurdJournals_ProfLabAssistant", flavorKey = "UI_BurdJournals_FlavorLabAssistant"},
+    {id = "refugeevolunteer", name = "Aid Volunteer", nameKey = "UI_BurdJournals_ProfAidVolunteer", flavorKey = "UI_BurdJournals_FlavorAidVolunteer"},
 }
 
 BurdJournals.WorldSpawn.SkillProfessionMap = {
 
-    Aiming = {"policeofficer", "veteran", "securityguard", "parkranger"},
-    Reloading = {"policeofficer", "veteran", "securityguard"},
+    Aiming = {"policeofficer", "veteran", "securityguard", "parkranger", "quarantineguard"},
+    Reloading = {"policeofficer", "veteran", "securityguard", "quarantineguard"},
 
     Axe = {"lumberjack", "fireofficer", "parkranger"},
-    Blunt = {"constructionworker", "securityguard", "burglar"},
+    Blunt = {"constructionworker", "securityguard", "burglar", "quarantineguard"},
     SmallBlunt = {"burglar", "securityguard"},
     SmallBlade = {"chef", "burglar", "doctor"},
     LongBlade = {"veteran", "securityguard"},
@@ -202,8 +271,8 @@ BurdJournals.WorldSpawn.SkillProfessionMap = {
     Carpentry = {"carpenter", "constructionworker", "lumberjack"},
     Woodwork = {"carpenter", "lumberjack"},
     Metalworking = {"metalworker", "engineer", "mechanics"},
-    Electricity = {"electrician", "engineer"},
-    Mechanics = {"mechanics", "repairman", "engineer"},
+    Electricity = {"electrician", "engineer", "broadcasttech", "lineman", "hazmattech", "labassistant"},
+    Mechanics = {"mechanics", "repairman", "engineer", "broadcasttech", "lineman", "truckdriver", "hazmattech"},
 
     Farming = {"farmer", "parkranger"},
     Fishing = {"fisherman", "parkranger"},
@@ -211,22 +280,22 @@ BurdJournals.WorldSpawn.SkillProfessionMap = {
     Foraging = {"parkranger", "farmer", "fisherman"},
     PlantScavenging = {"farmer", "parkranger"},
 
-    Doctor = {"doctor", "nurse", "fireofficer"},
-    FirstAid = {"doctor", "nurse", "fireofficer", "policeofficer"},
+    Doctor = {"doctor", "nurse", "fireofficer", "paramedic", "hazmattech", "labassistant"},
+    FirstAid = {"doctor", "nurse", "fireofficer", "policeofficer", "paramedic", "hazmattech", "labassistant", "refugeevolunteer", "teacher"},
 
     Cooking = {"chef", "burgerflipper", "farmer"},
 
-    Fitness = {"fitnessInstructor", "fireofficer", "policeofficer", "veteran"},
-    Strength = {"fitnessInstructor", "constructionworker", "lumberjack", "fireofficer"},
-    Sprinting = {"fitnessInstructor", "burglar", "policeofficer"},
+    Fitness = {"fitnessInstructor", "fireofficer", "policeofficer", "veteran", "paramedic", "mailcarrier", "quarantineguard"},
+    Strength = {"fitnessInstructor", "constructionworker", "lumberjack", "fireofficer", "lineman", "truckdriver", "quarantineguard"},
+    Sprinting = {"fitnessInstructor", "burglar", "policeofficer", "paramedic", "mailcarrier"},
 
-    Lightfoot = {"burglar", "parkranger"},
+    Lightfoot = {"burglar", "parkranger", "mailcarrier"},
     Nimble = {"burglar", "fitnessInstructor"},
-    Sneak = {"burglar", "parkranger", "veteran"},
+    Sneak = {"burglar", "parkranger", "veteran", "mailcarrier"},
 
-    Tailoring = {"unemployed", "nurse"},
+    Tailoring = {"unemployed", "nurse", "teacher", "hazmattech"},
 
-    Maintenance = {"repairman", "mechanics", "constructionworker"},
+    Maintenance = {"repairman", "mechanics", "constructionworker", "broadcasttech", "lineman", "truckdriver"},
 }
 
 function BurdJournals.WorldSpawn.inferProfessionFromSkills(skills)
@@ -319,13 +388,11 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
                 table.insert(availableTraits, t)
             end
             
-            -- Shuffle for random selection
             for i = #availableTraits, 2, -1 do
                 local j = ZombRand(i) + 1
                 availableTraits[i], availableTraits[j] = availableTraits[j], availableTraits[i]
             end
             
-            -- Pick traits
             for i = 1, numTraits do
                 if #availableTraits == 0 then break end
                 local idx = ZombRand(#availableTraits) + 1
@@ -336,7 +403,6 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
                 end
             end
             
-            -- Check if we got any traits
             local traitCount = 0
             for _ in pairs(traits) do
                 traitCount = traitCount + 1
@@ -387,6 +453,10 @@ function BurdJournals.WorldSpawn.generateWornJournalData()
         claimedRecipes = {},
         claimedForgetSlot = {},
     }
+
+    if BurdJournals.Server and BurdJournals.Server.tryAttachGeneratedLootNotes then
+        BurdJournals.Server.tryAttachGeneratedLootNotes(nil, nil, journalData, "worn")
+    end
 
     return journalData
 end
@@ -502,6 +572,10 @@ function BurdJournals.WorldSpawn.generateBloodyJournalData()
         claimedForgetSlot = {},
     }
 
+    if BurdJournals.Server and BurdJournals.Server.tryAttachGeneratedLootNotes then
+        BurdJournals.Server.tryAttachGeneratedLootNotes(nil, nil, journalData, "bloody")
+    end
+
     return journalData
 end
 
@@ -522,6 +596,14 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
 
             if not modData.BurdJournals.uuid then
                 modData.BurdJournals.uuid = BurdJournals.generateUUID()
+                needsTransmit = true
+            end
+
+            if modData.BurdJournals.loreNoteTemplateVersion ~= nil
+                and modData.BurdJournals.lootNotesRollDone ~= true
+                and BurdJournals.Server
+                and BurdJournals.Server.tryAttachGeneratedLootNotes
+                and BurdJournals.Server.tryAttachGeneratedLootNotes(nil, item, modData.BurdJournals, modData.BurdJournals.loreNoteTemplateFamily) then
                 needsTransmit = true
             end
 
@@ -564,6 +646,7 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
             journalData = BurdJournals.Server.generateYuletideJournalProfile({
                 timestamp = getGameTime():getWorldAgeHours(),
                 yuletideState = BurdJournals.YULETIDE_STATE_WRAPPED,
+                lootNotesEligible = true,
             })
         end
 
@@ -613,6 +696,9 @@ function BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
             claimedSkills = {},
             claimedTraits = {},
         }
+        if BurdJournals.Server and BurdJournals.Server.tryAttachGeneratedLootNotes then
+            BurdJournals.Server.tryAttachGeneratedLootNotes(nil, nil, journalData, "worn")
+        end
         if BurdJournals.isDebug() then
 
         end
@@ -678,13 +764,20 @@ local function isUninitializedJournal(item)
 
     if fullType:find("FilledSurvivalJournal") then
         local modData = item:getModData()
-
-        return not modData.BurdJournals or not modData.BurdJournals.skills
+        local journalData = modData and modData.BurdJournals or nil
+        if not journalData or not journalData.skills then
+            return true
+        end
+        return journalData.loreNoteTemplateVersion ~= nil and journalData.lootNotesRollDone ~= true
     end
 
     if fullType == (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal") then
         local modData = item:getModData()
-        return not modData.BurdJournals or modData.BurdJournals.isYuletideJournal ~= true
+        local journalData = modData and modData.BurdJournals or nil
+        if not journalData or journalData.isYuletideJournal ~= true then
+            return true
+        end
+        return journalData.loreNoteTemplateVersion ~= nil and journalData.lootNotesRollDone ~= true
     end
 
     if fullType:find("BlankSurvivalJournal") then
@@ -714,6 +807,56 @@ local function safeGetContainerItems(container)
     return nil
 end
 
+-- Helper to check if item is a BurdJournals item (any type)
+local function isBurdJournalItem(item)
+    if not item then return false end
+    local fullType = item:getFullType()
+    return fullType and fullType:find("^BurdJournals%.") ~= nil
+end
+
+function BurdJournals.WorldSpawn.initializeContainerJournalsIfNeeded(container, reason)
+    if not container or not BurdJournals.isEnabled() then
+        return 0, 0, 0, 0
+    end
+
+    local items = safeGetContainerItems(container)
+    if not items then
+        return 0, 0, 0, 0
+    end
+
+    local scannedItems = 0
+    local initializedItems = 0
+    local nameRepairs = 0
+    local transmits = 0
+    for i = 0, items:size() - 1 do
+        local item = items:get(i)
+        scannedItems = scannedItems + 1
+        if isUninitializedJournal(item) then
+            BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
+            initializedItems = initializedItems + 1
+        elseif isBurdJournalItem(item) then
+            local modData = item:getModData()
+            if modData.BurdJournals and modData.BurdJournals.customName then
+                local currentName = item:getName()
+                if currentName ~= modData.BurdJournals.customName then
+                    BurdJournals.updateJournalName(item)
+                    nameRepairs = nameRepairs + 1
+                    if item.transmitModData
+                        and (not BurdJournals.shouldTransmitJournalItemModData
+                            or BurdJournals.shouldTransmitJournalItemModData(item, reason or "lazyContainerNameRepair"))
+                    then
+                        item:transmitModData()
+                        transmits = transmits + 1
+                    end
+                end
+            end
+        end
+    end
+
+    return scannedItems, initializedItems, nameRepairs, transmits
+end
+
+if BurdJournals.WorldSpawn.ENABLE_BACKGROUND_JOURNAL_SCANS == true then
 Events.LoadGridsquare.Add(function(square)
 
     if isClient() and not isServer() then return end
@@ -785,13 +928,6 @@ Events.OnPlayerUpdate.Add(function(player)
     checkPlayerInventory(player)
 end)
 
--- Helper to check if item is a BurdJournals item (any type)
-local function isBurdJournalItem(item)
-    if not item then return false end
-    local fullType = item:getFullType()
-    return fullType and fullType:find("^BurdJournals%.") ~= nil
-end
-
 if Events.OnContainerUpdate then
     Events.OnContainerUpdate.Add(function(container)
 
@@ -800,27 +936,32 @@ if Events.OnContainerUpdate then
         if not container then return end
         if not BurdJournals.isEnabled() then return end
 
-        local items = safeGetContainerItems(container)
-        if not items then return end
+        local nowMs = getTimestampMs and getTimestampMs() or ((getTimestamp and getTimestamp() or 0) * 1000)
+        local containerKey = tostring(container)
+        local lastScan = tonumber(lastContainerUpdateScan[containerKey]) or 0
+        if nowMs > 0 and (nowMs - lastScan) < CONTAINER_UPDATE_SCAN_DEBOUNCE_MS then
+            return
+        end
+        lastContainerUpdateScan[containerKey] = nowMs
 
-        for i = 0, items:size() - 1 do
-            local item = items:get(i)
-            if isUninitializedJournal(item) then
-                BurdJournals.WorldSpawn.initializeJournalIfNeeded(item)
-            elseif isBurdJournalItem(item) then
-                -- Check if this journal has a custom name that needs restoring
-                -- This fixes the MP bug where custom names are lost on item transfer
-                local modData = item:getModData()
-                if modData.BurdJournals and modData.BurdJournals.customName then
-                    local currentName = item:getName()
-                    if currentName ~= modData.BurdJournals.customName then
-                        BurdJournals.updateJournalName(item)
-                        if item.transmitModData then
-                            item:transmitModData()
-                        end
-                    end
-                end
-            end
+        local scanStartMs = nowMs
+        local scannedItems = 0
+        local initializedItems = 0
+        local nameRepairs = 0
+        local transmits = 0
+        scannedItems, initializedItems, nameRepairs, transmits =
+            BurdJournals.WorldSpawn.initializeContainerJournalsIfNeeded(container, "worldSpawnContainerNameRepair")
+        local scanEndMs = getTimestampMs and getTimestampMs() or ((getTimestamp and getTimestamp() or 0) * 1000)
+        local scanMs = scanEndMs and scanStartMs and math.max(0, scanEndMs - scanStartMs) or 0
+        local slowThresholdMs = math.max(0, tonumber(BurdJournals.MP_SLOW_CONTAINER_UPDATE_LOG_MS) or 100)
+        if scanMs >= slowThresholdMs or initializedItems > 0 or nameRepairs > 0 or transmits > 0 then
+            BurdJournals.writeLogLine("[BurdJournals][ContainerUpdatePerf] key=" .. tostring(containerKey)
+                .. " items=" .. tostring(scannedItems)
+                .. " initialized=" .. tostring(initializedItems)
+                .. " nameRepairs=" .. tostring(nameRepairs)
+                .. " transmits=" .. tostring(transmits)
+                .. " ms=" .. tostring(scanMs))
         end
     end)
+end
 end

@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "Abrir Diário...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "Abrir diá rio...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "Ab rir diá rio...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "A br ir d iá ri o . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "Quebrar o se lo...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "Que br ar o s e lo . ..",
     "ContextMenu_BurdJournals_Read": "Ler Diário",
     "ContextMenu_BurdJournals_Rename": "Renomear",
     "ContextMenu_BurdJournals_EraseJournal": "Apagar Diário",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "Limpar com Sabão e Pano",
     "ContextMenu_BurdJournals_RepairTape": "Remendar com Fita Adesiva",
     "ContextMenu_BurdJournals_RepairLeather": "Reencadernar com Couro",
-    "ContextMenu_BurdJournals_RepairGlue": "Colar Páginas"
+    "ContextMenu_BurdJournals_RepairGlue": "Colar Páginas",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

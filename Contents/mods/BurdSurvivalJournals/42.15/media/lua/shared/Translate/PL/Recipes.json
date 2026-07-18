@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "Odrestauruj dziennik (klej + skora)",
     "Recipe_RestoreJournal_Adhesive_Leather": "Odrestauruj dziennik (klej + skora)",
     "RestoreJournal_Adhesive_AnyCover": "Odrestauruj dziennik (klej + tkanina)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "Odrestauruj dziennik (klej + tkanina)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "Odrestauruj dziennik (klej + tkanina)",
+    "CraftNotebook_Makeshift": "Wytwórz notatnik",
+    "Recipe_CraftNotebook_Makeshift": "Wytwórz notatnik",
+    "CraftJournal_Bound": "Wytwórz dziennik",
+    "Recipe_CraftJournal_Bound": "Wytwórz dziennik"
 }

@@ -1,9 +1,0 @@
-﻿Items_TR = {
-    DisplayName_BlankSurvivalJournal = "Boş Hayatta Kalma Günlüğü",
-    DisplayName_BlankSurvivalJournal_Worn = "Yıpranmış Boş Günlük",
-    DisplayName_BlankSurvivalJournal_Bloody = "Kanlı Boş Günlük",
-    DisplayName_FilledSurvivalJournal = "Dolu Hayatta Kalma Günlüğü",
-    DisplayName_FilledSurvivalJournal_Worn = "Yıpranmış Hayatta Kalma Günlüğü",
-    DisplayName_FilledSurvivalJournal_Bloody = "Kanlı Hayatta Kalma Günlüğü",
-    DisplayName_CursedJournal = "Lanetli Günlük",
-}

@@ -1,4 +1,4 @@
-﻿IG_UI_ES = {
+IG_UI_ES = {
     ContextMenu_BurdJournals_OpenJournal = "Abrir Diario...",
     ContextMenu_BurdJournals_Read = "Leer",
     ContextMenu_BurdJournals_Rename = "Renombrar",

@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Events and Loot | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../index.html">
+                <img src="../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../index.html">Home</a>
+                <a href="../getting-started/">Getting Started</a>
+                <a href="../journal-types/">Journal Types</a>
+                <a href="../mechanics/">Mechanics</a>
+                <a class="is-active" href="./">Events &amp; Loot</a>
+                <a href="../configuration/">Configuration</a>
+                <a href="../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../translations/">Translations</a>
+                <a href="../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="wiki-page-hero wiki-panel">
+                <span class="eyebrow">Spawn Logic</span>
+                <h1>How journals enter the world</h1>
+                <p>The current build spreads BSJ content across container loot, zombie drops, fun-journal rolls, and seasonal replacements.</p>
+            </section>
+            <section class="wiki-panel">
+                <div class="toc-links">
+                    <a href="#container-loot">Container loot</a>
+                    <a href="#zombie-loot">Zombie loot</a>
+                    <a href="#cursed-reveals">Cursed reveals</a>
+                    <a href="#cursed-ambush">Cursed ambush profile</a>
+                    <a href="#yuletide">Yuletide season</a>
+                    <a href="#yuletide-gifts">Yuletide gift tiers</a>
+                </div>
+            </section>
+            <section id="container-loot" class="wiki-panel">
+                <h2>Container loot: worn journals</h2>
+                <ul>
+                    <li>Worn journals are the standard world-loot branch.</li>
+                    <li>The server controls whether they spawn at all and how strong they can be.</li>
+                    <li>During Yuletide season, some eligible worn rolls can be replaced by wrapped Yuletide journals.</li>
+                </ul>
+            </section>
+            <section id="zombie-loot" class="wiki-panel">
+                <h2>Zombie loot: bloody and cursed journals</h2>
+                <ul>
+                    <li>Bloody journals are the baseline zombie-drop branch.</li>
+                    <li>Cursed journals sit above that as a fun-loot branch and can interrupt a normal bloody result if they roll first.</li>
+                    <li>During Yuletide season, eligible bloody drops can be replaced by Yuletide journals after cursed precedence is checked.</li>
+                </ul>
+            </section>
+            <section id="cursed-reveals" class="wiki-panel">
+                <h2>Cursed journal reveals</h2>
+                <div class="split-grid">
+                    <div class="wiki-card" data-journal="bloody"><h3>Before the reveal</h3><p>The journal may appear obviously cursed or be disguised as a normal bloody journal if the disguise toggle is enabled.</p></div>
+                    <div class="wiki-card" data-journal="cursed"><h3>After the reveal</h3><p>The opener takes one live curse effect, then the journal converts into a stronger unleashed reward journal.</p></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Curse lane</th>
+                                <th>Live behavior</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Direct injury</strong></td>
+                                <td>Barbed seal targets a random hand; jammed breath crushes endurance and adds panic plus stress.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Gear sabotage</strong></td>
+                                <td>Hexed tooling damages one eligible weapon or tool; torn gear adds <strong>3 to 5</strong> fresh clothing tears; pantsed removes qualifying lower-body clothing.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Character punishment</strong></td>
+                                <td>The opener can gain a negative trait, lose a current positive trait, or lose <strong>1</strong> current skill level.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Environmental hit</strong></td>
+                                <td>Seasonal wave turns into a heat spike or cold snap depending on the current world month.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Ambush event</strong></td>
+                                <td>Panic sets panic to <strong>100</strong> and attempts an <strong>8 to 12</strong> zombie spawn around the opener.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="notice notice-warning">
+                    <strong>Player takeaway:</strong>
+                    if a server enables cursed journals, zombie loot can occasionally be a gamble instead of a straight upgrade.
+                </div>
+            </section>
+            <section id="cursed-ambush" class="wiki-panel">
+                <h2>Cursed ambush profile</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Layer</th>
+                                <th>Live numbers</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Seal-break shriek</strong></td>
+                                <td>Every cursed open emits a world sound at radius <strong>90</strong> and volume <strong>90</strong>.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Ambush spawn ring</strong></td>
+                                <td>The panic handler tries to place zombies in a <strong>9 to 18</strong> tile ring on the same floor.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Ambush count</strong></td>
+                                <td>The panic roll attempts <strong>8 to 12</strong> zombies.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>AI pull</strong></td>
+                                <td>Follow-up panic pull radius is <strong>55</strong> with pull volume <strong>75</strong>.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Nudge radius</strong></td>
+                                <td>Zombie repathing nudges work inside roughly <strong>65</strong> tiles, with delayed pulses over the next couple of seconds.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p><a href="../journal-types/cursed/">The cursed journal dossier</a> carries the full curse-by-curse breakdown.</p>
+            </section>
+            <section id="yuletide" class="wiki-panel">
+                <h2>Yuletide season behavior</h2>
+                <ul>
+                    <li>Season activation can follow the save's in-game date, the host's real-world date, or both.</li>
+                    <li>By default, world date is on and host real date is off.</li>
+                    <li>Eligible worn journals have a default <strong>4.0%</strong> replacement chance; eligible bloody drops have a default <strong>8.0%</strong> replacement chance after cursed precedence is checked.</li>
+                    <li>Yuletide journals can include skills, traits, recipes, forget slots, and physical gift items.</li>
+                    <li>If enabled, active Yuletide seasons also swap newly spawned cursed journal authors over to Krampus.</li>
+                </ul>
+            </section>
+            <section id="yuletide-gifts" class="wiki-panel">
+                <h2>Yuletide gift tiers</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tier</th>
+                                <th>Default weight</th>
+                                <th>Examples</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Practical</strong></td>
+                                <td><strong>70</strong></td>
+                                <td>Batteries, nails, soup, canned corn, torches, hammers, screwdrivers.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Rare</strong></td>
+                                <td><strong>25</strong></td>
+                                <td>Axes, crowbars, pistols, clips, 9mm boxes, shotgun shell boxes.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Jackpot</strong></td>
+                                <td><strong>5</strong></td>
+                                <td>Shotguns, machetes, sledgehammers, generators, assault rifles, 556 boxes.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p>Each unwrap rolls one tier and then grants <strong>1 to 2</strong> distinct gift entries by default. <a href="../journal-types/yuletide/">The Yuletide journal dossier</a> lists the full live pool with stack sizes.</p>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Spawn sources and event-like behavior for the current journal ecosystem.</p></div>
+            <div class="footer-links"><a href="../journal-types/">Journal Types</a><a href="../configuration/">Configuration</a><a href="../faq/">FAQ</a></div>
+        </footer>
+    </div>
+</body>
+</html>

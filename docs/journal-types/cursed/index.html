@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cursed Journals | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../../index.html">
+                <img src="../../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../../index.html">Home</a>
+                <a href="../../getting-started/">Getting Started</a>
+                <a class="is-active" href="../">Journal Types</a>
+                <a href="../../mechanics/">Mechanics</a>
+                <a href="../../events-and-loot/">Events &amp; Loot</a>
+                <a href="../../configuration/">Configuration</a>
+                <a href="../../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../../translations/">Translations</a>
+                <a href="../../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="journal-page-hero wiki-panel" data-journal="cursed">
+                <div class="journal-page-copy">
+                    <span class="eyebrow">Journal Dossier</span>
+                    <h1>Cursed journals</h1>
+                    <p>Cursed journals are dormant hazard items first and reward sources second. The first player to break the seal takes the consequence, after which the journal converts into a stronger reward state.</p>
+                    <div class="badge-row">
+                        <span class="badge badge-danger">Dangerous first open</span>
+                        <span class="badge">Break the Seal context action</span>
+                        <span class="badge">Upgraded reward journal after reveal</span>
+                    </div>
+                    <div class="wiki-actions">
+                        <a class="wiki-btn" href="../">Back To Journal Types</a>
+                        <a class="wiki-btn-secondary" href="../../events-and-loot/">Loot Reference</a>
+                    </div>
+                </div>
+                <div class="journal-page-media">
+                    <div class="journal-hero-shot">
+                        <img src="../../assets/BSJ-B42-HeroCursedJournal.jpg" alt="Cursed journal hero art">
+                    </div>
+                    <div class="journal-quick-facts">
+                        <h3>At a glance</h3>
+                        <dl>
+                            <div><dt>Obtained from</dt><dd>Rare zombie drops when cursed journal spawns are enabled.</dd></div>
+                            <div><dt>Main role</dt><dd>High-risk event journal that upgrades into a stronger reward source after the curse fires.</dd></div>
+                            <div><dt>Can contain later</dt><dd>Skills, traits, recipes, and forget slots on the reward side.</dd></div>
+                            <div><dt>Most affected by</dt><dd>Spawn chance, curse/reward tuning, and the trait/recipe/forget-slot toggles for cursed rewards.</dd></div>
+                        </dl>
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-grid">
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>What it is</h2>
+                    <p>Cursed journals are deliberately split into two phases: a dormant item state and an unleashed reward state. The first opener triggers one curse effect immediately, then the item converts into a buffed reward journal with its own skill, trait, recipe, and forget-slot profile.</p>
+                </article>
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>How the seal break works</h2>
+                    <p>By default the server shuffles the whole curse handler list and takes the first valid result for the current opener. If a forced debug effect fails to find a valid target, the code falls back to the panic ambush instead of leaving the journal inert.</p>
+                    <div class="notice notice-warning">
+                        <strong>Always noisy.</strong>
+                        Breaking the seal always emits a world sound at radius <strong>90</strong> with volume <strong>90</strong>, even if the actual curse rolled is not the panic ambush.
+                    </div>
+                </article>
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>All curse effects</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Effect</th>
+                                    <th>What it does</th>
+                                    <th>Live numbers</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Barbed seal</strong></td>
+                                    <td>Inflicts an immediate hand wound on a random left or right hand.</td>
+                                    <td>Sets a cut or scratch, forces bleeding time to at least <strong>8</strong>, and forces additional pain to at least <strong>12</strong>.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Jammed breath</strong></td>
+                                    <td>Hits endurance and layers panic plus stress on top.</td>
+                                    <td>Endurance drops by <strong>30% to 40%</strong>, panic rises by <strong>18 to 30</strong>, and stress rises by <strong>0.10 to 0.20</strong>.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Hexed tooling</strong></td>
+                                    <td>Damages one eligible weapon or tool from your equipped gear or inventory.</td>
+                                    <td>Condition loss is <strong>15% to 35%</strong> of the item's max durability, but it will not reduce the target below <strong>1</strong> condition.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Torn gear</strong></td>
+                                    <td>Rakes across currently worn clothing and adds fresh holes.</td>
+                                    <td>Targets <strong>3 to 5</strong> new tears if eligible clothing coverage exists.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Seasonal wave</strong></td>
+                                    <td>Builds a heat-wave or cold-snap effect from the current world month.</td>
+                                    <td>Warm months are <strong>March through August</strong>. Temperature shifts by about <strong>4.5 to 7.0</strong>; warm rolls add <strong>30 to 60</strong> wetness, while cold rolls push cold strength to at least <strong>70 to 100</strong>.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Pantsed</strong></td>
+                                    <td>Removes qualifying worn lower-body clothing.</td>
+                                    <td>The handler removes every valid pantsed target it finds, not just a single piece.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Gain negative trait</strong></td>
+                                    <td>Adds one eligible drawback from the mod's removable-trait pool.</td>
+                                    <td>Trait-conflict cleanup runs first, so mutually exclusive traits can be cancelled before the curse lands.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Lose positive trait</strong></td>
+                                    <td>Strips one currently owned positive trait.</td>
+                                    <td>The handler only selects traits the opener actually has at the moment the seal breaks.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Lose skill level</strong></td>
+                                    <td>Pushes one learned skill back below its previous level threshold.</td>
+                                    <td>The opener loses <strong>1</strong> current skill level from a valid skill with XP re-synced afterward.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Panic ambush</strong></td>
+                                    <td>Maxes panic and tries to turn the seal break into a mini horde event.</td>
+                                    <td>Panic is set to <strong>100</strong> and the ambush tries to spawn <strong>8 to 12</strong> zombies.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="reference-note">If the server is configured to disguise cursed journals as bloody, the hazard still uses this same handler list after the reveal.</p>
+                </article>
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>Panic ambush profile</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Stage</th>
+                                    <th>Live behavior</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Spawn ring</strong></td>
+                                    <td>Fresh zombies are rolled in a ring <strong>9 to 18</strong> tiles away from the opener on the same Z level.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Spawn count</strong></td>
+                                    <td>The handler attempts <strong>8 to 12</strong> zombies, stopping early if it runs out of valid squares.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Immediate AI pull</strong></td>
+                                    <td>The panic event applies an ambush pull radius of <strong>55</strong> with pull volume <strong>75</strong>.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Zombie nudges</strong></td>
+                                    <td>Nearby zombies in a <strong>65</strong>-tile nudge radius are repeatedly repointed toward the player.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Delayed pulses</strong></td>
+                                    <td>Extra pull pulses fire at roughly <strong>650 ms</strong>, <strong>1250 ms</strong>, and <strong>1850 ms</strong>, with delayed nudges at roughly <strong>900 ms</strong> and <strong>1700 ms</strong>.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="reference-note">That means the cursed shriek players notice is larger than the actual ambush pull ring: the seal-break sound reaches <strong>90</strong> tiles, while the panic handler's follow-up pull works inside the smaller 55/65-tile profile.</p>
+                </article>
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>Why players still open them</h2>
+                    <p>The reward phase is configured separately from normal bloody journals and is intended to be richer. In practice, cursed journals turn journal loot into a small event: someone has to decide whether the upgraded payout is worth being the one who sets it off.</p>
+                    <ul class="compact-list">
+                        <li>Default cursed drop chance is <strong>0.08%</strong> per eligible zombie.</li>
+                        <li>Default reward journal skills are <strong>2 to 5</strong> entries worth <strong>75 to 300</strong> XP.</li>
+                        <li>Default reward extras are <strong>40%</strong> trait chance, <strong>60%</strong> recipe chance, and <strong>25%</strong> forget-slot chance.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>Key sandbox controls</h2>
+                    <ul>
+                        <li><strong>Enable Cursed Journal Drops</strong> and <strong>Cursed Drop Chance</strong> determine whether this family appears at all.</li>
+                        <li><strong>Disguise Cursed Journals As Bloody</strong> lets the journal masquerade as a standard bloody drop until someone breaks the seal.</li>
+                        <li><strong>Cursed Min/Max Skills</strong>, <strong>Cursed Min/Max XP</strong>, and the trait/recipe/forget-slot toggles tune the reward journal after the curse resolves.</li>
+                        <li>If a cursed drop rolls successfully, the normal bloody drop is skipped for that zombie.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="cursed">
+                    <h2>Reference image</h2>
+                    <div class="detail-shot">
+                        <img src="../../assets/BSJ-CursedJournalDetails.png" alt="Cursed journal detail panel">
+                    </div>
+                </article>
+                <article class="wiki-panel trivia-panel" data-journal="cursed">
+                    <span class="eyebrow">Trivia</span>
+                    <h2>Cursed journal notes</h2>
+                    <ul class="trivia-list">
+                        <li>The context menu text for cursed journals is not just "Open" but "Break the Seal...", which sells the whole idea before the player even clicks it.</li>
+                        <li>The panic curse is more than a flavor text event: it has its own spawn ring, AI pull pulses, and delayed zombie nudges layered on top of the initial sound burst.</li>
+                        <li>One of the explicit curse flavors is a seasonal heat or cold spike, tying cursed journals back into BSJ's broader event vocabulary instead of limiting them to damage-only punishments.</li>
+                    </ul>
+                </article>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Cursed journals are the event-driven, high-risk edge of the loot system.</p></div>
+            <div class="footer-links"><a href="../">Journal Types</a><a href="../../events-and-loot/">Events &amp; Loot</a><a href="../../faq/">FAQ</a></div>
+        </footer>
+    </div>
+</body>
+</html>

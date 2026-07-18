@@ -1,9 +1,9 @@
-ï»¿Items_TR = {
-    DisplayName_BlankSurvivalJournal = "BoÅŸ Hayatta Kalma GÃ¼nlÃ¼ÄŸÃ¼",
-    DisplayName_BlankSurvivalJournal_Worn = "YÄ±pranmÄ±ÅŸ BoÅŸ GÃ¼nlÃ¼k",
-    DisplayName_BlankSurvivalJournal_Bloody = "KanlÄ± BoÅŸ GÃ¼nlÃ¼k",
-    DisplayName_FilledSurvivalJournal = "Dolu Hayatta Kalma GÃ¼nlÃ¼ÄŸÃ¼",
-    DisplayName_FilledSurvivalJournal_Worn = "YÄ±pranmÄ±ÅŸ Hayatta Kalma GÃ¼nlÃ¼ÄŸÃ¼",
-    DisplayName_FilledSurvivalJournal_Bloody = "KanlÄ± Hayatta Kalma GÃ¼nlÃ¼ÄŸÃ¼",
-    DisplayName_CursedJournal = "Lanetli GÃ¼nlÃ¼k",
+Items_TR = {
+    DisplayName_BlankSurvivalJournal = "Boþ Hayatta Kalma Günlüðü",
+    DisplayName_BlankSurvivalJournal_Worn = "Yýpranmýþ Boþ Günlük",
+    DisplayName_BlankSurvivalJournal_Bloody = "Kanlý Boþ Günlük",
+    DisplayName_FilledSurvivalJournal = "Dolu Hayatta Kalma Günlüðü",
+    DisplayName_FilledSurvivalJournal_Worn = "Yýpranmýþ Hayatta Kalma Günlüðü",
+    DisplayName_FilledSurvivalJournal_Bloody = "Kanlý Hayatta Kalma Günlüðü",
+    DisplayName_CursedJournal = "Lanetli Günlük",
 }

@@ -68,6 +68,80 @@ function BurdJournals.UI.truncateText(text, maxWidth, font)
     return truncated .. ellipsis
 end
 
+function BurdJournals.UI.getFontHeight(font, fallback)
+    local manager = getTextManager and getTextManager() or nil
+    if manager and manager.getFontHeight then
+        local ok, height = pcall(manager.getFontHeight, manager, font or UIFont.Small)
+        if ok and tonumber(height) and tonumber(height) > 0 then
+            return math.ceil(tonumber(height))
+        end
+    end
+    if manager and manager.MeasureStringY then
+        local ok, height = pcall(manager.MeasureStringY, manager, font or UIFont.Small, "Ag")
+        if ok and tonumber(height) and tonumber(height) > 0 then
+            return math.ceil(tonumber(height))
+        end
+    end
+    return fallback or 14
+end
+
+function BurdJournals.UI.measureText(font, text)
+    local manager = getTextManager and getTextManager() or nil
+    if manager and manager.MeasureStringX then
+        return manager:MeasureStringX(font or UIFont.Small, tostring(text or ""))
+    end
+    return string.len(tostring(text or "")) * 7
+end
+
+function BurdJournals.UI.getLayoutMetrics()
+    local smallFont = UIFont.Small
+    local mediumFont = UIFont.Medium
+    local smallH = BurdJournals.UI.getFontHeight(smallFont, 14)
+    local mediumH = BurdJournals.UI.getFontHeight(mediumFont, math.max(18, smallH + 4))
+    local lineGap = math.max(2, math.floor(smallH * 0.18))
+    local buttonPadY = math.max(6, math.floor(smallH * 0.38))
+    local buttonHeight = math.max(24, smallH + buttonPadY)
+    local rowPaddingY = math.max(6, math.floor(smallH * 0.45))
+    local rowButtonWidth = math.max(70, BurdJournals.UI.measureText(smallFont, getText and getText("UI_BurdJournals_BtnRecord") or "Record") + 16)
+    rowButtonWidth = math.max(rowButtonWidth, BurdJournals.UI.measureText(smallFont, getText and getText("UI_BurdJournals_Absorb") or "Absorb") + 16)
+    local actionColumnWidth = rowButtonWidth + 22
+    local rowHeight = math.max(58, (rowPaddingY * 2) + (smallH * 2) + lineGap + 4, buttonHeight + 14)
+
+    return {
+        smallFont = smallFont,
+        bodyFont = smallFont,
+        buttonFont = smallFont,
+        headerFont = mediumFont,
+        smallHeight = smallH,
+        bodyHeight = smallH,
+        headerHeight = mediumH,
+        lineGap = lineGap,
+        rowPaddingY = rowPaddingY,
+        rowTitleY = rowPaddingY,
+        rowStatusY = rowPaddingY + smallH + lineGap,
+        rowHeight = rowHeight,
+        cardMargin = 4,
+        iconSize = math.max(24, smallH + 8),
+        buttonHeight = buttonHeight,
+        rowButtonWidth = rowButtonWidth,
+        actionColumnWidth = actionColumnWidth,
+        actionColumnGap = 12,
+        buttonGap = 4,
+        searchHeight = math.max(24, smallH + 10),
+        clearButtonSize = math.max(16, smallH + 4),
+        tabHeight = math.max(28, smallH + 12),
+        filterHeight = math.max(22, smallH + 8),
+        paginationHeight = math.max(26, buttonHeight + 2),
+        footerHeight = math.max(85, buttonHeight + smallH + 42),
+        textEntryHeight = math.max(20, smallH + 8),
+    }
+end
+
+function BurdJournals.UI.centerTextY(y, height, font)
+    local fontHeight = BurdJournals.UI.getFontHeight(font or UIFont.Small, 14)
+    return y + math.floor((height - fontHeight) / 2)
+end
+
 BurdJournals.UI.SkillIcons = {
 
     Passive = "media/ui/Moodles/Moodle_Icon_Endurance.png",

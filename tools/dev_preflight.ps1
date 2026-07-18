@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Dev preflight checks for Burd's Survival Journals.
 
@@ -18,7 +18,7 @@
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
-    [string]$ModRoot = "Contents\mods\BurdSurvivalJournals",
+    [string]$ModRoot = "mods\BurdSurvivalJournals",
     [string]$LuaExe,
     [string]$LuacExe,
     [switch]$FixTranslations,
@@ -505,3 +505,4 @@ if ($failures.Count -gt 0) {
 }
 
 exit 0
+

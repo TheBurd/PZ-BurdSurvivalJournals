@@ -1,4 +1,4 @@
-local function dirname(path)
+﻿local function dirname(path)
     if not path or path == "" then return "." end
     local dir = path:match("^(.*)[/\\][^/\\]+$")
     return dir or "."
@@ -155,7 +155,7 @@ end
 
 local script_dir = dirname(arg and arg[0] or "")
 local options = parse_args(arg or {})
-local default_mod_root = join_path(join_path(script_dir, "../.."), "Contents/mods/BurdSurvivalJournals")
+local default_mod_root = join_path(join_path(script_dir, "../.."), "mods/BurdSurvivalJournals")
 local mod_root = options.mod_root or default_mod_root
 
 local tests = {}
@@ -219,3 +219,4 @@ if failed > 0 then
 end
 
 os.exit(0)
+

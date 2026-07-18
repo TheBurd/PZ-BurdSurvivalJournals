@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "Buka Jurnal...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "Buka Jur nal...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "Bu ka Ju rnal...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "Bu ka J ur n al . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "Pecahkan Se gel...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "Pe c ah kan S e gel . ..",
     "ContextMenu_BurdJournals_Read": "Baca",
     "ContextMenu_BurdJournals_Rename": "Ubah nama",
     "ContextMenu_BurdJournals_EraseJournal": "Hapus Jurnal",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "Bersihkan dengan Sabun & Kain",
     "ContextMenu_BurdJournals_RepairTape": "Tambal dengan Lakban",
     "ContextMenu_BurdJournals_RepairLeather": "Ikat ulang dengan Kulit",
-    "ContextMenu_BurdJournals_RepairGlue": "Rekatkan Halaman Bersama"
+    "ContextMenu_BurdJournals_RepairGlue": "Rekatkan Halaman Bersama",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

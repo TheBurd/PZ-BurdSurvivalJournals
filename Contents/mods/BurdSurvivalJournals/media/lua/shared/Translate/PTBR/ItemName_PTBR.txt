@@ -1,10 +1,10 @@
 ItemName_PTBR = {
-    ItemName_BurdJournals.BlankSurvivalJournal = "DiÃ¡rio de SobrevivÃªncia em Branco",
-    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "DiÃ¡rio em Branco Desgastado",
-    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "DiÃ¡rio em Branco Ensanguentado",
-    ItemName_BurdJournals.FilledSurvivalJournal = "DiÃ¡rio de SobrevivÃªncia Preenchido",
-    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "DiÃ¡rio de SobrevivÃªncia Desgastado",
-    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "DiÃ¡rio de SobrevivÃªncia Ensanguentado",
-    ItemName_BurdJournals.CursedJournal = "DiÃ¡rio AmaldiÃ§oado",
-    ItemName_BurdJournals.YuletideJournal = "DiÃ¡rio de Natal",
+    ItemName_BurdJournals.BlankSurvivalJournal = "Diário de Sobrevivência em Branco",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "Diário em Branco Desgastado",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Diário em Branco Ensanguentado",
+    ItemName_BurdJournals.FilledSurvivalJournal = "Diário de Sobrevivência Preenchido",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Diário de Sobrevivência Desgastado",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Diário de Sobrevivência Ensanguentado",
+    ItemName_BurdJournals.CursedJournal = "Diário Amaldiçoado",
+    ItemName_BurdJournals.YuletideJournal = "Diário de Natal",
 }

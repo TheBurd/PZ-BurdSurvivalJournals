@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "Restaurar Diário (Fita ou cola + Couro)",
     "Recipe_RestoreJournal_Adhesive_Leather": "Restaurar Diário (Fita ou cola + Couro)",
     "RestoreJournal_Adhesive_AnyCover": "Restaurar Diário (Fita ou cola + Tecido)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "Restaurar Diário (Fita ou cola + Tecido)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "Restaurar Diário (Fita ou cola + Tecido)",
+    "CraftNotebook_Makeshift": "Criar caderno",
+    "Recipe_CraftNotebook_Makeshift": "Criar caderno",
+    "CraftJournal_Bound": "Criar diário",
+    "Recipe_CraftJournal_Bound": "Criar diário"
 }

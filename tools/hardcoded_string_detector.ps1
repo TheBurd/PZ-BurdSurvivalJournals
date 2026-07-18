@@ -1,9 +1,9 @@
-# Hardcoded English String Detector for BurdSurvivalJournals
+﻿# Hardcoded English String Detector for BurdSurvivalJournals
 # This tool scans Lua source files for English strings that should be using getText()
 # Version 2.0 - Improved accuracy with better false-positive filtering
 
 param(
-    [string]$ModPath = "..\Contents\mods\BurdSurvivalJournals",
+    [string]$ModPath = "..\mods\BurdSurvivalJournals",
     [switch]$Verbose,
     [switch]$ShowFalsePositives
 )
@@ -368,3 +368,4 @@ if ($allIssues.Count -gt 0 -or ($discrepancies | Where-Object { $_.Difference -g
 else {
     Write-Host "All translations appear to be properly exposed!" -ForegroundColor Green
 }
+

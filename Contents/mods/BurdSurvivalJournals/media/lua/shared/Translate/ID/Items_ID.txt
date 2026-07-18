@@ -1,4 +1,4 @@
-﻿Items_ID = {
+Items_ID = {
     DisplayName_BlankSurvivalJournal = "Jurnal Kelangsungan Hidup Kosong",
     DisplayName_BlankSurvivalJournal_Worn = "Jurnal Kosong yang Dipakai",
     DisplayName_BlankSurvivalJournal_Bloody = "Jurnal Kosong Berdarah",

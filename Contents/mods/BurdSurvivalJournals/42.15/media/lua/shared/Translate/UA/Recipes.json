@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "Журнал відновлення (клей + шкіра)",
     "Recipe_RestoreJournal_Adhesive_Leather": "Відновити Журнал (Клей + Шкіра)",
     "RestoreJournal_Adhesive_AnyCover": "Журнал відновлення (клей + тканина)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "Відновити Журнал (Клей + Тканина)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "Відновити Журнал (Клей + Тканина)",
+    "CraftNotebook_Makeshift": "Створити нотатник",
+    "Recipe_CraftNotebook_Makeshift": "Створити нотатник",
+    "CraftJournal_Bound": "Створити щоденник",
+    "Recipe_CraftJournal_Bound": "Створити щоденник"
 }

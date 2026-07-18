@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "Restaurar Diario (Adhesivo + Cuero)",
     "Recipe_RestoreJournal_Adhesive_Leather": "Restaurar Diario (Adhesivo + Cuero)",
     "RestoreJournal_Adhesive_AnyCover": "Restaurar Diario (Adhesivo + Tela)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "Restaurar Diario (Adhesivo + Tela)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "Restaurar Diario (Adhesivo + Tela)",
+    "CraftNotebook_Makeshift": "Crear cuaderno",
+    "Recipe_CraftNotebook_Makeshift": "Crear cuaderno",
+    "CraftJournal_Bound": "Crear diario",
+    "Recipe_CraftJournal_Bound": "Crear diario"
 }

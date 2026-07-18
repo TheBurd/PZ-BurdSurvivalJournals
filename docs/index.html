@@ -3,117 +3,286 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Burd's Survival Journals - Translation Tool</title>
-    <link rel="stylesheet" href="css/styles.css">
-    <!-- JSZip for ZIP export functionality -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <title>Burd's Survival Journals Wiki</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/wiki.css">
 </head>
 <body>
-    <!-- Background layer -->
-    <div class="bg-layer"></div>
-
-    <!-- Header -->
-    <header class="header">
-        <div class="header-content">
-            <img src="assets/BSJ-BloodSplashIcon1.png" alt="BSJ" class="header-icon">
-            <div class="header-titles">
-                <img src="assets/BSJ-Title-Inline.png" alt="Burd's Survival Journals" class="title-img">
-                <img src="assets/BSJ-Title-Stacked.png" alt="Burd's Survival Journals" class="title-img-stacked">
-                <img src="assets/BSJ-Subtitle-Inline.png" alt="Translation Tool" class="subtitle-img">
-            </div>
-        </div>
-    </header>
-
-    <!-- Main container -->
-    <div class="container">
-        <!-- Controls bar -->
-        <div class="controls">
-            <div class="control-group">
-                <label for="languageSelect">Language</label>
-                <select id="languageSelect">
-                    <option value="">Loading...</option>
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label for="categoryFilter">Category</label>
-                <select id="categoryFilter">
-                    <option value="all">All Categories</option>
-                    <option value="UI">UI</option>
-                    <option value="Sandbox">Sandbox</option>
-                    <option value="ContextMenu">ContextMenu</option>
-                    <option value="Tooltip">Tooltip</option>
-                    <option value="ItemName">ItemName</option>
-                    <option value="Recipes">Recipes</option>
-                    <option value="IG_UI">IG_UI</option>
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label for="statusFilter">Status</label>
-                <select id="statusFilter">
-                    <option value="all">All</option>
-                    <option value="empty">Empty Only</option>
-                    <option value="filled">Filled Only</option>
-                </select>
-            </div>
-
-            <div class="control-group">
-                <label for="searchInput">Search</label>
-                <input type="text" id="searchInput" placeholder="Search keys or text...">
-            </div>
-
-            <div class="progress-container">
-                <label>Progress</label>
-                <div class="progress-bar-wrapper">
-                    <div class="progress-fill" id="progressBar" style="width: 0%"></div>
-                    <div class="progress-text" id="progressText">0/0 (0%)</div>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="index.html">
+                <img src="assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div>
+                    <strong>Burd's Survival Journals</strong>
+                    <span>Dev-first wiki and translation tools</span>
                 </div>
-            </div>
+            </a>
+            <nav class="wiki-nav">
+                <a class="is-active" href="index.html">Home</a>
+                <a href="getting-started/">Getting Started</a>
+                <a href="journal-types/">Journal Types</a>
+                <a href="mechanics/">Mechanics</a>
+                <a href="events-and-loot/">Events &amp; Loot</a>
+                <a href="configuration/">Configuration</a>
+                <a href="multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="translations/">Translations</a>
+                <a href="faq/">FAQ</a>
+            </nav>
+        </header>
 
-            <div class="github-section">
-                <span class="github-status disconnected" id="githubStatus">Not connected</span>
-                <button class="btn btn-primary" id="githubBtn">Connect GitHub</button>
-            </div>
-        </div>
+        <main class="wiki-main">
+            <section class="home-stage wiki-panel">
+                <div class="home-stage-copy">
+                    <span class="eyebrow">BSJ Archive</span>
+                    <h1>A field guide for every journal BSJ can drop, restore, wrap, or curse.</h1>
+                    <p>
+                        This homepage now behaves like a mod reference desk instead of a generic feature stack. It is the
+                        player-facing guide to the current BSJ surface: personal recovery journals, container finds,
+                        corpse drops, dormant cursed seals, and the Yuletide gift journals now living in the dev branch.
+                    </p>
+                    <div class="badge-row">
+                        <span class="badge badge-success">Player journals and recovery rules</span>
+                        <span class="badge">Worn and bloody loot journals</span>
+                        <span class="badge badge-danger">Cursed seal-breakers</span>
+                        <span class="badge badge-info">Yuletide gifts and seasonal delivery</span>
+                    </div>
+                    <div class="wiki-actions">
+                        <a class="wiki-btn" href="getting-started/">Start Here</a>
+                        <a class="wiki-btn-secondary" href="journal-types/">Open Journal Index</a>
+                        <a class="wiki-btn-secondary" href="tools/translation-helper/">Translation Tool</a>
+                    </div>
+                    <div class="home-signal-grid">
+                        <article class="home-signal">
+                            <span class="eyebrow">Current Focus</span>
+                            <p>Document the mod by journal family first, then by mechanics, then by sandbox tuning.</p>
+                        </article>
+                        <article class="home-signal">
+                            <span class="eyebrow">Built Around</span>
+                            <p>Skills, traits, recipes, stats, forget slots, limited claims, baseline safety, and batch actions.</p>
+                        </article>
+                        <article class="home-signal">
+                            <span class="eyebrow">Dev-First</span>
+                            <p>The docs now track the active dev-era journal surface instead of freezing around the older helper-only site.</p>
+                        </article>
+                    </div>
+                </div>
+                <aside class="home-dossier">
+                    <div class="home-dossier-head">
+                        <span class="eyebrow">Archive Record</span>
+                        <strong>Current Wiki Scope</strong>
+                    </div>
+                    <div class="home-dossier-media">
+                        <img src="assets/BSJ-B42-HeroArtCover.jpg" alt="Burd's Survival Journals archive cover art">
+                    </div>
+                    <dl class="home-dossier-list">
+                        <div>
+                            <dt>Source of truth</dt>
+                            <dd><code>BurdSurvivalJournals_Dev</code> for current journal behavior, with workshop docs serving the public site.</dd>
+                        </div>
+                        <div>
+                            <dt>Core systems</dt>
+                            <dd>Recovery journals, loot journals, curse events, seasonal replacements, bundled gifts, and admin-safe rollback tools.</dd>
+                        </div>
+                        <div>
+                            <dt>Best for</dt>
+                            <dd>New players, server hosts, and translators who need one place to answer “what does this journal actually do?”</dd>
+                        </div>
+                        <div>
+                            <dt>Fast routes</dt>
+                            <dd><a href="mechanics/">Mechanics</a> / <a href="configuration/">Configuration</a> / <a href="multiplayer-and-admin/">Multiplayer &amp; Admin</a></dd>
+                        </div>
+                    </dl>
+                </aside>
+            </section>
 
-        <!-- Action buttons -->
-        <div class="controls" style="justify-content: flex-start;">
-            <button class="btn btn-secondary" id="importBtn">Import</button>
-            <button class="btn btn-export" id="exportBtn">Export</button>
-            <button class="btn btn-secondary" id="exportTemplateBtn">Export Template</button>
-            <button class="btn btn-secondary" id="exportLlmBtn">Export LLM Pack</button>
-            <button class="btn btn-primary" id="submitPrBtn" disabled>Submit to GitHub</button>
-        </div>
+            <section class="home-ledger wiki-strip">
+                <div>
+                    <strong>Player Journals</strong>
+                    <p>Record earned progress, manage baseline-safe recovery, and decide whether restored journals should dissolve or persist.</p>
+                </div>
+                <div>
+                    <strong>Loot Journals</strong>
+                    <p>Container and corpse finds can now include skills, traits, recipes, passive skills, and forget slots.</p>
+                </div>
+                <div>
+                    <strong>Fun Journals</strong>
+                    <p>Cursed and Yuletide systems turn journals into events, not just static XP containers.</p>
+                </div>
+                <div>
+                    <strong>Server Controls</strong>
+                    <p>Sandbox groups cover progression, loot tuning, seasonal hooks, batch timing, compatibility, and recovery safety.</p>
+                </div>
+            </section>
 
-        <div class="controls health-controls">
-            <div id="healthPanel" class="health-panel">
-                <div class="health-title">Translation Health</div>
-                <div class="health-row">Loading diagnostics...</div>
-            </div>
-        </div>
+            <section class="wiki-panel">
+                <span class="eyebrow">Journal Atlas</span>
+                <h2>Start from the journal family, not the settings menu</h2>
+                <div class="atlas-grid">
+                    <a class="atlas-card atlas-card-large" href="journal-types/personal/" data-journal="personal">
+                        <img src="assets/BSJ-B42-HeroPlayerJournal.jpg" alt="Personal journal hero art">
+                        <div class="atlas-card-copy">
+                            <span class="eyebrow">Player Recovery</span>
+                            <h3>Personal journals anchor the whole BSJ recovery loop.</h3>
+                            <p>See how authorship, earned-progress recording, restored badges, and persistent behavior actually work.</p>
+                        </div>
+                    </a>
+                    <a class="atlas-card" href="journal-types/worn/" data-journal="worn">
+                        <img src="assets/BSJ-B42-HeroWornJournal.jpg" alt="Worn journal hero art">
+                        <div class="atlas-card-copy">
+                            <span class="eyebrow">Container Loot</span>
+                            <h3>Worn journals</h3>
+                            <p>World-found notes that can now carry traits, recipes, passive skills, and forget slots.</p>
+                        </div>
+                    </a>
+                    <a class="atlas-card" href="journal-types/bloody/" data-journal="bloody">
+                        <img src="assets/BSJ-B42-HeroBloodyJournal.jpg" alt="Bloody journal hero art">
+                        <div class="atlas-card-copy">
+                            <span class="eyebrow">Corpse Loot</span>
+                            <h3>Bloody journals</h3>
+                            <p>Higher reward ceilings, stronger loot identity, and the cleanest combat-to-progression payoff.</p>
+                        </div>
+                    </a>
+                    <a class="atlas-card" href="journal-types/cursed/" data-journal="cursed">
+                        <img src="assets/BSJ-B42-HeroCursedJournal.jpg" alt="Cursed journal hero art">
+                        <div class="atlas-card-copy">
+                            <span class="eyebrow">High Risk</span>
+                            <h3>Cursed journals</h3>
+                            <p>Dormant drops that punish the first opener before becoming upgraded reward journals.</p>
+                        </div>
+                    </a>
+                    <a class="atlas-card atlas-card-yuletide" href="journal-types/yuletide/" data-journal="yuletide">
+                        <div class="atlas-card-icons">
+                            <img src="assets/BurdJournal-WrappedYuletide1-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="assets/BurdJournal-WrappedYuletide3-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="assets/BurdJournal-YuletideFilled-Icon-Index.png" alt="Filled Yuletide journal icon">
+                        </div>
+                        <div class="atlas-card-copy">
+                            <span class="eyebrow">Seasonal Gift</span>
+                            <h3>Yuletide journals</h3>
+                            <p>Wrapped seasonal replacements with bundled supplies, optional safehouse delivery, and a once-only gift reveal.</p>
+                        </div>
+                    </a>
+                </div>
+            </section>
 
-        <!-- Translation container -->
-        <div id="translationContainer">
-            <div class="empty-state">
-                <p>Loading translations...</p>
+            <section class="wiki-panel">
+                <span class="eyebrow">Pick Your Path</span>
+                <h2>Use the site like a game manual, not a changelog</h2>
+                <div class="guide-grid">
+                    <article class="guide-card">
+                        <span class="eyebrow">New Players</span>
+                        <h3>Learn the survival loop first.</h3>
+                        <p>Start with where journals come from, which ones are safe to open, and what a normal claim loop looks like.</p>
+                        <ul>
+                            <li><a href="getting-started/">Getting Started</a></li>
+                            <li><a href="journal-types/">Journal Types</a></li>
+                            <li><a href="mechanics/">Mechanics</a></li>
+                        </ul>
+                    </article>
+                    <article class="guide-card">
+                        <span class="eyebrow">Server Hosts</span>
+                        <h3>Tune recovery without flattening progression.</h3>
+                        <p>Use the config and admin pages to separate baseline safety, loot strength, seasonal hooks, and debug recovery tools.</p>
+                        <ul>
+                            <li><a href="configuration/">Configuration</a></li>
+                            <li><a href="multiplayer-and-admin/">Multiplayer &amp; Admin</a></li>
+                            <li><a href="events-and-loot/">Events &amp; Loot</a></li>
+                        </ul>
+                    </article>
+                    <article class="guide-card">
+                        <span class="eyebrow">Contributors</span>
+                        <h3>Keep content and strings aligned.</h3>
+                        <p>The translation helper still lives here, but it now sits inside the broader docs instead of replacing them.</p>
+                        <ul>
+                            <li><a href="translations/">Translations</a></li>
+                            <li><a href="tools/translation-helper/">Translation Helper</a></li>
+                            <li><a href="faq/">FAQ</a></li>
+                        </ul>
+                    </article>
+                </div>
+            </section>
+
+            <section class="home-reference-grid">
+                <article class="wiki-panel">
+                    <span class="eyebrow">Reference Desk</span>
+                    <h2>Questions players ask first</h2>
+                    <div class="reference-list">
+                        <a class="reference-item" href="mechanics/#states">
+                            <strong>What is the difference between restored and persistent journals?</strong>
+                            <p>See how restored origin status, auto-dissolve, and reusable rewards are separated.</p>
+                        </a>
+                        <a class="reference-item" href="mechanics/#forget">
+                            <strong>What exactly is a forget slot?</strong>
+                            <p>Understand how trait-removal rewards work and why loot journals can stay valuable even without a direct upgrade.</p>
+                        </a>
+                        <a class="reference-item" href="journal-types/yuletide/">
+                            <strong>What makes Yuletide journals different from ordinary loot journals?</strong>
+                            <p>They are wrapped, seasonal, can replace worn or bloody rolls, and can grant bundled gifts when unwrapped.</p>
+                        </a>
+                        <a class="reference-item" href="configuration/">
+                            <strong>Which sandbox groups matter most on a first server setup?</strong>
+                            <p>Player, loot, fun-loot, advanced, and other-mod sections are split so you can tune BSJ without guessing.</p>
+                        </a>
+                    </div>
+                </article>
+                <article class="wiki-panel">
+                    <span class="eyebrow">Fast Archive</span>
+                    <h2>Journal family dossiers</h2>
+                    <div class="mini-dossier-list">
+                        <a class="mini-dossier" href="journal-types/personal/" data-journal="personal">
+                            <img src="assets/BurdJournal-FilledClean-Icon-Index.png" alt="Personal journal icon">
+                            <div>
+                                <strong>Personal</strong>
+                                <p>Authorship, recovery rules, baseline-safe recording, and restored state.</p>
+                            </div>
+                        </a>
+                        <a class="mini-dossier" href="journal-types/worn/" data-journal="worn">
+                            <img src="assets/BurdJournal-FilledWorn-Icon-Index.png" alt="Worn journal icon">
+                            <div>
+                                <strong>Worn</strong>
+                                <p>Container loot with configurable skill, recipe, trait, and forget-slot rolls.</p>
+                            </div>
+                        </a>
+                        <a class="mini-dossier" href="journal-types/bloody/" data-journal="bloody">
+                            <img src="assets/BurdJournal-FilledBloody-Icon-Index.png" alt="Bloody journal icon">
+                            <div>
+                                <strong>Bloody</strong>
+                                <p>Corpse loot with stronger reward ceilings and a heavier progression profile.</p>
+                            </div>
+                        </a>
+                        <a class="mini-dossier" href="journal-types/cursed/" data-journal="cursed">
+                            <img src="assets/BurdJournal-CursedBloody-Icon-Index.png" alt="Cursed journal icon">
+                            <div>
+                                <strong>Cursed</strong>
+                                <p>Break-the-seal loot that hurts first, then upgrades into a richer journal.</p>
+                            </div>
+                        </a>
+                        <a class="mini-dossier" href="journal-types/yuletide/" data-journal="yuletide">
+                            <img src="assets/BurdJournal-WrappedYuletide1-Icon-Index.png" alt="Yuletide journal icon">
+                            <div>
+                                <strong>Yuletide</strong>
+                                <p>Seasonal gift journals with wrapped variants, bundled supplies, and safehouse delivery hooks.</p>
+                            </div>
+                        </a>
+                    </div>
+                </article>
+            </section>
+        </main>
+
+        <footer class="wiki-footer">
+            <div>
+                <strong>Burd's Survival Journals Wiki</strong>
+                <p>Built around the current workshop/dev journal surface, not the older stripped-down helper-only site.</p>
             </div>
-        </div>
+            <div class="footer-links">
+                <a href="faq/">FAQ</a>
+                <a href="translations/">Translations</a>
+                <a href="tools/translation-helper/">Translation Tool</a>
+            </div>
+        </footer>
     </div>
-
-    <!-- Loading overlay -->
-    <div class="loading-overlay" id="loadingOverlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text" id="loadingText">Loading...</div>
-        <div class="loading-progress">
-            <div class="loading-progress-fill" id="loadingProgress" style="width: 0%"></div>
-        </div>
-    </div>
-
-    <!-- Notification -->
-    <div class="notification" id="notification"></div>
-
-    <!-- Load app module -->
-    <script type="module" src="js/app.js"></script>
 </body>
 </html>

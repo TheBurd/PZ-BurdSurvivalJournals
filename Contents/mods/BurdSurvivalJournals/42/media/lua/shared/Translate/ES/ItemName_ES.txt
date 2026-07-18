@@ -6,5 +6,5 @@ ItemName_ES = {
     ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Diario de Supervivencia Desgastado",
     ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Diario de Supervivencia Sangriento",
     ItemName_BurdJournals.CursedJournal = "Diario Maldito",
-    ItemName_BurdJournals.YuletideJournal = "Diario NavideÃ±o",
+    ItemName_BurdJournals.YuletideJournal = "Diario Navideño",
 }

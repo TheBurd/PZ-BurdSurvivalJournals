@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "打开日志...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "開啟 日誌...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "開 啟 日 誌...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "開 啟 日 誌 . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "打破 封 印...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "打 破 封 印 . ..",
     "ContextMenu_BurdJournals_Read": "阅读日志",
     "ContextMenu_BurdJournals_Rename": "重命名",
     "ContextMenu_BurdJournals_EraseJournal": "清空日志",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "用肥皂和布料清洁",
     "ContextMenu_BurdJournals_RepairTape": "用胶带修补",
     "ContextMenu_BurdJournals_RepairLeather": "用皮革重新装订",
-    "ContextMenu_BurdJournals_RepairGlue": "将内页粘合成册"
+    "ContextMenu_BurdJournals_RepairGlue": "将内页粘合成册",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

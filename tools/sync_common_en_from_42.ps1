@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Sync missing EN translation keys from 42 -> common.
 
@@ -9,7 +9,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals"
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals"
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,3 +66,4 @@ foreach ($fileType in $FileTypes) {
 
 Write-Host ""
 Write-Host ("Sync complete. Added {0} EN keys to common." -f $totalAdded) -ForegroundColor Green
+

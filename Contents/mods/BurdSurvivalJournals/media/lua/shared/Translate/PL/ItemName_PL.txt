@@ -5,6 +5,6 @@ ItemName_PL = {
     ItemName_BurdJournals.FilledSurvivalJournal = "Wypelniony dziennik przetrwania",
     ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Zuzyty dziennik przetrwania",
     ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Zakrwawiony dziennik przetrwania",
-    ItemName_BurdJournals.CursedJournal = "PrzeklÄ™ty Dziennik",
-    ItemName_BurdJournals.YuletideJournal = "ÅšwiÄ…teczny Dziennik",
+    ItemName_BurdJournals.CursedJournal = "Przeklêty Dziennik",
+    ItemName_BurdJournals.YuletideJournal = "Œwi¹teczny Dziennik",
 }

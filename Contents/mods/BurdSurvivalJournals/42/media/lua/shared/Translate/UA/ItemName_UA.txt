@@ -1,10 +1,10 @@
 ItemName_UA = {
-    ItemName_BurdJournals.BlankSurvivalJournal = "РџРѕСЂРѕР¶РЅС–Р№ Р–СѓСЂРЅР°Р» Р’РёР¶РёРІР°РЅРЅСЏ",
-    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "РџРѕС‚СЂС–РїР°РЅРёР№ РџРѕСЂРѕР¶РЅС–Р№ Р–СѓСЂРЅР°Р»",
-    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Р—Р°РєСЂРёРІР°РІР»РµРЅРёР№ РџРѕСЂРѕР¶РЅС–Р№ Р–СѓСЂРЅР°Р»",
-    ItemName_BurdJournals.FilledSurvivalJournal = "Р—Р°РїРѕРІРЅРµРЅРёР№ Р–СѓСЂРЅР°Р» Р’РёР¶РёРІР°РЅРЅСЏ",
-    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "РџРѕС‚СЂС–РїР°РЅРёР№ Р–СѓСЂРЅР°Р» Р’РёР¶РёРІР°РЅРЅСЏ",
-    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Р—Р°РєСЂРёРІР°РІР»РµРЅРёР№ Р–СѓСЂРЅР°Р» Р’РёР¶РёРІР°РЅРЅСЏ",
-    ItemName_BurdJournals.CursedJournal = "РџСЂРѕРєР»СЏС‚РёР№ Р–СѓСЂРЅР°Р»",
-    ItemName_BurdJournals.YuletideJournal = "Р С–Р·РґРІСЏРЅРёР№ Р–СѓСЂРЅР°Р»",
+    ItemName_BurdJournals.BlankSurvivalJournal = "Порожній Журнал Виживання",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "Потріпаний Порожній Журнал",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Закривавлений Порожній Журнал",
+    ItemName_BurdJournals.FilledSurvivalJournal = "Заповнений Журнал Виживання",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Потріпаний Журнал Виживання",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Закривавлений Журнал Виживання",
+    ItemName_BurdJournals.CursedJournal = "Проклятий Журнал",
+    ItemName_BurdJournals.YuletideJournal = "Різдвяний Журнал",
 }

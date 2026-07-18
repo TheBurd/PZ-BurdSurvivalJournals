@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Configuration constants for Burd's Survival Journals Translation Tool
  */
 
@@ -8,8 +8,8 @@ export const REPO_CONFIG = {
     repo: 'PZ-BurdSurvivalJournals',
     branch: 'master',
     translationPaths: {
-        build42: 'Contents/mods/BurdSurvivalJournals/42/media/lua/shared/Translate',
-        build4215: 'Contents/mods/BurdSurvivalJournals/42.15/media/lua/shared/Translate'
+        build42: 'mods/BurdSurvivalJournals/42/media/lua/shared/Translate',
+        build4215: 'mods/BurdSurvivalJournals/42.15/media/lua/shared/Translate'
     }
 };
 
@@ -68,3 +68,4 @@ export const AUTOSAVE_DELAY = 500;
 
 // Version for cache invalidation
 export const TOOL_VERSION = '3.1.0';
+

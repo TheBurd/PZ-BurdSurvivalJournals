@@ -1,4 +1,4 @@
-﻿IG_UI_PL = {
+IG_UI_PL = {
     ContextMenu_BurdJournals_OpenJournal = "Otworz dziennik...",
     ContextMenu_BurdJournals_Read = "Czytaj",
     ContextMenu_BurdJournals_Rename = "Zmien nazwe",

@@ -1,8 +1,8 @@
-# Translation HTML Sync Checker for BurdSurvivalJournals
+﻿# Translation HTML Sync Checker for BurdSurvivalJournals
 # Compares the mod's EN translation files with the HTML localization tool.
 
 param(
-    [string]$ModPath = "..\Contents\mods\BurdSurvivalJournals",
+    [string]$ModPath = "..\mods\BurdSurvivalJournals",
     [string]$HtmlPath = "..\docs\index.html",
     [switch]$Verbose
 )
@@ -196,3 +196,4 @@ else {
 }
 
 Write-Host ""
+

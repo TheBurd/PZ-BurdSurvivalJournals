@@ -1,0 +1,1232 @@
+:root {
+    --bg: #0b0a08;
+    --bg-panel: rgba(20, 16, 12, 0.94);
+    --bg-soft: rgba(32, 25, 18, 0.86);
+    --border: rgba(196, 184, 154, 0.2);
+    --border-strong: rgba(201, 162, 39, 0.55);
+    --text: #f2ebdc;
+    --muted: #c5b79b;
+    --soft: #96886f;
+    --accent: #c9a227;
+    --accent-teal: #2a6a7a;
+    --accent-bloody: #8b2020;
+    --success: #5f8b42;
+    --warning: #ba7d35;
+    --shadow-panel: 0 2px 14px rgba(0, 0, 0, 0.35);
+    --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --radius: 3px;
+    --radius-card: 4px;
+    --radius-btn: 3px;
+    --max-width: 1180px;
+    --font-body: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    --font-display: "Bitter", Georgia, "Times New Roman", serif;
+    /* Journal accent line (overridden by [data-journal]) */
+    --journal-line: var(--accent);
+}
+
+/* Journal-family accent colors */
+[data-journal="personal"] {
+    --journal-line: #c9a227;
+}
+
+[data-journal="worn"] {
+    --journal-line: #8b7355;
+}
+
+[data-journal="bloody"] {
+    --journal-line: #8b2020;
+}
+
+[data-journal="cursed"] {
+    --journal-line: #5a2060;
+}
+
+[data-journal="yuletide"] {
+    --journal-line: #2a6a4a;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    color: var(--text);
+    background: var(--bg);
+    font: 16px/1.72 var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4 {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    color: var(--text);
+}
+
+h1 {
+    font-size: clamp(1.85rem, 3.2vw, 2.85rem);
+    line-height: 1.12;
+    font-weight: 700;
+}
+
+h2 {
+    font-size: 1.35rem;
+    line-height: 1.25;
+    font-weight: 700;
+}
+
+h3 {
+    font-size: 1.12rem;
+    line-height: 1.3;
+    font-weight: 600;
+}
+
+h4 {
+    font-size: 1rem;
+    line-height: 1.35;
+    font-weight: 600;
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    color: #efca63;
+}
+
+img {
+    max-width: 100%;
+    display: block;
+}
+
+code {
+    background: rgba(255, 255, 255, 0.07);
+    border-radius: 2px;
+    padding: 0.12rem 0.38rem;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 0.92em;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.1rem 0 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+thead {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+th,
+td {
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    text-align: left;
+    vertical-align: top;
+}
+
+tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+tbody tr:hover {
+    background: rgba(201, 162, 39, 0.06);
+}
+
+th {
+    color: var(--accent);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.09em;
+    font-family: var(--font-body);
+    font-weight: 700;
+}
+
+.table-wrap {
+    overflow-x: auto;
+    margin: 1rem 0 1.35rem;
+}
+
+.table-wrap table {
+    margin: 0;
+    min-width: 620px;
+}
+
+.reference-note {
+    margin-top: 0.85rem;
+    color: var(--soft);
+    font-size: 0.92rem;
+}
+
+.compact-list {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.compact-list li + li {
+    margin-top: 0.35rem;
+}
+
+/* Film-grain / paper texture overlay */
+.wiki-bg {
+    position: fixed;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(7, 7, 7, 0.35) 0%, rgba(7, 7, 7, 0.92) 70%),
+        radial-gradient(circle at top left, rgba(139, 32, 32, 0.3), transparent 34%),
+        radial-gradient(circle at top right, rgba(42, 106, 122, 0.2), transparent 28%),
+        url('../assets/BSJ-HeroSplashBG1.png') center / cover no-repeat;
+    filter: brightness(0.9);
+    z-index: -1;
+}
+
+.wiki-bg::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+    mix-blend-mode: overlay;
+}
+
+.wiki-shell {
+    width: min(calc(100% - 2rem), var(--max-width));
+    margin: 0 auto;
+    padding: 1rem 0 3rem;
+}
+
+/* Primary panels: inset depth, tight radius */
+.wiki-header,
+.wiki-panel,
+.wiki-hero.wiki-panel,
+.wiki-page-hero.wiki-panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-inset), var(--shadow-panel);
+}
+
+.wiki-panel[data-journal],
+.journal-card[data-journal] {
+    border-left: 3px solid var(--journal-line);
+}
+
+.journal-card[data-journal]:hover {
+    border-left-width: 4px;
+    border-left-color: var(--journal-line);
+    box-shadow: var(--shadow-inset), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+/* Section headings: chapter marker (FAQ uses .wiki-panel .faq-item h2 below) */
+.wiki-panel h2 {
+    margin-top: 0;
+    margin-bottom: 0.75rem;
+    padding-left: 0.75rem;
+    border-left: 3px solid var(--journal-line);
+}
+
+.journal-card h2 {
+    font-size: 1.2rem;
+    border-left: 3px solid var(--journal-line);
+    padding-left: 0.65rem;
+    margin: 0.35rem 0 0.5rem;
+}
+
+.journal-card .eyebrow + h2 {
+    margin-top: 0.15rem;
+}
+
+/* Hero h1 uses display font only (no side bar on title) */
+.wiki-hero h1,
+.wiki-page-hero h1 {
+    font-family: var(--font-display);
+    margin: 0.35rem 0 0.65rem;
+    line-height: 1.1;
+    border-left: none;
+    padding-left: 0;
+}
+
+.wiki-hero h1 {
+    font-size: clamp(2rem, 4vw, 3.2rem);
+}
+
+.wiki-page-hero h1 {
+    font-size: clamp(1.85rem, 3vw, 2.5rem);
+}
+
+.wiki-header {
+    position: sticky;
+    top: 0.75rem;
+    z-index: 20;
+    display: grid;
+    gap: 0.85rem;
+    padding: 0.75rem 1rem 0.85rem;
+    margin-bottom: 1.25rem;
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(201, 162, 39, 0.22);
+}
+
+.wiki-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text);
+}
+
+.wiki-brand img {
+    width: 56px;
+    height: 56px;
+    padding: 0.3rem;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.wiki-brand strong {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.wiki-brand span {
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-family: var(--font-body);
+}
+
+.wiki-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.35rem;
+    align-items: center;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding-top: 0.75rem;
+    margin-top: 0.1rem;
+}
+
+.wiki-nav a {
+    padding: 0.42rem 0.5rem 0.35rem;
+    border-radius: var(--radius-btn);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.wiki-nav a:hover {
+    color: var(--text);
+    border-bottom-color: rgba(201, 162, 39, 0.45);
+}
+
+.wiki-nav a.is-active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+}
+
+.wiki-main > * + * {
+    margin-top: 1.35rem;
+}
+
+.wiki-hero {
+    display: grid;
+    grid-template-columns: 1.45fr 0.95fr;
+    gap: 1.4rem;
+    padding: 1.5rem;
+}
+
+.eyebrow {
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-family: var(--font-body);
+    font-weight: 700;
+}
+
+.wiki-hero p,
+.wiki-page-hero p,
+.wiki-panel p,
+.wiki-panel li,
+.wiki-card p,
+.wiki-fact p {
+    color: var(--muted);
+}
+
+.wiki-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-top: 1.15rem;
+}
+
+.wiki-btn,
+.wiki-btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 0.65rem 1.05rem;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border-strong);
+    font-weight: 700;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    transition: filter 0.15s ease, border-color 0.15s ease;
+}
+
+.wiki-btn {
+    color: #1a1308;
+    background: linear-gradient(180deg, #efc96a 0%, #c9a227 100%);
+}
+
+.wiki-btn:hover {
+    filter: brightness(1.08);
+}
+
+.wiki-btn-secondary {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.wiki-btn-secondary:hover {
+    filter: brightness(1.12);
+    border-color: rgba(201, 162, 39, 0.65);
+}
+
+.wiki-hero-media {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.wiki-poster,
+.wiki-card,
+.wiki-fact,
+.journal-card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-card);
+    background: rgba(255, 255, 255, 0.035);
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.wiki-card:hover,
+a.wiki-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(201, 162, 39, 0.42);
+    box-shadow: var(--shadow-inset), 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+
+.journal-card:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.14);
+}
+
+.wiki-poster {
+    overflow: hidden;
+    border-radius: var(--radius-card);
+}
+
+.wiki-facts,
+.wiki-card-grid,
+.journal-grid,
+.split-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.wiki-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wiki-card-grid,
+.journal-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.split-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wiki-card,
+.wiki-fact {
+    padding: 1rem;
+}
+
+.wiki-card h3 {
+    margin-top: 0;
+    margin-bottom: 0.45rem;
+    font-family: var(--font-display);
+}
+
+.wiki-strip,
+.wiki-panel,
+.wiki-page-hero {
+    padding: 1.4rem;
+}
+
+/* Divider band — not a floating card */
+.wiki-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.25rem;
+    border-top: 1px solid var(--border-strong);
+    border-bottom: 1px solid rgba(196, 184, 154, 0.25);
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    background: rgba(10, 8, 6, 0.72);
+    box-shadow: none;
+    padding: 1.35rem 0.25rem;
+}
+
+.wiki-strip strong {
+    font-family: var(--font-display);
+    color: var(--text);
+}
+
+.wiki-strip p {
+    margin: 0.35rem 0 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.badge-row,
+.toc-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.badge-row {
+    gap: 0.4rem;
+}
+
+.toc-links {
+    gap: 0;
+    row-gap: 0.35rem;
+}
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.22rem 0.5rem;
+    border-radius: var(--radius-btn);
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: var(--font-body);
+}
+
+.badge-danger {
+    background: rgba(139, 32, 32, 0.22);
+    border-color: rgba(139, 32, 32, 0.35);
+}
+
+.badge-info {
+    background: rgba(42, 106, 122, 0.22);
+    border-color: rgba(42, 106, 122, 0.35);
+}
+
+.badge-success {
+    background: rgba(95, 139, 66, 0.22);
+    border-color: rgba(95, 139, 66, 0.35);
+}
+
+/* TOC: inline with pipe separators */
+.toc-links a {
+    padding: 0.35rem 0.15rem;
+    border-radius: var(--radius-btn);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.toc-links a:hover {
+    color: var(--text);
+    border-bottom-color: rgba(201, 162, 39, 0.5);
+}
+
+.toc-links a:not(:last-child)::after {
+    content: "|";
+    margin: 0 0.55rem;
+    color: var(--soft);
+    font-weight: 400;
+    pointer-events: none;
+}
+
+.journal-card {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1rem;
+}
+
+.journal-card img {
+    width: 92px;
+    height: 92px;
+    object-fit: contain;
+    padding: 0.3rem;
+    border-radius: 2px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.08), transparent 70%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.journal-card h3 {
+    margin: 0 0 0.4rem;
+    font-family: var(--font-display);
+}
+
+/* Notices: sharp left accent */
+.notice {
+    margin-top: 1rem;
+    padding: 0.95rem 1rem 0.95rem 1.1rem;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 4px solid var(--soft);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.notice strong {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-family: var(--font-display);
+    color: var(--text);
+}
+
+.notice-warning {
+    background: rgba(186, 125, 53, 0.12);
+    border-color: rgba(186, 125, 53, 0.32);
+    border-left-color: var(--warning);
+}
+
+.notice-info {
+    background: rgba(42, 106, 122, 0.12);
+    border-color: rgba(42, 106, 122, 0.32);
+    border-left-color: var(--accent-teal);
+}
+
+.notice-danger {
+    background: rgba(139, 32, 32, 0.12);
+    border-color: rgba(139, 32, 32, 0.35);
+    border-left-color: var(--accent-bloody);
+}
+
+/* Footer: simple bar */
+.wiki-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding: 1.15rem 0 0;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+}
+
+.wiki-footer strong {
+    font-family: var(--font-display);
+}
+
+.wiki-footer p {
+    margin: 0.3rem 0 0;
+    color: var(--soft);
+    font-size: 0.92rem;
+}
+
+.footer-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem 1rem;
+    align-content: start;
+}
+
+.footer-links a {
+    font-weight: 600;
+    border-bottom: 1px solid transparent;
+}
+
+.footer-links a:hover {
+    border-bottom-color: rgba(201, 162, 39, 0.45);
+}
+
+/* FAQ */
+.faq-item {
+    padding: 1rem 0 1.1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.faq-item:first-of-type {
+    padding-top: 0.25rem;
+}
+
+.faq-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0.25rem;
+}
+
+.wiki-panel .faq-item h2 {
+    font-size: 1.08rem;
+    margin: 0 0 0.5rem;
+    padding-left: 0.65rem;
+    border-left: 3px solid var(--accent);
+    line-height: 1.35;
+    color: var(--text);
+}
+
+.faq-item p {
+    margin: 0;
+    padding-left: 0.65rem;
+    color: var(--muted);
+}
+
+/* Split-grid cards with data-journal */
+.split-grid .wiki-card[data-journal] {
+    border-left: 3px solid var(--journal-line);
+}
+
+.section-actions {
+    margin-top: 1rem;
+}
+
+.home-stage {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.85fr);
+    gap: 1.35rem;
+    padding: 1.35rem;
+}
+
+.home-stage-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.home-stage-copy > p {
+    max-width: 62ch;
+    margin: 0;
+}
+
+.home-dossier {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 1rem;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0.18)),
+        rgba(255, 255, 255, 0.03);
+}
+
+.home-dossier-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.home-dossier-head strong {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+}
+
+.home-dossier-media {
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    min-height: 220px;
+}
+
+.home-dossier-media img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.home-dossier-list {
+    display: grid;
+    gap: 0.8rem;
+    margin: 0;
+}
+
+.home-dossier-list div {
+    display: grid;
+    gap: 0.18rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.home-dossier-list div:first-child {
+    padding-top: 0;
+    border-top: none;
+}
+
+.home-dossier-list dt,
+.journal-quick-facts dt {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--soft);
+    font-weight: 700;
+}
+
+.home-dossier-list dd,
+.journal-quick-facts dd {
+    margin: 0;
+    color: var(--muted);
+}
+
+.home-signal-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+}
+
+.home-signal {
+    padding: 0.85rem 0.95rem;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.home-signal p {
+    margin: 0.32rem 0 0;
+}
+
+.home-ledger {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.atlas-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.atlas-card {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    min-height: 260px;
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    grid-column: span 4;
+}
+
+.atlas-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.08) 10%, rgba(0, 0, 0, 0.74) 100%);
+}
+
+.atlas-card img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.72;
+}
+
+.atlas-card-large {
+    grid-column: span 6;
+    min-height: 320px;
+}
+
+.atlas-card-copy {
+    position: relative;
+    z-index: 1;
+    padding: 1.15rem;
+}
+
+.atlas-card-copy h3 {
+    margin: 0.28rem 0 0.45rem;
+    font-size: 1.32rem;
+}
+
+.atlas-card-copy p {
+    margin: 0;
+    color: #d8ceba;
+    max-width: 36ch;
+}
+
+.atlas-card-yuletide {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: stretch;
+    min-height: 250px;
+}
+
+.atlas-card-yuletide::after {
+    background:
+        linear-gradient(135deg, rgba(18, 60, 41, 0.3), rgba(7, 7, 7, 0.86));
+}
+
+.atlas-card-icons {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+    padding: 1rem;
+    align-content: center;
+}
+
+.atlas-card-yuletide .atlas-card-icons img {
+    position: static;
+    width: 100%;
+    height: 78px;
+    object-fit: contain;
+    opacity: 1;
+    padding: 0.3rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.guide-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+.guide-card {
+    padding: 1.05rem;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.guide-card h3 {
+    margin: 0.25rem 0 0.45rem;
+}
+
+.guide-card p {
+    margin: 0 0 0.85rem;
+}
+
+.guide-card ul {
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.guide-card li + li {
+    margin-top: 0.45rem;
+}
+
+.home-reference-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+    gap: 1.35rem;
+}
+
+.reference-list,
+.mini-dossier-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.reference-item,
+.mini-dossier {
+    display: grid;
+    gap: 0.3rem;
+    padding: 0.95rem 1rem;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text);
+}
+
+.reference-item strong,
+.mini-dossier strong {
+    font-family: var(--font-display);
+    font-size: 1rem;
+}
+
+.reference-item p,
+.mini-dossier p {
+    margin: 0;
+}
+
+.reference-item:hover,
+.mini-dossier:hover {
+    border-color: rgba(201, 162, 39, 0.35);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.mini-dossier {
+    grid-template-columns: 60px minmax(0, 1fr);
+    align-items: center;
+}
+
+.mini-dossier img {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+    padding: 0.2rem;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.journal-page-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
+    gap: 1.3rem;
+    padding: 1.3rem;
+}
+
+.journal-page-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.journal-page-copy > p {
+    margin: 0;
+    max-width: 60ch;
+}
+
+.journal-page-media {
+    display: flex;
+    flex-direction: column;
+    gap: 0.95rem;
+}
+
+.journal-hero-shot {
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    min-height: 220px;
+}
+
+.journal-hero-shot img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.journal-hero-icons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.journal-quick-facts {
+    padding: 1rem;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+}
+
+.journal-quick-facts h3 {
+    margin: 0 0 0.75rem;
+}
+
+.journal-quick-facts dl {
+    display: grid;
+    gap: 0.8rem;
+    margin: 0;
+}
+
+.journal-quick-facts dl div {
+    display: grid;
+    gap: 0.18rem;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.2rem;
+}
+
+.detail-shot {
+    overflow: hidden;
+    border-radius: var(--radius-card);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.detail-shot img {
+    width: 100%;
+    height: auto;
+}
+
+.trivia-panel {
+    background:
+        linear-gradient(180deg, rgba(201, 162, 39, 0.08), rgba(255, 255, 255, 0.03)),
+        var(--bg-panel);
+}
+
+.trivia-list {
+    margin: 0;
+    padding-left: 1.15rem;
+}
+
+.trivia-list li + li {
+    margin-top: 0.55rem;
+}
+
+.icon-rack {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.8rem;
+    width: 100%;
+}
+
+.icon-rack img {
+    width: 100%;
+    height: 90px;
+    object-fit: contain;
+    padding: 0.35rem;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.icon-rack-large img {
+    height: 108px;
+}
+
+@media (max-width: 980px) {
+    .wiki-hero,
+    .wiki-strip,
+    .wiki-card-grid,
+    .journal-grid,
+    .split-grid,
+    .wiki-facts,
+    .home-ledger,
+    .guide-grid,
+    .detail-grid,
+    .home-signal-grid,
+    .home-reference-grid,
+    .journal-page-hero,
+    .home-stage {
+        grid-template-columns: 1fr;
+    }
+
+    .atlas-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .atlas-card,
+    .atlas-card-large,
+    .atlas-card-yuletide {
+        grid-column: span 1;
+    }
+}
+
+@media (max-width: 700px) {
+    .wiki-shell {
+        width: min(calc(100% - 1rem), var(--max-width));
+    }
+
+    .wiki-header,
+    .wiki-panel,
+    .wiki-page-hero,
+    .wiki-hero.wiki-panel {
+        padding: 1rem;
+        border-radius: var(--radius);
+    }
+
+    .wiki-strip {
+        padding: 1.1rem 0.15rem;
+        gap: 1rem;
+    }
+
+    .wiki-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .wiki-nav,
+    .wiki-actions,
+    .footer-links {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .wiki-nav a {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-left: 3px solid transparent;
+        padding: 0.55rem 0.5rem;
+    }
+
+    .wiki-nav a.is-active {
+        border-left-color: var(--accent);
+        border-bottom-color: rgba(255, 255, 255, 0.06);
+    }
+
+    .journal-card {
+        grid-template-columns: 1fr;
+    }
+
+    .atlas-grid,
+    .icon-rack {
+        grid-template-columns: 1fr;
+    }
+
+    .home-dossier,
+    .journal-quick-facts {
+        padding: 0.9rem;
+    }
+
+    .home-signal,
+    .guide-card,
+    .reference-item,
+    .mini-dossier {
+        padding: 0.85rem;
+    }
+
+    .mini-dossier {
+        grid-template-columns: 1fr;
+    }
+
+    .toc-links a:not(:last-child)::after {
+        content: "";
+        margin: 0;
+    }
+
+    .toc-links {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .toc-links a {
+        display: block;
+        width: 100%;
+        padding: 0.45rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+}

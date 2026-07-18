@@ -1,4 +1,4 @@
-﻿Items_ES = {
+Items_ES = {
     DisplayName_BlankSurvivalJournal = "Diario de Supervivencia en Blanco",
     DisplayName_BlankSurvivalJournal_Worn = "Diario en Blanco Desgastado",
     DisplayName_BlankSurvivalJournal_Bloody = "Diario en Blanco Ensangrentado",

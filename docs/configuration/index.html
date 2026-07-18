@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../index.html">
+                <img src="../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../index.html">Home</a>
+                <a href="../getting-started/">Getting Started</a>
+                <a href="../journal-types/">Journal Types</a>
+                <a href="../mechanics/">Mechanics</a>
+                <a href="../events-and-loot/">Events &amp; Loot</a>
+                <a class="is-active" href="./">Configuration</a>
+                <a href="../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../translations/">Translations</a>
+                <a href="../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="wiki-page-hero wiki-panel">
+                <span class="eyebrow">Sandbox Guide</span>
+                <h1>Configuration categories that matter</h1>
+                <p>The current build exposes a wide sandbox surface. This page groups it the way players and hosts actually think about it: player journals, loot journals, fun journals, advanced rules, and other-mod compatibility.</p>
+            </section>
+            <section class="wiki-panel">
+                <div class="toc-links">
+                    <a href="#player">Player</a>
+                    <a href="#loot">Loot</a>
+                    <a href="#loot-fun">Loot (Fun)</a>
+                    <a href="#advanced">Advanced</a>
+                    <a href="#other-mods">Other Mods</a>
+                </div>
+            </section>
+            <section id="player" class="wiki-panel">
+                <h2>Journals - Player</h2>
+                <table>
+                    <thead><tr><th>Area</th><th>What it controls</th></tr></thead>
+                    <tbody>
+                        <tr><td>Enable Journals / Enable Player Journals</td><td>Turns the overall personal-journal experience on or off.</td></tr>
+                        <tr><td>XP Recovery Mode + Diminishing Returns</td><td>Controls how clean journals return recorded XP and whether repeated reads taper off.</td></tr>
+                        <tr><td>Writing / Erasing Requirements</td><td>Pen usage, eraser requirements, and whether diminishing-return progress survives erase-and-rewrite loops.</td></tr>
+                        <tr><td>Trait / Recipe / Stat Recording</td><td>Controls which personal-journal tabs are active.</td></tr>
+                        <tr><td>Baseline Restriction</td><td>Prevents profession freebies from being stored as earned progress.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="loot" class="wiki-panel">
+                <h2>Journals - Loot</h2>
+                <table>
+                    <thead><tr><th>Area</th><th>What it controls</th></tr></thead>
+                    <tbody>
+                        <tr><td>Journal XP Multiplier</td><td>Global XP tuning for loot journals.</td></tr>
+                        <tr><td>Passive Skill Toggles</td><td>Whether Strength and Fitness can appear on loot journals.</td></tr>
+                        <tr><td>Worn Journal group</td><td>Spawn chance, skill ranges, XP ranges, trait support, recipe support, and forget-slot rolls for container loot.</td></tr>
+                        <tr><td>Bloody Journal group</td><td>Drop chance, skill ranges, XP ranges, trait support, recipe support, and forget-slot rolls for zombie loot.</td></tr>
+                        <tr><td>Limited-Claim Loot Journals</td><td>Whether loot journals dissolve after a set number of successful claims.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="loot-fun" class="wiki-panel">
+                <h2>Journals - Loot (Fun)</h2>
+                <table>
+                    <thead><tr><th>Area</th><th>What it controls</th></tr></thead>
+                    <tbody>
+                        <tr><td>Enable Loot Journals (Fun)</td><td>Master switch for cursed and Yuletide journal systems.</td></tr>
+                        <tr><td>Cursed Journal settings</td><td>Spawn chance, disguise behavior, reward ranges, trait/recipe support, and forget-slot odds.</td></tr>
+                        <tr><td>Yuletide season settings</td><td>World-date and real-date activation rules.</td></tr>
+                        <tr><td>Yuletide replacement settings</td><td>Chance for worn or bloody results to be replaced during the active season.</td></tr>
+                        <tr><td>Yuletide reward settings</td><td>Reward ranges plus gift-item weights and counts.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="advanced" class="wiki-panel">
+                <h2>Journals - Advanced</h2>
+                <table>
+                    <thead><tr><th>Area</th><th>What it controls</th></tr></thead>
+                    <tbody>
+                        <tr><td>Crafting and conversion</td><td>Whether players can craft journals or restore loot-origin journals into personal ones.</td></tr>
+                        <tr><td>Reading speed and light rules</td><td>Reading-speed scaling and optional light requirements.</td></tr>
+                        <tr><td>Sharing rules</td><td>Whether other players can open or claim from personal journals.</td></tr>
+                        <tr><td>Restored journal dissolution</td><td>Whether restored personal journals persist or dissolve when fully claimed.</td></tr>
+                        <tr><td>Baseline snapshots and batching</td><td>Recovery safety, cache behavior, and all-in-one batch action tuning.</td></tr>
+                    </tbody>
+                </table>
+            </section>
+            <section id="other-mods" class="wiki-panel">
+                <h2>Journals - Other Mods</h2>
+                <p>BSJ also exposes compatibility toggles for systems that can inject progress a server may not want journals to record or replay.</p>
+                <ul>
+                    <li>Trait Purchase System skill recording controls</li>
+                    <li>Adaptive Traits managed-trait recording controls</li>
+                    <li>VHS-derived skill recording controls</li>
+                </ul>
+                <div class="notice notice-info">
+                    <strong>Important pattern:</strong>
+                    these toggles usually hide or ignore incompatible progress sources while preserving already-stored journal data for later re-enable.
+                </div>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Use this page to understand the major sandbox groups before tuning details.</p></div>
+            <div class="footer-links"><a href="../mechanics/">Mechanics</a><a href="../multiplayer-and-admin/">Multiplayer &amp; Admin</a><a href="../faq/">FAQ</a></div>
+        </footer>
+    </div>
+</body>
+</html>

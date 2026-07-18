@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "Günlüğü Onar (Yapıştırıcı + Deri)",
     "Recipe_RestoreJournal_Adhesive_Leather": "Günlüğü Onar (Yapıştırıcı + Deri)",
     "RestoreJournal_Adhesive_AnyCover": "Günlüğü Onar (Yapıştırıcı + Kumaş)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "Günlüğü Onar (Yapıştırıcı + Kumaş)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "Günlüğü Onar (Yapıştırıcı + Kumaş)",
+    "CraftNotebook_Makeshift": "Defter Üret",
+    "Recipe_CraftNotebook_Makeshift": "Defter Üret",
+    "CraftJournal_Bound": "Günlük Üret",
+    "Recipe_CraftJournal_Bound": "Günlük Üret"
 }

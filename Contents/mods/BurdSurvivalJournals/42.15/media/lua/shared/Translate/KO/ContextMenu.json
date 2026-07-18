@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "일지 열기...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "일지 열 기...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "일 지 열 기...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "일 지 열 기 . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "봉인 풀 기...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "봉 인 풀 기 . ..",
     "ContextMenu_BurdJournals_Read": "일지 읽기",
     "ContextMenu_BurdJournals_Rename": "이름 변경",
     "ContextMenu_BurdJournals_EraseJournal": "일지 지우기",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "비누와 천으로 청소",
     "ContextMenu_BurdJournals_RepairTape": "덕트 테이프로 수리",
     "ContextMenu_BurdJournals_RepairLeather": "가죽으로 재제본",
-    "ContextMenu_BurdJournals_RepairGlue": "페이지 접착"
+    "ContextMenu_BurdJournals_RepairGlue": "페이지 접착",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

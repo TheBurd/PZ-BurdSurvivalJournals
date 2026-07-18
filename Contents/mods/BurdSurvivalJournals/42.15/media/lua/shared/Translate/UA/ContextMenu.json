@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "Розгорнути щоденник...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "Відкрити що денник...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "Від крити що денник...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "Ві д к ри ти щ о де н ни к . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "Зламати пе чатку...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "Зл а ма ти п е ча т ку . ..",
     "ContextMenu_BurdJournals_Read": "Читати",
     "ContextMenu_BurdJournals_Rename": "Змінити ім'я",
     "ContextMenu_BurdJournals_EraseJournal": "Стерти записи у щоденнику",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "Очистити: Мило та Ганчірка",
     "ContextMenu_BurdJournals_RepairTape": "Полагодити клейкою стрічкою",
     "ContextMenu_BurdJournals_RepairLeather": "Перешити шкірою",
-    "ContextMenu_BurdJournals_RepairGlue": "Склеїти сторінки"
+    "ContextMenu_BurdJournals_RepairGlue": "Склеїти сторінки",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

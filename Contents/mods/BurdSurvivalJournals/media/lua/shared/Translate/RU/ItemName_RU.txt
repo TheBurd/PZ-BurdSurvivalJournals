@@ -1,10 +1,10 @@
 ItemName_RU = {
-    ItemName_BurdJournals.BlankSurvivalJournal = "Пустой Журнал Выживающего",
-    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "Потрёпанный Пустой Журнал",
-    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Окровавленный Пустой Журнал",
-    ItemName_BurdJournals.FilledSurvivalJournal = "Заполненный Журнал Выживающего",
-    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Потрёпанный Журнал Выживающего",
-    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Окровавленный Журнал Выживающего",
-    ItemName_BurdJournals.CursedJournal = "Проклятый Журнал",
-    ItemName_BurdJournals.YuletideJournal = "Рождественский Журнал",
+    ItemName_BurdJournals.BlankSurvivalJournal = "Чистый журнал выживающего",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "Потрёпанный чистый журнал",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Окровавленный чистый журнал",
+    ItemName_BurdJournals.FilledSurvivalJournal = "Заполненный журнал выживающего",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Потрёпанный журнал",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Окровавленный журнал",
+    ItemName_BurdJournals.CursedJournal = "Проклятый журнал",
+    ItemName_BurdJournals.YuletideJournal = "Рождественский журнал",
 }

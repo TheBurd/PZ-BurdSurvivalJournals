@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer and Admin | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../index.html">
+                <img src="../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../index.html">Home</a>
+                <a href="../getting-started/">Getting Started</a>
+                <a href="../journal-types/">Journal Types</a>
+                <a href="../mechanics/">Mechanics</a>
+                <a href="../events-and-loot/">Events &amp; Loot</a>
+                <a href="../configuration/">Configuration</a>
+                <a class="is-active" href="./">Multiplayer &amp; Admin</a>
+                <a href="../translations/">Translations</a>
+                <a href="../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="wiki-page-hero wiki-panel">
+                <span class="eyebrow">Server Play</span>
+                <h1>Multiplayer and admin-facing rules</h1>
+                <p>BSJ's multiplayer surface is mostly about trust, progression safety, and recovery. Permissions, baseline restriction, and snapshot tools matter much more here than they do in casual solo play.</p>
+            </section>
+            <section class="wiki-panel">
+                <h2>Sharing personal journals</h2>
+                <ul>
+                    <li>Servers can allow other players to open personal journals.</li>
+                    <li>Servers can separately allow or deny claiming from someone else's personal journal.</li>
+                    <li>These permissions mostly matter for player-authored journals, not standard loot journals.</li>
+                </ul>
+            </section>
+            <section class="wiki-panel">
+                <h2>Baseline handling</h2>
+                <ul>
+                    <li>Baseline restriction prevents profession starts from becoming farmable journal loops.</li>
+                    <li>This matters most on servers where death and reroll behavior would otherwise let players abuse starting bonuses.</li>
+                    <li>The current UI also exposes baseline-clearing and cache-clearing controls for repairing mismatched character state.</li>
+                </ul>
+            </section>
+            <section class="wiki-panel">
+                <h2>Baseline snapshots</h2>
+                <ul>
+                    <li>The dev build introduces SteamID-anchored baseline snapshots for safer admin recovery and rollback.</li>
+                    <li>Servers can enable snapshot storage, cap how many are retained, and decide when they auto-capture.</li>
+                </ul>
+            </section>
+            <section class="wiki-panel">
+                <h2>Admin and debug-adjacent behavior</h2>
+                <div class="notice notice-warning">
+                    <strong>These are not normal player-facing systems.</strong>
+                    The current build includes debug and recovery controls intended for moderation, testing, or repair.
+                </div>
+                <ul>
+                    <li>Baseline reset tools can repair broken journal-state assumptions.</li>
+                    <li>Debug commands can be explicitly enabled for testing.</li>
+                    <li>Snapshot tooling exists to make progression recovery safer than ad-hoc fixes.</li>
+                </ul>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Multiplayer trust rules and admin-safe recovery concepts.</p></div>
+            <div class="footer-links"><a href="../configuration/">Configuration</a><a href="../faq/">FAQ</a><a href="../translations/">Translations</a></div>
+        </footer>
+    </div>
+</body>
+</html>

@@ -27,7 +27,7 @@ import {
 import { categorizeTranslations, getCategoryFromKey } from './lua-parser.js';
 
 const STATIC_REPO_LANGUAGE_FALLBACK = [
-    'EN', 'CN', 'ES', 'FR', 'ID', 'KO', 'PL', 'PTBR', 'RU', 'TR', 'UA'
+    'EN', 'CH', 'CN', 'ES', 'FR', 'ID', 'KO', 'PL', 'PTBR', 'RU', 'TR', 'UA'
 ];
 
 // State

@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Rebuilds the 42.15 JSON translations from the intact 42 legacy sources.
 #>
 
 [CmdletBinding()]
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals",
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals",
     [string]$SourceVersion = "42",
     [string]$TargetVersion = "42.15"
 )
@@ -57,3 +57,4 @@ foreach ($lang in $languages) {
 
 Write-Host ""
 Write-Host ("Rebuild complete. Generated {0} JSON file(s)." -f $rebuilt) -ForegroundColor Green
+

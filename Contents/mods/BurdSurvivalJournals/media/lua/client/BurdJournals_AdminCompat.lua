@@ -45,8 +45,8 @@ local function resolveAdminListTexture(scriptItem)
 end
 
 local function patchAdminItemList()
-    local ok = pcall(require, "ISUI/AdminPanel/ISItemsListTable")
-    if not ok or not ISItemsListTable or ISItemsListTable._bsjIconCompatPatched then
+    require "ISUI/AdminPanel/ISItemsListTable"
+    if not ISItemsListTable or ISItemsListTable._bsjIconCompatPatched then
         return
     end
 

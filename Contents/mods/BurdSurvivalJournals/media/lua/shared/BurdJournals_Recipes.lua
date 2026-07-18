@@ -4,13 +4,27 @@ require "BurdJournals_Shared"
 local bsjFallbackPrint = print
 
 local function bsjWriteLogLine(msg)
+    local line = tostring(msg or "")
+    -- Log gating: always emit warnings/errors; gate informational lines behind the
+    -- verbose toggle (or MP perf logging) so mod-heavy production servers aren't
+    -- spammed with per-claim/per-backup diagnostics.
+    local upper = line:upper()
+    local important = upper:find("WARN", 1, true) ~= nil
+        or upper:find("ERROR", 1, true) ~= nil
+        or upper:find("FATAL", 1, true) ~= nil
+    if not important then
+        local verbose = type(BurdJournals) == 'table' and BurdJournals.shouldDebugLog and BurdJournals.shouldDebugLog()
+        local mpPerf = type(BurdJournals) == 'table' and BurdJournals.shouldLogMPPerf and BurdJournals.shouldLogMPPerf()
+        if not verbose and not mpPerf then
+            return
+        end
+    end
     if type(BurdJournals) == 'table' and BurdJournals.writeLogLine then
-        BurdJournals.writeLogLine(msg)
+        BurdJournals.writeLogLine(line)
     elseif bsjFallbackPrint then
-        bsjFallbackPrint(msg)
+        bsjFallbackPrint(line)
     end
 end
-
 
 if type(BurdJournals) ~= "table" then
     BurdJournals = {}
@@ -25,6 +39,19 @@ function BurdJournals_CanCraftPlayerJournal(sourceItem, result)
     end
     if BurdJournals and BurdJournals.isPlayerJournalsEnabled then
         return BurdJournals.isPlayerJournalsEnabled()
+    end
+    return true
+end
+
+function BurdJournals_CanCraftVanillaJournalItems(sourceItem, result)
+    if BurdJournals and BurdJournals.isEnabled and not BurdJournals.isEnabled() then
+        return false
+    end
+    if BurdJournals and BurdJournals.isVanillaJournalCraftingEnabled then
+        return BurdJournals.isVanillaJournalCraftingEnabled()
+    end
+    if BurdJournals and BurdJournals.getSandboxOption then
+        return BurdJournals.getSandboxOption("EnableVanillaJournalCrafting") ~= false
     end
     return true
 end
@@ -98,9 +125,13 @@ local function normalizeSingleResultRecipeOutput(item, player, createdItems, rec
     if createdItems and createdItems.size then
         local createdCount = tonumber(createdItems:size()) or 0
         if createdCount > 1 then
+            local extraIds = {}
             for i = createdCount - 1, 1, -1 do
                 local extraItem = createdItems:get(i)
                 if extraItem and extraItem ~= item then
+                    if extraItem.getID then
+                        extraIds[#extraIds + 1] = extraItem:getID()
+                    end
                     local container = extraItem.getContainer and extraItem:getContainer() or nil
                     if container and container.Remove then
                         container:Remove(extraItem)
@@ -111,6 +142,13 @@ local function normalizeSingleResultRecipeOutput(item, player, createdItems, rec
                         end
                     end
                 end
+            end
+
+            -- In MP the client-side Remove above is not persisted to the server, so
+            -- the extra journals reappear on relog. Tell the server to drop them
+            -- authoritatively by item ID.
+            if #extraIds > 0 and BurdJournals.clientShouldUseServerAuthority() and player and sendClientCommand then
+                sendClientCommand(player, "BurdJournals", "removeCraftDuplicates", { journalIds = extraIds })
             end
 
             if BurdJournals and BurdJournals.debugPrint then
@@ -188,6 +226,7 @@ function BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
         condition = 10,
         isWorn = false,
         isBloody = false,
+        isPlayerCreated = true,
         isWritten = false,
         timestamp = getGameTime():getWorldAgeHours()
     }
@@ -277,7 +316,10 @@ function BurdJournals_OnCreateFilledClean(arg1, arg2, arg3, arg4)
             readSessionCount = 0,
             currentSessionReadCount = 0,
             skillReadCounts = {},
-            skills = safeGenerateRandomSkills(2, 4, 50, 150),
+            skills = {},
+            traits = {},
+            recipes = {},
+            stats = {},
             claimedSkills = {},
             claimedTraits = {}
         }
@@ -549,10 +591,6 @@ function BurdJournals_OnCreateFilledBloody(arg1, arg2, arg3, arg4)
     if isServer() and item.transmitModData then
         item:transmitModData()
     end
-end
-
-function BurdJournals_OnCreateBlankJournal(arg1, arg2, arg3, arg4)
-    BurdJournals_OnCreateBlankClean(arg1, arg2, arg3, arg4)
 end
 
 function BurdJournals_OnCleanWornJournal(arg1, arg2, arg3, arg4)
@@ -885,7 +923,6 @@ BurdJournals.OnCreateBlankBloody = BurdJournals_OnCreateBlankBloody
 BurdJournals.OnCreateFilledClean = BurdJournals_OnCreateFilledClean
 BurdJournals.OnCreateFilledWorn = BurdJournals_OnCreateFilledWorn
 BurdJournals.OnCreateFilledBloody = BurdJournals_OnCreateFilledBloody
-BurdJournals.OnCreateBlankJournal = BurdJournals_OnCreateBlankJournal
 BurdJournals.OnCleanWornJournal = BurdJournals_OnCleanWornJournal
 BurdJournals.OnCreateFilledCleanFromWorn = BurdJournals_OnCreateFilledCleanFromWorn
 BurdJournals.OnCreateFilledWornFromBloody = BurdJournals_OnCreateFilledWornFromBloody

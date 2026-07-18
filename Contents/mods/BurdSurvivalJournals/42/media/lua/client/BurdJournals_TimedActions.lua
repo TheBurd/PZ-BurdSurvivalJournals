@@ -6,21 +6,138 @@ require "BurdJournals_Shared"
 BurdJournals = BurdJournals or {}
 
 local bsjFallbackPrint = print
+local RECORD_ALL_ACK_TIMEOUT_MS = 15000
+
+local function getEffectiveRecordBatchSize(mainPanel)
+    local batchSize = tonumber(BurdJournals.getSandboxOption("RecordBatchSize"))
+        or tonumber(BurdJournals.RECORD_ALL_MP_BATCH_SIZE)
+        or 10
+    if batchSize < 1 then batchSize = 1 end
+    return batchSize
+end
 
 local function bsjWriteLogLine(msg)
+    local line = tostring(msg or "")
+    -- Log gating: always emit warnings/errors; gate informational lines behind the
+    -- verbose toggle (or MP perf logging) so mod-heavy production servers aren't
+    -- spammed with per-claim/per-backup diagnostics.
+    local upper = line:upper()
+    local important = upper:find("WARN", 1, true) ~= nil
+        or upper:find("ERROR", 1, true) ~= nil
+        or upper:find("FATAL", 1, true) ~= nil
+    if not important then
+        local verbose = BurdJournals and BurdJournals.shouldDebugLog and BurdJournals.shouldDebugLog()
+        local mpPerf = BurdJournals and BurdJournals.shouldLogMPPerf and BurdJournals.shouldLogMPPerf()
+        if not verbose and not mpPerf then
+            return
+        end
+    end
     if BurdJournals and BurdJournals.writeLogLine then
-        BurdJournals.writeLogLine(msg)
+        BurdJournals.writeLogLine(line)
     elseif bsjFallbackPrint then
-        bsjFallbackPrint(msg)
+        bsjFallbackPrint(line)
     end
 end
 
-local function getTooDarkMessage()
-    local message = (getText and getText("ContextMenu_TooDark")) or "Too dark to read."
-    if message == "ContextMenu_TooDark" then
-        message = "Too dark to read."
+local function clearRecordAllContinuationWatchdog(panel)
+    if not panel then
+        return
     end
-    return message
+    local watchdog = panel.recordAllContinuationWatchdog
+    if watchdog and watchdog.tick and Events and Events.OnTick then
+        Events.OnTick.Remove(watchdog.tick)
+    end
+    panel.recordAllContinuationWatchdog = nil
+end
+
+-- Release only the client-side authority wait. Keep the queued records on the
+-- interrupted state so cancellation/error recovery never silently discards the
+-- player's remaining work.
+function BurdJournals.clearRecordContinuationState(panel, reason)
+    if not panel then return false end
+    clearRecordAllContinuationWatchdog(panel)
+    if panel.recordAllAuthoritySettleTick and Events and Events.OnTick then
+        Events.OnTick.Remove(panel.recordAllAuthoritySettleTick)
+    end
+    panel.recordAllAuthoritySettleTick = nil
+    panel.pendingRecordAllContinuation = nil
+    panel.pendingRecordSingleContinuation = nil
+    panel.pendingRecordAllReconcile = nil
+    panel.pendingRecordBulkIntent = nil
+    panel.processingRecordQueue = false
+    BurdJournals.pendingRecordAllContinuation = nil
+    if type(panel.recordingState) == "table" then
+        panel.recordingState.active = false
+        panel.recordingState.awaitingServerAck = false
+        panel.recordingState.timedAction = nil
+        panel.recordingState.interrupted = true
+        panel.recordingState.terminalReason = tostring(reason or "cancelled")
+    end
+    return true
+end
+
+local function scheduleRecordAllContinuationWatchdog(panel, player)
+    if not panel or not player or not Events or not Events.OnTick then
+        return
+    end
+
+    clearRecordAllContinuationWatchdog(panel)
+
+    local startedAt = getTimestampMs and getTimestampMs() or 0
+    local tick
+    tick = function()
+        if not panel.pendingRecordAllContinuation and not panel.pendingRecordSingleContinuation then
+            clearRecordAllContinuationWatchdog(panel)
+            return
+        end
+
+        local now = getTimestampMs and getTimestampMs() or startedAt
+        if now - startedAt < RECORD_ALL_ACK_TIMEOUT_MS then
+            return
+        end
+
+        local continuation = panel.pendingRecordAllContinuation or panel.pendingRecordSingleContinuation
+        clearRecordAllContinuationWatchdog(panel)
+        BurdJournals.debugPrint("[BurdJournals] Record All ack watchdog fired after "
+            .. tostring(RECORD_ALL_ACK_TIMEOUT_MS) .. "ms; reconciling before retry")
+
+        local journalForSync = panel.journal
+        local syncRequested = false
+        if journalForSync and BurdJournals.Client and BurdJournals.Client.requestJournalSync then
+            local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(journalForSync) or nil
+            syncRequested = BurdJournals.Client.requestJournalSync(journalForSync, "recordAllAckTimeout", journalData, panel.player) == true
+        end
+
+        panel.pendingRecordAllContinuation = nil
+        panel.pendingRecordSingleContinuation = nil
+        BurdJournals.pendingRecordAllContinuation = nil
+        if panel.recordingState then
+            panel.recordingState.active = false
+            panel.recordingState.timedAction = nil
+        end
+        panel.processingRecordQueue = false
+        if syncRequested then
+            panel.pendingRecordAllReconcile = {
+                journalId = continuation.journalId,
+                journalUUID = continuation.journalUUID,
+            }
+        else
+            panel.pendingRecordAllReconcile = nil
+            if panel.showFeedback then
+                panel:showFeedback(BurdJournals.safeGetText("UI_BurdJournals_JournalSyncFailed", "Error: Journal sync failed"), {r=0.8, g=0.3, b=0.3})
+            end
+        end
+    end
+
+    panel.recordAllContinuationWatchdog = {
+        startedAt = startedAt,
+        tick = tick,
+    }
+    Events.OnTick.Add(tick)
+end
+
+local function getTooDarkMessage()
+    return BurdJournals.safeGetText("ContextMenu_TooDark", "Too dark to read.")
 end
 
 local function notifyTooDark(player, reason)
@@ -37,6 +154,34 @@ local function isJournalLightAllowed(player)
         return true, nil
     end
     return BurdJournals.canUseJournalInCurrentLight(player)
+end
+
+local function isPlayerInVehicleForJournalAction(player)
+    if not player or not player.getVehicle then
+        return false
+    end
+    local ok, vehicle = pcall(function()
+        return player:getVehicle()
+    end)
+    return ok and vehicle ~= nil
+end
+
+local function configureJournalActionInterrupts(action, player)
+    local interruptOnMovement = not isPlayerInVehicleForJournalAction(player)
+    action.stopOnWalk = interruptOnMovement
+    action.stopOnRun = interruptOnMovement
+    action.stopOnAim = interruptOnMovement
+end
+
+local function shouldUseJournalActionAnimation(player)
+    return not isPlayerInVehicleForJournalAction(player)
+end
+
+local function setJournalActionHandModels(action, player, leftHand, rightHand)
+    if not action or not action.setOverrideHandModels or isPlayerInVehicleForJournalAction(player) then
+        return
+    end
+    action:setOverrideHandModels(leftHand, rightHand)
 end
 
 local function getLootJournalActionText(key, fallback)
@@ -80,12 +225,14 @@ local function normalizeLootJournalLookupRequest(journalRequest)
             journalFingerprint = type(journalRequest.journalFingerprint) == "string" and journalRequest.journalFingerprint ~= ""
                 and journalRequest.journalFingerprint
                 or nil,
+            exactJournalItem = journalRequest.exactJournalItem == true,
         }
     else
         request = {
             journalId = tonumber(journalRequest),
             journalUUID = nil,
             journalFingerprint = nil,
+            exactJournalItem = false,
         }
     end
 
@@ -102,14 +249,14 @@ local function resolveLootJournalLookup(player, journalRequest)
     end
 
     local journal = nil
-    if request.journalId and BurdJournals.findItemById then
-        journal = BurdJournals.findItemById(player, request.journalId)
+    if request.journalId and BurdJournals.findItemByIdInPlayerInventory then
+        journal = BurdJournals.findItemByIdInPlayerInventory(player, request.journalId)
     end
-    if not journal and request.journalUUID and BurdJournals.findJournalByUUID then
-        journal = BurdJournals.findJournalByUUID(player, request.journalUUID)
+    if not journal and not request.exactJournalItem and request.journalUUID and BurdJournals.findJournalByUUIDInPlayerInventory then
+        journal = BurdJournals.findJournalByUUIDInPlayerInventory(player, request.journalUUID)
     end
-    if not journal and request.journalFingerprint and BurdJournals.findJournalByLookupFingerprint then
-        journal = BurdJournals.findJournalByLookupFingerprint(player, request.journalFingerprint)
+    if not journal and not request.exactJournalItem and request.journalFingerprint and BurdJournals.findJournalByLookupFingerprintInPlayerInventory then
+        journal = BurdJournals.findJournalByLookupFingerprintInPlayerInventory(player, request.journalFingerprint)
     end
 
     return journal, request
@@ -194,23 +341,43 @@ local LOOT_JOURNAL_OPEN_PROFILES = {
             {progress = 0.74, candidates = {"PageTurn", "PaperRip", "RummageInInventory"}},
         },
     },
+    sealed = {
+        duration = 5.5,
+        command = "breakJournalSeal",
+        jobTextKey = "UI_BurdJournals_CursedOpeningAction",
+        jobTextFallback = "Breaking seal...",
+        startTextKey = "UI_BurdJournals_CursedOpeningStart",
+        startTextFallback = "You begin breaking the seal...",
+        cancelTextKey = "UI_BurdJournals_CursedOpeningCancelled",
+        cancelTextFallback = "You stop before the seal breaks.",
+        startSounds = {"PaperRip", "RummageInInventory", "PageTurn"},
+        progressSounds = {
+            {progress = 0.38, candidates = {"BreakMetalItem", "RepairWithWrench", "BuildMetalStructureSmallScrap", "BuildMetalStructureSmall", "PaperRip", "RummageInInventory"}},
+            {progress = 0.76, candidates = {"PageTurn", "PaperRip", "RummageInInventory"}},
+        },
+    },
 }
 
 local function getLootJournalOpenProfile(actionKind)
-    return LOOT_JOURNAL_OPEN_PROFILES[actionKind == "yuletide" and "yuletide" or "cursed"]
+    if actionKind == "yuletide" then return LOOT_JOURNAL_OPEN_PROFILES.yuletide end
+    if actionKind == "sealed" then return LOOT_JOURNAL_OPEN_PROFILES.sealed end
+    return LOOT_JOURNAL_OPEN_PROFILES.cursed
 end
 
 BurdJournals.OpenLootJournalAction = ISBaseTimedAction:derive("BurdJournals_OpenLootJournalAction")
 
-function BurdJournals.OpenLootJournalAction:new(character, journalRequest, actionKind)
+function BurdJournals.OpenLootJournalAction:new(character, journalRequest, actionKind, capturedJournal)
     local profile = getLootJournalOpenProfile(actionKind)
     local o = ISBaseTimedAction.new(self, character)
 
     o.journalRequest = normalizeLootJournalLookupRequest(journalRequest)
-    o.actionKind = actionKind == "yuletide" and "yuletide" or "cursed"
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    o.journalId = o.journalRequest and o.journalRequest.journalId or nil
+    o.journalUUID = o.journalRequest and o.journalRequest.journalUUID or nil
+    o.journalFingerprint = o.journalRequest and o.journalRequest.journalFingerprint or nil
+    o.exactJournalItem = o.journalRequest and o.journalRequest.exactJournalItem == true or false
+    o.journal = capturedJournal
+    o.actionKind = actionKind == "yuletide" and "yuletide" or actionKind == "sealed" and "sealed" or "cursed"
+    configureJournalActionInterrupts(o, character)
     o.maxTime = math.floor((tonumber(profile.duration) or 5.5) * 33)
     o._progressSoundIndex = 0
     o._trackedSounds = {}
@@ -225,7 +392,13 @@ function BurdJournals.OpenLootJournalAction:isValid()
         return false
     end
 
-    local journal = resolveLootJournalLookup(player, self.journalRequest)
+    local journal = resolveLootJournalLookup(player, self)
+    if journal then self.journal = journal end
+    if self.actionKind == "sealed" then
+        return journal ~= nil
+            and BurdJournals.getSealedState
+            and BurdJournals.getSealedState(journal) == BurdJournals.SEALED_STATE_SEALED
+    end
     return journal ~= nil
 end
 
@@ -247,12 +420,13 @@ end
 
 function BurdJournals.OpenLootJournalAction:start()
     local profile = getLootJournalOpenProfile(self.actionKind)
-    local journal = resolveLootJournalLookup(self.character, self.journalRequest)
+    local journal = resolveLootJournalLookup(self.character, self)
+    if journal then self.journal = journal end
 
-    self:setActionAnim("Loot")
-    self.character:reportEvent("EventCrafting")
-    if journal and self.setOverrideHandModels then
-        self:setOverrideHandModels(nil, journal)
+    if shouldUseJournalActionAnimation(self.character) then
+        self:setActionAnim("Loot")
+        self.character:reportEvent("EventCrafting")
+        setJournalActionHandModels(self, self.character, nil, journal)
     end
 
     showLootJournalActionMessage(self.character, profile.startTextKey, profile.startTextFallback, false)
@@ -275,7 +449,21 @@ end
 function BurdJournals.OpenLootJournalAction:perform()
     local player = self.character
     local profile = getLootJournalOpenProfile(self.actionKind)
-    local request = normalizeLootJournalLookupRequest(self.journalRequest)
+    local request = normalizeLootJournalLookupRequest(self)
+    local liveJournal = resolveLootJournalLookup(player, self)
+    if liveJournal then
+        local liveData = BurdJournals.getJournalData and BurdJournals.getJournalData(liveJournal) or nil
+        request = BurdJournals.buildJournalCommandPayload
+            and BurdJournals.buildJournalCommandPayload(liveJournal, liveData, true)
+            or {
+                journalId = liveJournal.getID and liveJournal:getID() or request.journalId,
+                journalUUID = liveData and liveData.uuid or request.journalUUID,
+                journalFingerprint = request.journalFingerprint,
+            }
+    end
+    if request then
+        request.exactJournalItem = self.exactJournalItem == true
+    end
 
     stopTrackedLootJournalSounds(player, self._trackedSounds)
     self._trackedSounds = {}
@@ -286,6 +474,7 @@ function BurdJournals.OpenLootJournalAction:perform()
             journalId = request.journalId,
             journalUUID = request.journalUUID,
             journalFingerprint = request.journalFingerprint,
+            exactJournalItem = request.exactJournalItem == true,
             confirm = true,
         })
     end
@@ -303,13 +492,12 @@ function BurdJournals.queueLootJournalOpenAction(player, journalRequest, actionK
         return false
     end
 
-    local action = BurdJournals.OpenLootJournalAction:new(player, request, actionKind)
+    local action = BurdJournals.OpenLootJournalAction:new(player, request, actionKind, journal)
     if not action or not action.character then
         return false
     end
     if action.isValid then
-        local okValid, isValid = pcall(action.isValid, action)
-        if not okValid or isValid ~= true then
+        if action:isValid() ~= true then
             return false
         end
     end
@@ -318,15 +506,33 @@ function BurdJournals.queueLootJournalOpenAction(player, journalRequest, actionK
     return true
 end
 
+function BurdJournals.queueBreakJournalSealAction(player, journal)
+    if not player or not journal then return false end
+
+    local request = nil
+    if type(journal) == "table" and not journal.getModData then
+        request = normalizeLootJournalLookupRequest(journal)
+    else
+        if not BurdJournals.getSealedState
+            or BurdJournals.getSealedState(journal) ~= BurdJournals.SEALED_STATE_SEALED then
+            return false
+        end
+        local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+        request = BurdJournals.buildJournalCommandPayload
+            and BurdJournals.buildJournalCommandPayload(journal, journalData, true)
+            or { journalId = journal.getID and journal:getID() or nil, journalUUID = journalData and journalData.uuid or nil, journalFingerprint = nil }
+    end
+    return BurdJournals.queueLootJournalOpenAction(player, request, "sealed")
+end
+
 BurdJournals.ConvertToCleanAction = ISBaseTimedAction:derive("BurdJournals_ConvertToCleanAction")
 
 function BurdJournals.ConvertToCleanAction:new(character, journal)
     local o = ISBaseTimedAction.new(self, character)
 
     o.journal = journal
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    o.journalId = journal and journal.getID and journal:getID() or nil
+    configureJournalActionInterrupts(o, character)
 
     local convertTime = BurdJournals.getSandboxOption("ConvertTime") or 15.0
     o.maxTime = math.floor(convertTime * 33)
@@ -338,7 +544,7 @@ function BurdJournals.ConvertToCleanAction:isValid()
     local player = self.character
     if not player then return false end
 
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
     if not journal then return false end
 
     if not BurdJournals.isWorn(journal) then return false end
@@ -373,35 +579,27 @@ function BurdJournals.ConvertToCleanAction:perform()
 
     local player = self.character
 
-    if isClient() and not isServer() then
-
+    if BurdJournals.clientShouldUseServerAuthority() then
+        local lookupArgs = BurdJournals.buildJournalCommandLookupArgs(self.journal, nil, false)
         sendClientCommand(
             player,
             "BurdJournals",
             "convertToClean",
-            {journalId = self.journal:getID()}
+            lookupArgs
         )
     else
 
         local inventory = player:getInventory()
-
-        local leather = BurdJournals.findRepairItem(player, "leather")
-        if leather then
-            inventory:Remove(leather)
-        end
-
-        local thread = BurdJournals.findRepairItem(player, "thread")
-        if thread then
-            BurdJournals.consumeItemUses(thread, 1, player)
-        end
-
-        local needle = BurdJournals.findRepairItem(player, "needle")
-        if needle then
-            BurdJournals.consumeItemUses(needle, 1, player)
-        end
-
-        local journal = BurdJournals.findItemById(player, self.journal:getID())
+        local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
         if journal then
+            local leather = BurdJournals.findRepairItem(player, "leather")
+            local thread = BurdJournals.findRepairItem(player, "thread")
+            local needle = BurdJournals.findRepairItem(player, "needle")
+            if not leather or not thread or not needle then
+                ISBaseTimedAction.perform(self)
+                return
+            end
+
             local sourceJournalData = nil
             do
                 local sourceModData = journal:getModData()
@@ -419,26 +617,35 @@ function BurdJournals.ConvertToCleanAction:perform()
                 end
             end
 
-            inventory:Remove(journal)
             local cleanJournal = inventory:AddItem("BurdJournals.BlankSurvivalJournal")
             if cleanJournal then
                 local modData = cleanJournal:getModData()
-                modData.BurdJournals = {
-                    uuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
-                        or ("journal-" .. tostring(getTimestampMs and getTimestampMs() or os.time()) .. "-" .. tostring(cleanJournal:getID())),
-                    isWorn = false,
-                    isBloody = false,
-                    wasFromWorn = true,
-                    wasFromBloody = inheritedWasFromBloody,
-                    wasRestored = true,
-                    wasCleaned = inheritedWasCleaned,
-                    restoredBy = inheritedRestoredBy,
-                    isPlayerCreated = true,
-                }
-                BurdJournals.updateJournalName(cleanJournal)
-                BurdJournals.updateJournalIcon(cleanJournal)
+                if modData then
+                    modData.BurdJournals = {
+                        uuid = (BurdJournals.generateUUID and BurdJournals.generateUUID())
+                            or ("journal-" .. tostring(getTimestampMs and getTimestampMs() or os.time()) .. "-" .. tostring(cleanJournal:getID())),
+                        isWorn = false,
+                        isBloody = false,
+                        wasFromWorn = true,
+                        wasFromBloody = inheritedWasFromBloody,
+                        wasRestored = true,
+                        wasCleaned = inheritedWasCleaned,
+                        restoredBy = inheritedRestoredBy,
+                        isPlayerCreated = true,
+                    }
+                    BurdJournals.updateJournalName(cleanJournal)
+                    BurdJournals.updateJournalIcon(cleanJournal)
+
+                    -- Commit only after the replacement is completely ready.
+                    inventory:Remove(leather)
+                    BurdJournals.consumeItemUses(thread, 1, player)
+                    BurdJournals.consumeItemUses(needle, 1, player)
+                    inventory:Remove(journal)
+                    player:Say(getText("UI_BurdJournals_JournalRestored") or "Journal restored!")
+                else
+                    inventory:Remove(cleanJournal)
+                end
             end
-            player:Say(getText("UI_BurdJournals_JournalRestored") or "Journal restored!")
         end
     end
 
@@ -451,9 +658,7 @@ function BurdJournals.EraseJournalAction:new(character, journal)
     local o = ISBaseTimedAction.new(self, character)
 
     o.journal = journal
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    configureJournalActionInterrupts(o, character)
 
     local eraseTime = BurdJournals.getSandboxOption("EraseTime") or 10.0
     o.maxTime = math.floor(eraseTime * 33)
@@ -465,7 +670,7 @@ function BurdJournals.EraseJournalAction:isValid()
     local player = self.character
     if not player then return false end
 
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
     if not journal then return false end
 
     return BurdJournals.hasEraser(player)
@@ -497,19 +702,20 @@ function BurdJournals.EraseJournalAction:perform()
     end
 
     local player = self.character
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
 
     if not journal then
         ISBaseTimedAction.perform(self)
         return
     end
 
-    if isClient() and not isServer() then
+    if BurdJournals.clientShouldUseServerAuthority() then
+        local lookupArgs = BurdJournals.buildJournalCommandLookupArgs(journal, nil, false)
         sendClientCommand(
             player,
             "BurdJournals",
             "eraseJournal",
-            {journalId = journal:getID()}
+            lookupArgs
         )
     else
 
@@ -537,136 +743,6 @@ function BurdJournals.EraseJournalAction:perform()
     ISBaseTimedAction.perform(self)
 end
 
-BurdJournals.BindJournalAction = ISBaseTimedAction:derive("BurdJournals_BindJournalAction")
-
-function BurdJournals.BindJournalAction:new(character, sourceItem, actionType)
-    local o = ISBaseTimedAction.new(self, character)
-
-    o.sourceItem = sourceItem
-    o.actionType = actionType or "BindJournal"
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
-
-    local config = BurdJournals.ContextMenu and BurdJournals.ContextMenu.getCraftingConfig and
-                   BurdJournals.ContextMenu.getCraftingConfig(o.actionType)
-    local bindTime = config and config.time or 120
-    o.maxTime = math.floor(bindTime * 33)
-    o.xpAward = config and config.xpAward or 0
-
-    return o
-end
-
-function BurdJournals.BindJournalAction:isValid()
-    local player = self.character
-    if not player then return false end
-
-    local inventory = player:getInventory()
-    if not inventory:contains(self.sourceItem) then return false end
-
-    if BurdJournals.ContextMenu and BurdJournals.ContextMenu.hasRequiredMaterials then
-        local hasMaterials = BurdJournals.ContextMenu.hasRequiredMaterials(player, self.actionType)
-        if not hasMaterials then return false end
-    end
-
-    local config = BurdJournals.ContextMenu and BurdJournals.ContextMenu.getCraftingConfig and
-                   BurdJournals.ContextMenu.getCraftingConfig(self.actionType)
-    if config and config.tailoringRequired > 0 then
-        if not BurdJournals.ContextMenu.hasTailoringLevel(player, config.tailoringRequired) then
-            return false
-        end
-    end
-
-    return true
-end
-
-function BurdJournals.BindJournalAction:update()
-    self.character:setMetabolicTarget(Metabolics.LightWork)
-end
-
-function BurdJournals.BindJournalAction:start()
-    self:setActionAnim("Loot")
-    self.character:reportEvent("EventCrafting")
-
-    self.sound = self.character:getEmitter():playSound("Sewing")
-end
-
-function BurdJournals.BindJournalAction:stop()
-
-    if self.sound and self.sound ~= 0 then
-        self.character:getEmitter():stopSound(self.sound)
-    end
-    ISBaseTimedAction.stop(self)
-end
-
-function BurdJournals.BindJournalAction:perform()
-
-    if self.sound and self.sound ~= 0 then
-        self.character:getEmitter():stopSound(self.sound)
-    end
-
-    local player = self.character
-    local inventory = player:getInventory()
-
-    local config = BurdJournals.ContextMenu and BurdJournals.ContextMenu.getCraftingConfig and
-                   BurdJournals.ContextMenu.getCraftingConfig(self.actionType)
-    if not config then
-        bsjWriteLogLine("[BurdJournals] ERROR: Invalid action type in BindJournalAction: " .. tostring(self.actionType))
-        ISBaseTimedAction.perform(self)
-        return
-    end
-
-    for _, mat in ipairs(config.materials) do
-        for i = 1, mat.count do
-            local item = BurdJournals.ContextMenu.findItemByTypeOrTag(player, mat)
-            if item then
-                if mat.keep then
-
-                    if item:getCondition() then
-                        item:setCondition(item:getCondition() - 1)
-                    end
-                else
-
-                    inventory:Remove(item)
-                end
-            end
-        end
-    end
-
-    inventory:Remove(self.sourceItem)
-
-    local newJournal = inventory:AddItem("BurdJournals.BlankSurvivalJournal")
-    if newJournal then
-        local modData = newJournal:getModData()
-        modData.BurdJournals = {
-            isWorn = false,
-            isBloody = false,
-            wasFromBloody = false,
-            isPlayerCreated = true,
-            sourceType = "crafted",
-        }
-        BurdJournals.updateJournalName(newJournal)
-        BurdJournals.updateJournalIcon(newJournal)
-    end
-
-    if config.xpAward and config.xpAward > 0 then
-        if sendAddXp then
-            sendAddXp(player, Perks.Tailoring, config.xpAward, true, true)
-        else
-            player:getXp():AddXP(Perks.Tailoring, config.xpAward)
-        end
-    end
-
-    local boundMsg = getText("UI_BurdJournals_JournalBound") or "Journal bound!"
-    if HaloTextHelper and HaloTextHelper.addTextWithArrow then
-        HaloTextHelper.addTextWithArrow(player, boundMsg, true, HaloTextHelper.getColorGreen())
-    else
-        player:Say(boundMsg)
-    end
-
-    ISBaseTimedAction.perform(self)
-end
-
 BurdJournals.DisassembleJournalAction = ISBaseTimedAction:derive("BurdJournals_DisassembleJournalAction")
 
 local DISASSEMBLE_JOURNAL_TIME_SECONDS = 30.0
@@ -676,9 +752,7 @@ function BurdJournals.DisassembleJournalAction:new(character, journal)
     local o = ISBaseTimedAction.new(self, character)
 
     o.journal = journal
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    configureJournalActionInterrupts(o, character)
 
     local disassembleTime = DISASSEMBLE_JOURNAL_TIME_SECONDS
     o.maxTime = math.floor(disassembleTime * 33)
@@ -690,7 +764,7 @@ function BurdJournals.DisassembleJournalAction:isValid()
     local player = self.character
     if not player then return false end
 
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
     if not journal then return false end
 
     return BurdJournals.isBlankJournal(journal)
@@ -721,7 +795,7 @@ function BurdJournals.DisassembleJournalAction:perform()
 
     local player = self.character
     local inventory = player:getInventory()
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
 
     if not journal then
         ISBaseTimedAction.perform(self)
@@ -761,20 +835,122 @@ end
 
 BurdJournals.LearnFromJournalAction = ISBaseTimedAction:derive("BurdJournals_LearnFromJournalAction")
 
+BurdJournals.LearnActionPayloads = BurdJournals.LearnActionPayloads or {}
+
+local function storeLearnActionPayload(rewards, queuedRewards)
+    BurdJournals._learnActionPayloadSeq = (tonumber(BurdJournals._learnActionPayloadSeq) or 0) + 1
+    local payloadId = "learn-" .. tostring(getTimestampMs and getTimestampMs() or (os and os.time and os.time() or 0)) .. "-" .. tostring(BurdJournals._learnActionPayloadSeq)
+    BurdJournals.LearnActionPayloads[payloadId] = {
+        rewards = type(rewards) == "table" and rewards or {},
+        queuedRewards = type(queuedRewards) == "table" and queuedRewards or {},
+    }
+    return payloadId
+end
+
+local function getLearnActionPayload(action)
+    if not action or not action._learnPayloadId then
+        return nil
+    end
+    return BurdJournals.LearnActionPayloads and BurdJournals.LearnActionPayloads[action._learnPayloadId] or nil
+end
+
+local function getLearnActionRewards(action)
+    local payload = getLearnActionPayload(action)
+    if payload and type(payload.rewards) == "table" then
+        return payload.rewards
+    end
+    return type(action and action.rewards) == "table" and action.rewards or {}
+end
+
+local function getLearnActionQueuedRewards(action)
+    local payload = getLearnActionPayload(action)
+    if payload and type(payload.queuedRewards) == "table" then
+        return payload.queuedRewards
+    end
+    return type(action and action.queuedRewards) == "table" and action.queuedRewards or {}
+end
+
+local function clearLearnActionPayload(action)
+    if action and action._learnPayloadId and BurdJournals.LearnActionPayloads then
+        BurdJournals.LearnActionPayloads[action._learnPayloadId] = nil
+        action._learnPayloadId = nil
+    end
+end
+
+local function markPanelRewardsPending(panel, rewards)
+    if not panel or type(rewards) ~= "table" then
+        return
+    end
+    panel.pendingClaims = panel.pendingClaims or { skills = {}, traits = {}, recipes = {}, stats = {} }
+    panel.pendingClaims.skills = panel.pendingClaims.skills or {}
+    panel.pendingClaims.traits = panel.pendingClaims.traits or {}
+    panel.pendingClaims.recipes = panel.pendingClaims.recipes or {}
+    panel.pendingClaims.stats = panel.pendingClaims.stats or {}
+    panel.sessionClaimedSkills = panel.sessionClaimedSkills or {}
+    panel.sessionClaimedTraits = panel.sessionClaimedTraits or {}
+    panel.sessionClaimedRecipes = panel.sessionClaimedRecipes or {}
+    panel.sessionClaimedStats = panel.sessionClaimedStats or {}
+
+    for _, reward in ipairs(rewards) do
+        if reward and reward.type == "skill" and reward.name then
+            panel.pendingClaims.skills[reward.name] = true
+        elseif reward and reward.type == "trait" and reward.name then
+            local normalizedTraitId = BurdJournals.normalizeTraitId and BurdJournals.normalizeTraitId(reward.name) or reward.name
+            local traitSessionKey = string.lower(tostring(normalizedTraitId or reward.name))
+            panel.pendingClaims.traits[reward.name] = true
+            panel.pendingClaims.traits[traitSessionKey] = true
+        elseif reward and reward.type == "recipe" and reward.name then
+            panel.pendingClaims.recipes[reward.name] = true
+        elseif reward and reward.type == "stat" and reward.name then
+            panel.pendingClaims.stats[reward.name] = true
+        end
+    end
+end
+
+local function markPanelLearningQueued(panel, action, rewards, queuedRewards, isAbsorbAll)
+    if not panel then
+        return
+    end
+    local rewardList = type(rewards) == "table" and rewards or {}
+    local queuedRewardList = type(queuedRewards) == "table" and queuedRewards or {}
+    local firstReward = rewardList[1]
+    local existingClaimSessionId = panel.learningState and panel.learningState.claimSessionId or nil
+    panel.learningState = {
+        active = true,
+        skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
+        traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
+        forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
+        recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
+        statId = firstReward and firstReward.type == "stat" and firstReward.name or nil,
+        isAbsorbAll = isAbsorbAll == true,
+        progress = 0,
+        totalTime = action and action.totalTimeSeconds or 0,
+        startTime = getTimestampMs and getTimestampMs() or 0,
+        pendingRewards = rewardList,
+        currentIndex = 1,
+        queue = queuedRewardList,
+        timedAction = action,
+        claimSessionId = existingClaimSessionId,
+        queued = true,
+    }
+    markPanelRewardsPending(panel, rewardList)
+end
+
 function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, isAbsorbAll, mainPanel, queuedRewards)
     local o = ISBaseTimedAction.new(self, character)
+    local rewardList = type(rewards) == "table" and rewards or {}
+    local queuedRewardList = type(queuedRewards) == "table" and queuedRewards or {}
 
     o.journal = journal
-    o.rewards = rewards or {}
+    o._learnPayloadId = storeLearnActionPayload(rewardList, queuedRewardList)
+    o.rewardCount = #rewardList
+    o.queuedRewardCount = #queuedRewardList
     o.isAbsorbAll = isAbsorbAll or false
     o.mainPanel = mainPanel
-    o.queuedRewards = queuedRewards or {}
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    configureJournalActionInterrupts(o, character)
 
     local totalTime = 0
-    for _, reward in ipairs(rewards) do
+    for _, reward in ipairs(rewardList) do
         if reward.type == "skill" then
             totalTime = totalTime + (mainPanel and mainPanel:getSkillLearningTime() or 3.0)
         elseif reward.type == "trait" then
@@ -789,7 +965,7 @@ function BurdJournals.LearnFromJournalAction:new(character, journal, rewards, is
     end
 
     -- Apply batch time multiplier for "Absorb All" operations with multiple items
-    if isAbsorbAll and #rewards > 1 then
+    if isAbsorbAll and #rewardList > 1 then
         local batchMultiplier = BurdJournals.getSandboxOption("BatchTimeMultiplier") or 0.25
         totalTime = totalTime * batchMultiplier
     end
@@ -805,7 +981,7 @@ function BurdJournals.LearnFromJournalAction:isValid()
     local player = self.character
     if not player then return false end
 
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
     if not journal then return false end
 
     local currentPanel = BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance
@@ -840,40 +1016,40 @@ function BurdJournals.LearnFromJournalAction:update()
 
     if self.mainPanel and self.mainPanel.learningState then
         local progress = self:getJobDelta()
+        if self.usesServerBatchProgress == true then
+            progress = progress * 0.85
+        end
         self.mainPanel.learningState.progress = progress
     end
 end
 
 function BurdJournals.LearnFromJournalAction:start()
 
-    self:setAnimVariable("ReadType", "book")
-    self:setActionAnim(CharacterActionAnims.Read)
-    self:setOverrideHandModels(nil, self.journal)
-    self.character:setReading(true)
-    self.character:reportEvent("EventRead")
+    if shouldUseJournalActionAnimation(self.character) then
+        self:setAnimVariable("ReadType", "book")
+        self:setActionAnim(CharacterActionAnims.Read)
+        setJournalActionHandModels(self, self.character, nil, self.journal)
+        self.character:setReading(true)
+        self.character:reportEvent("EventRead")
+    end
 
     self.character:playSound("OpenBook")
 
     if self.mainPanel then
-        local firstReward = self.rewards[1]
-        local existingClaimSessionId = self.mainPanel.learningState and self.mainPanel.learningState.claimSessionId or nil
-        self.mainPanel.learningState = {
-            active = true,
-            skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
-            traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
-            forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
-            recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
-            statId = firstReward and firstReward.type == "stat" and firstReward.name or nil,
-            isAbsorbAll = self.isAbsorbAll,
-            progress = 0,
-            totalTime = self.totalTimeSeconds,
-            startTime = getTimestampMs and getTimestampMs() or 0,
-            pendingRewards = self.rewards,
-            currentIndex = 1,
-            queue = self.queuedRewards,
-            timedAction = self,
-            claimSessionId = existingClaimSessionId,
-        }
+        local rewards = getLearnActionRewards(self)
+        local queuedRewards = getLearnActionQueuedRewards(self)
+        local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+        local hasForgetReward = false
+        for _, reward in ipairs(rewards) do
+            if reward and reward.type == "forget" then hasForgetReward = true; break end
+        end
+        self.usesServerBatchProgress = BurdJournals.clientShouldUseServerAuthority()
+            and not (journalData and journalData.isDebugSpawned)
+            and not hasForgetReward
+        markPanelLearningQueued(self.mainPanel, self, rewards, queuedRewards, self.isAbsorbAll)
+        if self.mainPanel.learningState then
+            self.mainPanel.learningState.queued = false
+        end
     end
 end
 
@@ -883,20 +1059,27 @@ function BurdJournals.LearnFromJournalAction:stop()
     self.character:playSound("CloseBook")
 
     if self.mainPanel then
+        local rewards = getLearnActionRewards(self)
+        local queuedRewards = getLearnActionQueuedRewards(self)
+        local firstReward = rewards[1]
+        local claimSessionId = self.mainPanel.learningState and self.mainPanel.learningState.claimSessionId or nil
         self.mainPanel.learningState = {
             active = false,
-            skillName = nil,
-            traitId = nil,
-            forgetTraitId = nil,
-            recipeName = nil,
-            statId = nil,
-            isAbsorbAll = false,
+            skillName = firstReward and firstReward.type == "skill" and firstReward.name or nil,
+            traitId = firstReward and firstReward.type == "trait" and firstReward.name or nil,
+            forgetTraitId = firstReward and firstReward.type == "forget" and firstReward.name or nil,
+            recipeName = firstReward and firstReward.type == "recipe" and firstReward.name or nil,
+            statId = firstReward and firstReward.type == "stat" and firstReward.name or nil,
+            isAbsorbAll = self.isAbsorbAll == true,
             progress = 0,
             totalTime = 0,
             startTime = 0,
-            pendingRewards = {},
-            currentIndex = 0,
-            queue = {},
+            pendingRewards = rewards,
+            currentIndex = #rewards > 0 and 1 or 0,
+            queue = queuedRewards,
+            timedAction = nil,
+            claimSessionId = claimSessionId,
+            interrupted = true,
         }
 
         if self.mainPanel.refreshCurrentList then
@@ -904,15 +1087,19 @@ function BurdJournals.LearnFromJournalAction:stop()
         end
     end
 
+    clearLearnActionPayload(self)
     ISBaseTimedAction.stop(self)
 end
 
 function BurdJournals.LearnFromJournalAction:perform()
     local player = self.character
     local panel = self.mainPanel
+    local rewards = getLearnActionRewards(self)
+    local queuedRewards = getLearnActionQueuedRewards(self)
 
     if not player then
         BurdJournals.debugPrint("[BurdJournals] LearnFromJournalAction:perform - no player character, aborting")
+        clearLearnActionPayload(self)
         ISBaseTimedAction.perform(self)
         return
     end
@@ -925,6 +1112,7 @@ function BurdJournals.LearnFromJournalAction:perform()
     end
 
     if not panel then
+        clearLearnActionPayload(self)
         ISBaseTimedAction.perform(self)
         return
     end
@@ -949,7 +1137,7 @@ function BurdJournals.LearnFromJournalAction:perform()
     local otherRewards = {}
     local hasForgetReward = false
     
-    for _, reward in ipairs(self.rewards) do
+    for _, reward in ipairs(rewards) do
         if reward.type == "skill" then
             table.insert(skillRewards, reward)
         else
@@ -963,9 +1151,33 @@ function BurdJournals.LearnFromJournalAction:perform()
     BurdJournals.debugPrint("[BurdJournals] TimedAction: " .. #skillRewards .. " skill rewards, " .. #otherRewards .. " other rewards")
     BurdJournals.debugPrint("[BurdJournals] TimedAction: isPlayerJournal=" .. tostring(isPlayerJournal))
 
-    local isMultiplayerClient = isClient and isClient() and not isServer()
+    local isMultiplayerClient = BurdJournals.clientShouldUseServerAuthority()
     local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or {
+            journalId = self.journal and self.journal.getID and self.journal:getID() or nil,
+            journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+            journalFingerprint = nil,
+            journalData = nil,
+            itemFullType = self.journal and self.journal.getFullType and self.journal:getFullType() or nil,
+        }
     local canUseBatchServerCommand = isMultiplayerClient and not (journalData and journalData.isDebugSpawned)
+    local batchRequestSent = false
+    local batchRequestId = nil
+    local manualSingleQueue = {}
+    if self.isAbsorbAll ~= true then
+        for _, reward in ipairs(queuedRewards or {}) do manualSingleQueue[#manualSingleQueue + 1] = reward end
+        if panel.learningState and type(panel.learningState.queue) == "table" then
+            for _, reward in ipairs(panel.learningState.queue) do
+                local duplicate = false
+                for _, existing in ipairs(manualSingleQueue) do
+                    if existing.type == reward.type and existing.name == reward.name then duplicate = true; break end
+                end
+                if not duplicate then manualSingleQueue[#manualSingleQueue + 1] = reward end
+            end
+        end
+    end
     if canUseBatchServerCommand and hasForgetReward then
         -- Forget-slot claims are single-use and not part of batch claim payloads.
         canUseBatchServerCommand = false
@@ -973,8 +1185,11 @@ function BurdJournals.LearnFromJournalAction:perform()
 
     if canUseBatchServerCommand then
         local batchPayload = {
-            journalId = self.journal and self.journal:getID() or nil,
-            journalUUID = journalData and journalData.uuid or nil,
+            journalId = lookupArgs.journalId,
+            journalUUID = lookupArgs.journalUUID,
+            journalFingerprint = lookupArgs.journalFingerprint,
+            journalData = lookupArgs.journalData,
+            itemFullType = lookupArgs.itemFullType,
             claimSessionId = claimSessionId,
             skills = {},
             traits = {},
@@ -1003,7 +1218,66 @@ function BurdJournals.LearnFromJournalAction:perform()
             .. ", traits=" .. tostring(#batchPayload.traits)
             .. ", recipes=" .. tostring(#batchPayload.recipes)
             .. ", stats=" .. tostring(#batchPayload.stats) .. ")")
-        sendClientCommand(player, "BurdJournals", commandName, batchPayload)
+        -- Arm client state before sending. Hosted MP can return the completion
+        -- quickly enough that setting these fields afterwards leaves a permanent
+        -- reading latch which the response handler never saw.
+        panel.pendingBatchRewardMode = isPlayerJournal and "claim" or "absorb"
+        batchPayload.requestId = batchPayload.requestId or BurdJournals.Client.createBatchRewardRequestId()
+        panel.pendingBatchRewardRequestId = batchPayload.requestId
+        panel.isProcessingRewards = true
+        markPanelRewardsPending(panel, rewards)
+        batchRequestId = batchPayload.requestId
+        if self.isAbsorbAll ~= true then
+            panel.pendingLearnSingleContinuation = {
+                requestId = batchRequestId,
+                journalId = lookupArgs.journalId,
+                journalUUID = lookupArgs.journalUUID,
+                rewards = manualSingleQueue,
+            }
+            panel.learningState = {
+                active = true,
+                isAbsorbAll = false,
+                awaitingServerAck = true,
+                progress = 1,
+                pendingRewards = {},
+                queue = manualSingleQueue,
+                claimSessionId = claimSessionId,
+            }
+        end
+        batchRequestSent = BurdJournals.Client.sendBatchRewardRequest(player, commandName, batchPayload)
+        if batchRequestSent and panel.learningState then
+            local serverBatchTotal = #batchPayload.skills + #batchPayload.traits
+                + #batchPayload.recipes + #batchPayload.stats
+            -- The reading action is complete; the same bar now represents the
+            -- bounded authoritative server job instead of sitting at 100%.
+            panel.learningState.active = true
+            panel.learningState.awaitingServerAck = true
+            panel.learningState.serverProcessing = true
+            panel.learningState.serverProcessed = 0
+            panel.learningState.serverTotal = serverBatchTotal
+            panel.learningState.serverProgressBase = 0.85
+            panel.learningState.progress = panel.learningState.serverProgressBase
+        end
+        if not batchRequestSent then
+            panel.pendingBatchRewardRequestId = nil
+            panel.pendingBatchRewardMode = nil
+            panel.isProcessingRewards = false
+            panel.pendingLearnSingleContinuation = nil
+            if panel.learningState then panel.learningState.active = false end
+        elseif self.isAbsorbAll and #queuedRewards > 0 then
+            -- Do not start another timed action until this server batch is
+            -- acknowledged. Pre-queuing let the first completion tear down the
+            -- shared learning state underneath the next action.
+            panel.pendingLearnAllContinuation = {
+                requestId = batchPayload.requestId,
+                journalId = lookupArgs.journalId,
+                journalUUID = lookupArgs.journalUUID,
+                rewards = queuedRewards,
+            }
+            clearLearnActionPayload(self)
+            ISBaseTimedAction.perform(self)
+            return
+        end
     else
         -- Process skills individually so claim authority always comes from journal data on server.
         for _, reward in ipairs(skillRewards) do
@@ -1041,6 +1315,7 @@ function BurdJournals.LearnFromJournalAction:perform()
 
     if not panel:isVisible() or not panel.journal then
 
+        clearLearnActionPayload(self)
         ISBaseTimedAction.perform(self)
         return
     end
@@ -1063,7 +1338,7 @@ function BurdJournals.LearnFromJournalAction:perform()
     local savedQueue = {}
     if not self.isAbsorbAll then
         -- For individual clicks, process one-at-a-time queue (legacy behavior)
-        for _, item in ipairs(self.queuedRewards or {}) do
+        for _, item in ipairs(queuedRewards or {}) do
             table.insert(savedQueue, item)
         end
 
@@ -1080,6 +1355,18 @@ function BurdJournals.LearnFromJournalAction:perform()
                     table.insert(savedQueue, item)
                 end
             end
+        end
+
+        if canUseBatchServerCommand and batchRequestSent then
+            -- A one-item claim still uses the authoritative batch command in MP.
+            -- Wait for that requestId before starting the next manually queued
+            -- reward so completion handlers cannot overwrite one another.
+            if panel.pendingLearnSingleContinuation then
+                panel.pendingLearnSingleContinuation.rewards = savedQueue
+            end
+            clearLearnActionPayload(self)
+            ISBaseTimedAction.perform(self)
+            return
         end
 
         -- Process one item at a time for individual clicks
@@ -1114,17 +1401,21 @@ function BurdJournals.LearnFromJournalAction:perform()
             local nextRewards = {nextReward}
             local action = BurdJournals.LearnFromJournalAction:new(player, self.journal, nextRewards, false, panel, savedQueue)
             if action and action.character then
+                if panel.learningState then
+                    panel.learningState.timedAction = action
+                end
                 ISTimedActionQueue.add(action)
             else
                 BurdJournals.debugPrint("[BurdJournals] LearnFromJournalAction:perform - failed to queue next single reward action")
             end
 
+            clearLearnActionPayload(self)
             ISBaseTimedAction.perform(self)
             return
         end
     else
         -- For "Absorb All" mode, process in batches
-        savedQueue = self.queuedRewards or {}
+        savedQueue = queuedRewards or {}
 
         if #savedQueue > 0 then
             -- Extract next batch
@@ -1169,11 +1460,15 @@ function BurdJournals.LearnFromJournalAction:perform()
 
             local action = BurdJournals.LearnFromJournalAction:new(player, self.journal, nextBatch, true, panel, remaining)
             if action and action.character then
+                if panel.learningState then
+                    panel.learningState.timedAction = action
+                end
                 ISTimedActionQueue.add(action)
             else
                 BurdJournals.debugPrint("[BurdJournals] LearnFromJournalAction:perform - failed to queue next absorb-all batch")
             end
 
+            clearLearnActionPayload(self)
             ISBaseTimedAction.perform(self)
             return
         end
@@ -1208,6 +1503,7 @@ function BurdJournals.LearnFromJournalAction:perform()
             panel:populateAbsorptionList()
         end
     end
+    clearLearnActionPayload(self)
 
     if panel.refreshJournalData then
         panel:refreshJournalData()
@@ -1225,13 +1521,18 @@ function BurdJournals.RecordToJournalAction:new(character, journal, records, isR
     local o = ISBaseTimedAction.new(self, character)
 
     o.journal = journal
+    o.journalId = journal and journal.getID and journal:getID() or nil
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+    if type(journalData) == "table" and BurdJournals.resolveJournalUUIDForRuntime then
+        o.journalUUID = BurdJournals.resolveJournalUUIDForRuntime(journalData, journal, false)
+    else
+        o.journalUUID = type(journalData) == "table" and journalData.uuid or nil
+    end
     o.records = records or {}
     o.isRecordAll = isRecordAll or false
     o.mainPanel = mainPanel
     o.queuedRecords = queuedRecords or {}
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    configureJournalActionInterrupts(o, character)
 
     local totalTime = 0
     for _, record in ipairs(records) do
@@ -1250,6 +1551,9 @@ function BurdJournals.RecordToJournalAction:new(character, journal, records, isR
     if isRecordAll and #records > 1 then
         local batchMultiplier = BurdJournals.getSandboxOption("BatchTimeMultiplier") or 0.25
         totalTime = totalTime * batchMultiplier
+        if BurdJournals.clientShouldUseServerAuthority() then
+            totalTime = math.max(totalTime, tonumber(BurdJournals.RECORD_ALL_MP_MIN_BATCH_SECONDS) or 3.5)
+        end
     end
 
     totalTime = math.max(1.0, totalTime)
@@ -1257,6 +1561,166 @@ function BurdJournals.RecordToJournalAction:new(character, journal, records, isR
     o.maxTime = math.floor(totalTime * 33)
 
     return o
+end
+
+function BurdJournals.RecordToJournalAction:resolveJournalForRecordAction(player, currentPanel)
+    if not player then return nil end
+
+    local journal = nil
+    if self.journalId and BurdJournals.findItemByIdInPlayerInventory then
+        journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journalId)
+    end
+    if journal then
+        self.journal = journal
+        self.journalId = journal.getID and journal:getID() or self.journalId
+        return journal
+    end
+
+    if self.journalUUID and BurdJournals.findJournalByUUIDInPlayerInventory then
+        journal = BurdJournals.findJournalByUUIDInPlayerInventory(player, self.journalUUID)
+        if journal then
+            BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction: resolved journal by UUID after item swap")
+            self.journal = journal
+            self.journalId = journal.getID and journal:getID() or self.journalId
+            return journal
+        end
+    end
+
+    if currentPanel then
+        if currentPanel.pendingNewJournalId and BurdJournals.findItemByIdInPlayerInventory then
+            journal = BurdJournals.findItemByIdInPlayerInventory(player, currentPanel.pendingNewJournalId)
+            if journal then
+                BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction: resolved pending materialized journal")
+                currentPanel.journal = journal
+                currentPanel.pendingNewJournalId = nil
+                currentPanel.pendingRecordJournalData = nil
+                self.journal = journal
+                self.journalId = journal.getID and journal:getID() or currentPanel.pendingNewJournalId
+                return journal
+            end
+        end
+
+    end
+
+    return nil
+end
+
+function BurdJournals.buildRecordProgressCommandPayload(player, journal, records, isRecordAll, recordQueueRemaining)
+    if not player or not journal or type(records) ~= "table" or #records <= 0 then
+        return nil
+    end
+
+    local skillsToRecord = {}
+    local traitsToRecord = {}
+    local statsToRecord = {}
+    local recipesToRecord = {}
+    local skillCount = 0
+    local traitCount = 0
+    local statCount = 0
+    local recipeCount = 0
+
+    for _, record in ipairs(records) do
+        if record.type == "skill" then
+            skillsToRecord[record.name] = {
+                xp = record.xp,
+                level = record.level,
+                baselineXP = record.baselineXP
+            }
+            skillCount = skillCount + 1
+        elseif record.type == "trait" then
+            traitsToRecord[record.name] = {
+                name = record.name,
+                isPositive = true
+            }
+            traitCount = traitCount + 1
+        elseif record.type == "stat" then
+            statsToRecord[record.name] = {
+                value = record.value
+            }
+            statCount = statCount + 1
+        elseif record.type == "recipe" then
+
+            local magazineType = BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(record.name) or nil
+            recipesToRecord[record.name] = {
+                name = record.name,
+                source = magazineType
+            }
+            recipeCount = recipeCount + 1
+        end
+    end
+
+    local journalId = journal and journal:getID() or nil
+    local journalType = journal and journal:getFullType() or "nil"
+    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(journal, journalData, true)
+        or {
+            journalId = journalId,
+            journalUUID = type(journalData) == "table" and journalData.uuid or nil,
+            journalFingerprint = nil,
+            journalData = nil,
+            itemFullType = journalType,
+        }
+
+    if not lookupArgs.journalId and not lookupArgs.journalUUID and not lookupArgs.journalFingerprint then
+        bsjWriteLogLine("[BurdJournals] ERROR: Cannot send recordProgress - journal lookup is missing!")
+        return nil
+    end
+
+    local writingToolPayload = BurdJournals.buildWritingToolCommandPayload
+        and BurdJournals.buildWritingToolCommandPayload(player)
+        or nil
+
+    return {
+        journalId = lookupArgs.journalId,
+        journalUUID = lookupArgs.journalUUID,
+        journalFingerprint = lookupArgs.journalFingerprint,
+        journalData = lookupArgs.journalData,
+        itemFullType = lookupArgs.itemFullType,
+        writingToolId = writingToolPayload and writingToolPayload.writingToolId or nil,
+        writingToolFullType = writingToolPayload and writingToolPayload.writingToolFullType or nil,
+        skills = skillsToRecord,
+        traits = traitsToRecord,
+        stats = statsToRecord,
+        recipes = recipesToRecord,
+        isRecordAll = isRecordAll == true,
+        recordBatchSize = #(records or {}),
+        recordQueueRemaining = math.max(0, tonumber(recordQueueRemaining) or 0),
+        _debugSkillCount = skillCount,
+        _debugTraitCount = traitCount,
+        _debugStatCount = statCount,
+        _debugRecipeCount = recipeCount,
+        _debugJournalId = journalId,
+        _debugJournalType = journalType,
+        _lookupJournalUUID = lookupArgs.journalUUID,
+    }
+end
+
+function BurdJournals.sendRecordProgressCommand(player, journal, records, isRecordAll, recordQueueRemaining)
+    local payload = BurdJournals.buildRecordProgressCommandPayload(player, journal, records, isRecordAll, recordQueueRemaining)
+    if not payload then
+        return nil
+    end
+
+    BurdJournals.debugPrint("[BurdJournals] sendRecordProgressCommand - journalId="
+        .. tostring(payload._debugJournalId)
+        .. ", type=" .. tostring(payload._debugJournalType)
+        .. ", skills=" .. tostring(payload._debugSkillCount)
+        .. ", traits=" .. tostring(payload._debugTraitCount)
+        .. ", recipes=" .. tostring(payload._debugRecipeCount)
+        .. ", remaining=" .. tostring(payload.recordQueueRemaining))
+
+    payload._debugSkillCount = nil
+    payload._debugTraitCount = nil
+    payload._debugStatCount = nil
+    payload._debugRecipeCount = nil
+    payload._debugJournalId = nil
+    payload._debugJournalType = nil
+    local lookupJournalUUID = payload._lookupJournalUUID
+    payload._lookupJournalUUID = nil
+
+    sendClientCommand(player, "BurdJournals", "recordProgress", payload)
+    return payload, lookupJournalUUID
 end
 
 function BurdJournals.RecordToJournalAction:isValid()
@@ -1283,23 +1747,11 @@ function BurdJournals.RecordToJournalAction:isValid()
         return false
     end
 
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = self:resolveJournalForRecordAction(player, currentPanel)
     if not journal then
 
-        if currentPanel and currentPanel.journal then
-            local panelJournal = BurdJournals.findItemById(player, currentPanel.journal:getID())
-            if panelJournal then
-
-                BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:isValid - Rebinding to panel journal (blank-to-filled conversion)")
-                self.journal = panelJournal
-                journal = panelJournal
-            end
-        end
-
-        if not journal then
-            BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:isValid FAILED - journal not found in inventory")
-            return false
-        end
+        BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:isValid FAILED - journal not found in inventory")
+        return false
     end
 
     local requirePen = BurdJournals.getSandboxOption("RequirePenToWrite")
@@ -1341,11 +1793,13 @@ end
 function BurdJournals.RecordToJournalAction:start()
     BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:start() called with " .. #self.records .. " records")
 
-    self:setAnimVariable("ReadType", "book")
-    self:setActionAnim(CharacterActionAnims.Read)
-    self:setOverrideHandModels(nil, self.journal)
-    self.character:setReading(true)
-    self.character:reportEvent("EventRead")
+    if shouldUseJournalActionAnimation(self.character) then
+        self:setAnimVariable("ReadType", "book")
+        self:setActionAnim(CharacterActionAnims.Read)
+        setJournalActionHandModels(self, self.character, nil, self.journal)
+        self.character:setReading(true)
+        self.character:reportEvent("EventRead")
+    end
 
     self.character:playSound("OpenBook")
 
@@ -1375,21 +1829,41 @@ function BurdJournals.RecordToJournalAction:stop()
     self.character:setReading(false)
     self.character:playSound("CloseBook")
 
+    if self.isRecordAll == true
+        and self.journal
+        and BurdJournals.Client
+        and BurdJournals.Client.requestJournalSync
+    then
+        local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+        BurdJournals.Client.requestJournalSync(self.journal, "recordAllCancelled", journalData, self.character)
+        BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:stop() requested record-all cancellation sync")
+    end
+
     if self.mainPanel then
+        local records = type(self.records) == "table" and self.records or {}
+        local queuedRecords = type(self.queuedRecords) == "table" and self.queuedRecords or {}
+        local firstRecord = records[1]
         self.mainPanel.recordingState = {
             active = false,
-            skillName = nil,
-            traitId = nil,
-            statId = nil,
-            recipeName = nil,
-            isRecordAll = false,
+            skillName = firstRecord and firstRecord.type == "skill" and firstRecord.name or nil,
+            traitId = firstRecord and firstRecord.type == "trait" and firstRecord.name or nil,
+            statId = firstRecord and firstRecord.type == "stat" and firstRecord.name or nil,
+            recipeName = firstRecord and firstRecord.type == "recipe" and firstRecord.name or nil,
+            isRecordAll = self.isRecordAll == true,
             progress = 0,
             totalTime = 0,
             startTime = 0,
-            pendingRecords = {},
-            currentIndex = 0,
-            queue = {},
+            pendingRecords = records,
+            currentIndex = #records > 0 and 1 or 0,
+            queue = queuedRecords,
+            timedAction = nil,
+            interrupted = true,
         }
+        self.mainPanel.processingRecordQueue = false
+        self.mainPanel.pendingRecordAllContinuation = nil
+        self.mainPanel.pendingRecordSingleContinuation = nil
+        BurdJournals.pendingRecordAllContinuation = nil
+        clearRecordAllContinuationWatchdog(self.mainPanel)
 
         if self.mainPanel.refreshCurrentList then
             self.mainPanel:refreshCurrentList()
@@ -1414,40 +1888,25 @@ function BurdJournals.RecordToJournalAction:perform()
         return
     end
 
-    local skillsToRecord = {}
-    local traitsToRecord = {}
-    local statsToRecord = {}
-    local recipesToRecord = {}
+    local resolvedJournal = self:resolveJournalForRecordAction(player, panel)
+    if resolvedJournal then
+        self.journal = resolvedJournal
+    end
+
+    local recordsForCommand = self.records or {}
+
     local skillCount = 0
     local traitCount = 0
     local statCount = 0
     local recipeCount = 0
-
-    for _, record in ipairs(self.records) do
+    for _, record in ipairs(recordsForCommand) do
         if record.type == "skill" then
-            skillsToRecord[record.name] = {
-                xp = record.xp,
-                level = record.level
-            }
             skillCount = skillCount + 1
         elseif record.type == "trait" then
-            traitsToRecord[record.name] = {
-                name = record.name,
-                isPositive = true
-            }
             traitCount = traitCount + 1
         elseif record.type == "stat" then
-            statsToRecord[record.name] = {
-                value = record.value
-            }
             statCount = statCount + 1
         elseif record.type == "recipe" then
-
-            local magazineType = BurdJournals.getMagazineForRecipe and BurdJournals.getMagazineForRecipe(record.name) or nil
-            recipesToRecord[record.name] = {
-                name = record.name,
-                source = magazineType
-            }
             recipeCount = recipeCount + 1
         end
     end
@@ -1459,103 +1918,70 @@ function BurdJournals.RecordToJournalAction:perform()
         recipes = recipeCount
     }
 
-    local journalId = self.journal and self.journal:getID() or nil
-    local journalType = self.journal and self.journal:getFullType() or "nil"
-    local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
-    local lookupArgs = BurdJournals.buildJournalCommandPayload
-        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
-        or {
-            journalId = journalId,
-            journalUUID = type(journalData) == "table" and journalData.uuid or nil,
-            journalFingerprint = nil,
-            journalData = nil,
+    local savedQueue = {}
+    if not self.isRecordAll then
+        for _, item in ipairs(self.queuedRecords or {}) do savedQueue[#savedQueue + 1] = item end
+        if panel.recordingState and type(panel.recordingState.queue) == "table" then
+            for _, item in ipairs(panel.recordingState.queue) do
+                local duplicate = false
+                for _, existing in ipairs(savedQueue) do
+                    if existing.type == item.type and existing.name == item.name then duplicate = true; break end
+                end
+                if not duplicate then savedQueue[#savedQueue + 1] = item end
+            end
+        end
+        panel.pendingRecordSingleContinuation = {
+            journalId = self.journal and self.journal:getID() or nil,
+            journalUUID = self.journalUUID,
+            records = savedQueue,
         }
-    BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:perform() - journalId=" .. tostring(journalId) .. ", type=" .. tostring(journalType) .. ", skills=" .. skillCount .. ", traits=" .. traitCount .. ", recipes=" .. recipeCount)
-
-    if not lookupArgs.journalId and not lookupArgs.journalUUID and not lookupArgs.journalFingerprint then
-        bsjWriteLogLine("[BurdJournals] ERROR: Cannot send recordProgress - journal lookup is missing!")
+        panel.recordingState = {
+            active = true,
+            isRecordAll = false,
+            awaitingServerAck = true,
+            progress = 1,
+            pendingRecords = {},
+            queue = savedQueue,
+        }
+        scheduleRecordAllContinuationWatchdog(panel, player)
+    end
+    local recordQueueRemaining = self.isRecordAll and #(self.queuedRecords or {}) or #savedQueue
+    local payload, lookupJournalUUID = BurdJournals.sendRecordProgressCommand(
+        player,
+        self.journal,
+        recordsForCommand,
+        self.isRecordAll == true,
+        recordQueueRemaining
+    )
+    if not payload then
+        panel.pendingRecordSingleContinuation = nil
+        clearRecordAllContinuationWatchdog(panel)
+        if panel.recordingState then panel.recordingState.active = false end
         ISBaseTimedAction.perform(self)
         return
     end
 
-    local writingToolPayload = BurdJournals.buildWritingToolCommandPayload
-        and BurdJournals.buildWritingToolCommandPayload(player)
-        or nil
-
-    sendClientCommand(player, "BurdJournals", "recordProgress", {
-        journalId = lookupArgs.journalId,
-        journalUUID = lookupArgs.journalUUID,
-        journalFingerprint = lookupArgs.journalFingerprint,
-        journalData = lookupArgs.journalData,
-        writingToolId = writingToolPayload and writingToolPayload.writingToolId or nil,
-        writingToolFullType = writingToolPayload and writingToolPayload.writingToolFullType or nil,
-        skills = skillsToRecord,
-        traits = traitsToRecord,
-        stats = statsToRecord,
-        recipes = recipesToRecord
-    })
-
+    local journalId = self.journal and self.journal:getID() or nil
     BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:perform() - sendClientCommand completed for journalId=" .. tostring(journalId))
 
     -- Get batch size for next batch (only matters for isRecordAll mode)
-    local batchSize = BurdJournals.getSandboxOption("RecordBatchSize") or 15
-    if batchSize < 1 then batchSize = 1 end
+    local batchSize = getEffectiveRecordBatchSize(panel)
 
-    local savedQueue = {}
     if not self.isRecordAll then
-        -- For individual clicks, process one-at-a-time queue (legacy behavior)
-        for _, item in ipairs(self.queuedRecords or {}) do
-            table.insert(savedQueue, item)
+        -- Record All continuation should not rebuild the current list here.
+        -- Serialize manually queued singles behind the authoritative response.
+        -- Starting the next action here allowed its response to race the entry
+        -- delta and materialization from the operation that just completed.
+        if panel.pendingRecordSingleContinuation then
+            panel.pendingRecordSingleContinuation.journalId = journalId
+            panel.pendingRecordSingleContinuation.journalUUID = lookupJournalUUID or self.journalUUID
         end
-
-        if panel.recordingState and panel.recordingState.queue then
-            for _, item in ipairs(panel.recordingState.queue) do
-                local isDupe = false
-                for _, existing in ipairs(savedQueue) do
-                    if existing.name == item.name then
-                        isDupe = true
-                        break
-                    end
-                end
-                if not isDupe then
-                    table.insert(savedQueue, item)
-                end
-            end
-        end
-
-        -- Process one item at a time for individual clicks
-        if #savedQueue > 0 then
-            local nextRecord = table.remove(savedQueue, 1)
-
-            panel.recordingState = {
-                active = true,
-                skillName = nextRecord.type == "skill" and nextRecord.name or nil,
-                traitId = nextRecord.type == "trait" and nextRecord.name or nil,
-                statId = nextRecord.type == "stat" and nextRecord.name or nil,
-                recipeName = nextRecord.type == "recipe" and nextRecord.name or nil,
-                isRecordAll = false,
-                progress = 0,
-                totalTime = 0,
-                startTime = 0,
-                pendingRecords = {nextRecord},
-                currentIndex = 1,
-                queue = savedQueue,
-            }
-
-            if panel.skillList and panel.journal then
-                panel:refreshCurrentList()
-            end
-
-            local nextRecords = {nextRecord}
-            local journalForNextAction = panel.journal or self.journal
-            local action = BurdJournals.RecordToJournalAction:new(player, journalForNextAction, nextRecords, false, panel, savedQueue)
-            ISTimedActionQueue.add(action)
-
-            ISBaseTimedAction.perform(self)
-            return
-        end
+        ISBaseTimedAction.perform(self)
+        return
     else
-        -- For "Record All" mode, process in batches
+        -- For "Record All" mode, process in batches. The next batch is queued
+        -- after the server ack so later full-data responses cannot overwrite
+        -- an earlier lightweight delta with stale journal state.
         savedQueue = self.queuedRecords or {}
 
         if #savedQueue > 0 then
@@ -1589,13 +2015,15 @@ function BurdJournals.RecordToJournalAction:perform()
                 queue = remaining,
             }
 
-            if panel.skillList and panel.journal then
-                panel:refreshCurrentList()
-            end
-
-            local journalForNextAction = panel.journal or self.journal
-            local action = BurdJournals.RecordToJournalAction:new(player, journalForNextAction, nextBatch, true, panel, remaining)
-            ISTimedActionQueue.add(action)
+            panel.pendingRecordAllContinuation = {
+                remaining = savedQueue,
+                records = savedQueue,
+                journalId = journalId,
+                journalUUID = lookupJournalUUID,
+            }
+            BurdJournals.pendingRecordAllContinuation = panel.pendingRecordAllContinuation
+            scheduleRecordAllContinuationWatchdog(panel, player)
+            BurdJournals.debugPrint("[BurdJournals] RecordToJournalAction:perform - Waiting for recordSuccess before queueing next record-all batch")
 
             ISBaseTimedAction.perform(self)
             return
@@ -1621,6 +2049,305 @@ function BurdJournals.RecordToJournalAction:perform()
     }
 
     ISBaseTimedAction.perform(self)
+end
+
+function BurdJournals.isRecordAllAuthorityStateConverged(player, journal, args)
+    local writingToolState = type(args) == "table" and args.writingToolState or nil
+    if type(writingToolState) == "table" and writingToolState.itemId ~= nil then
+        local localTool = BurdJournals.findItemByIdInPlayerInventory and BurdJournals.findItemByIdInPlayerInventory(player, writingToolState.itemId) or nil
+        if writingToolState.removed == true then
+            if localTool then return false end
+        elseif not localTool then return false
+        elseif writingToolState.usedDelta ~= nil and localTool.getUsedDelta and (tonumber(localTool:getUsedDelta()) or 0) > (tonumber(writingToolState.usedDelta) or 0) + 0.0001 then return false
+        elseif writingToolState.drainableUses ~= nil and localTool.getDrainableUsesFloat and (tonumber(localTool:getDrainableUsesFloat()) or 0) > (tonumber(writingToolState.drainableUses) or 0) + 0.0001 then return false end
+    end
+    local expectedRevision = type(args) == "table" and tonumber(args.entryStoreUpdatedAt) or nil
+    if expectedRevision then
+        local journalData = journal and BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+        if type(journalData) ~= "table" or journalData.entryStoreEnabled ~= true or (tonumber(journalData.entryStoreUpdatedAt) or 0) < expectedRevision then return false end
+    end
+    return true
+end
+
+function BurdJournals.cancelRecordAllAuthoritySettle(panel)
+    if not panel then return end
+    local settleTick = panel.recordAllAuthoritySettleTick
+    if settleTick and Events and Events.OnTick then
+        Events.OnTick.Remove(settleTick)
+    end
+    panel.recordAllAuthoritySettleTick = nil
+    panel.processingRecordQueue = false
+    panel.pendingRecordAllContinuation = nil
+    BurdJournals.pendingRecordAllContinuation = nil
+    if panel.recordingState and panel.recordingState.isRecordAll == true then
+        panel.recordingState.active = false
+        panel.recordingState.timedAction = nil
+        panel.recordingState.interrupted = true
+    end
+end
+
+function BurdJournals.queueRecordAllContinuationAfterAuthority(panel, player, action, args)
+    if BurdJournals.isRecordAllAuthorityStateConverged(player, action and action.journal, args) then ISTimedActionQueue.add(action); return true end
+    if not (panel and player and action and Events and Events.OnTick) then return false end
+    if panel.recordAllAuthoritySettleTick then
+        Events.OnTick.Remove(panel.recordAllAuthoritySettleTick)
+        panel.recordAllAuthoritySettleTick = nil
+    end
+    local startedAt = (getTimestampMs and getTimestampMs()) or ((os.time() or 0) * 1000)
+    local tick
+    tick = function()
+        local currentPanel = BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance or nil
+        local nowMs = (getTimestampMs and getTimestampMs()) or ((os.time() or 0) * 1000)
+        if currentPanel ~= panel
+            or (panel.isVisible and not panel:isVisible())
+            or not panel.recordingState
+            or panel.recordingState.active ~= true
+        then
+            BurdJournals.cancelRecordAllAuthoritySettle(panel)
+            return
+        end
+        local journal = panel.journal or action.journal
+        if BurdJournals.isRecordAllAuthorityStateConverged(player, journal, args) then
+            Events.OnTick.Remove(tick); panel.recordAllAuthoritySettleTick = nil; action.journal = journal
+            if BurdJournals.getSandboxOption("RequirePenToWrite") and not BurdJournals.hasWritingTool(player) then
+                panel.processingRecordQueue = false; if panel.recordingState then panel.recordingState.active = false; panel.recordingState.interrupted = true end
+                if panel.showFeedback then panel:showFeedback(getText("UI_BurdJournals_NeedWritingTool") or "You need a pen or pencil to write.", {r=0.8, g=0.3, b=0.3}) end
+                return
+            end
+            ISTimedActionQueue.add(action); BurdJournals.debugPrint("[BurdJournals] Record All authority state converged; started next batch"); return
+        end
+        if nowMs - startedAt >= 5000 then
+            Events.OnTick.Remove(tick); panel.recordAllAuthoritySettleTick = nil; panel.processingRecordQueue = false
+            if panel.recordingState then panel.recordingState.active = false; panel.recordingState.interrupted = true end
+            if BurdJournals.Client and BurdJournals.Client.requestJournalSync and journal then BurdJournals.Client.requestJournalSync(journal, "recordAllInventorySettleTimeout", nil, player) end
+            if panel.showFeedback then panel:showFeedback(getText("UI_BurdJournals_JournalSyncFailed") or "Error: Journal sync failed", {r=0.8, g=0.3, b=0.3}) end
+        end
+    end
+    panel.recordAllAuthoritySettleTick = tick; Events.OnTick.Add(tick)
+    BurdJournals.debugPrint("[BurdJournals] Record All waiting for authoritative inventory and journal shell updates")
+    return true
+end
+
+function BurdJournals.continueRecordSinglesAfterServerAck(panel, player, args)
+    if not panel or not player or type(args) ~= "table" or args.isRecordAll == true then return false end
+    local continuation = panel.pendingRecordSingleContinuation
+    if type(continuation) ~= "table" then return false end
+
+    local expectedUUID = continuation.journalUUID
+    local responseUUID = args.journalUUID or args.entryStoreUUID
+    if expectedUUID and responseUUID and tostring(expectedUUID) ~= tostring(responseUUID) then
+        return false
+    end
+
+    clearRecordAllContinuationWatchdog(panel)
+    panel.pendingRecordSingleContinuation = nil
+    local queue = type(continuation.records) == "table" and continuation.records or {}
+    if panel.recordingState and type(panel.recordingState.queue) == "table" then
+        queue = panel.recordingState.queue
+    end
+
+    if #queue > 0 then
+        local nextRecord = table.remove(queue, 1)
+        local journal = panel.journal
+        if not journal then return false end
+        local action = BurdJournals.RecordToJournalAction:new(player, journal, {nextRecord}, false, panel, queue)
+        panel.recordingState = {
+            active = true,
+            isRecordAll = false,
+            pendingRecords = {nextRecord},
+            currentIndex = 1,
+            queue = queue,
+            timedAction = action,
+        }
+        ISTimedActionQueue.add(action)
+        return true
+    end
+
+    panel.recordingState = { active = false, isRecordAll = false, pendingRecords = {}, queue = {} }
+    panel.processingRecordQueue = false
+    local bulkIntent = panel.pendingRecordBulkIntent
+    panel.pendingRecordBulkIntent = nil
+    if type(bulkIntent) == "table" then
+        if bulkIntent.mode == "tab" and panel.startRecordingTab then
+            panel:startRecordingTab(bulkIntent.tabId)
+        elseif panel.startRecordingAll then
+            panel:startRecordingAll()
+        end
+    end
+    return true
+end
+
+function BurdJournals.continueRecordAllAfterServerAck(panel, player, args)
+    if not panel or not player then return false end
+
+    local function rebuildActiveRecordAllRemaining()
+        if not panel.recordingState
+            or panel.recordingState.active ~= true
+            or panel.recordingState.isRecordAll ~= true
+        then
+            return nil
+        end
+
+        local rebuilt = {}
+        if type(panel.recordingState.pendingRecords) == "table" then
+            for _, record in ipairs(panel.recordingState.pendingRecords) do
+                rebuilt[#rebuilt + 1] = record
+            end
+        end
+        if type(panel.recordingState.queue) == "table" then
+            for _, record in ipairs(panel.recordingState.queue) do
+                rebuilt[#rebuilt + 1] = record
+            end
+        end
+        return #rebuilt > 0 and rebuilt or nil
+    end
+
+    local continuation = panel.pendingRecordAllContinuation or BurdJournals.pendingRecordAllContinuation
+    if args and args.ackTimedOut == true and type(panel.pendingRecordAllContinuation) ~= "table" and type(BurdJournals.pendingRecordAllContinuation) == "table" then
+        panel.pendingRecordAllContinuation = BurdJournals.pendingRecordAllContinuation
+    end
+    BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: entered isRecordAll="
+        .. tostring(args and args.isRecordAll)
+        .. ", serverRemaining=" .. tostring(args and args.recordQueueRemaining)
+        .. ", hasContinuation=" .. tostring(type(continuation) == "table"))
+    if type(continuation) ~= "table"
+        and args
+        and math.max(0, tonumber(args.recordQueueRemaining) or 0) > 0
+        and panel.recordingState
+        and panel.recordingState.active == true
+        and panel.recordingState.isRecordAll == true
+    then
+        local rebuiltRecords = rebuildActiveRecordAllRemaining()
+        if type(rebuiltRecords) ~= "table" then
+            BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: cannot rebuild missing continuation from active record state")
+            clearRecordAllContinuationWatchdog(panel)
+            return false
+        end
+        continuation = {
+            remaining = rebuiltRecords,
+            records = rebuiltRecords,
+            journalId = args.newJournalId or args.journalId,
+            journalUUID = args.journalUUID,
+        }
+        panel.pendingRecordAllContinuation = continuation
+        BurdJournals.pendingRecordAllContinuation = continuation
+        BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: rebuilt missing continuation from active record state")
+    end
+    if type(continuation) ~= "table" then
+        clearRecordAllContinuationWatchdog(panel)
+        return false
+    end
+
+    local remainingRecords = continuation.remaining or continuation.records
+    if type(remainingRecords) ~= "table" or #remainingRecords <= 0 then
+        local serverRemaining = args and math.max(0, tonumber(args.recordQueueRemaining) or 0) or 0
+        if serverRemaining > 0
+            and panel.recordingState
+            and panel.recordingState.active == true
+            and panel.recordingState.isRecordAll == true
+        then
+            remainingRecords = rebuildActiveRecordAllRemaining()
+        end
+        if type(remainingRecords) == "table" and #remainingRecords > 0 then
+            continuation.remaining = remainingRecords
+            continuation.records = remainingRecords
+            panel.pendingRecordAllContinuation = continuation
+            BurdJournals.pendingRecordAllContinuation = continuation
+            BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: repaired empty continuation from active record state")
+        else
+            panel.pendingRecordAllContinuation = nil
+            BurdJournals.pendingRecordAllContinuation = nil
+            clearRecordAllContinuationWatchdog(panel)
+            return false
+        end
+    end
+
+    local responseJournalId = args and (args.newJournalId or args.journalId) or nil
+    local responseJournalUUID = args and args.journalUUID or nil
+    local uuidMatches = continuation.journalUUID
+        and responseJournalUUID
+        and tostring(continuation.journalUUID) == tostring(responseJournalUUID)
+    if continuation.journalId and responseJournalId and tostring(continuation.journalId) ~= tostring(responseJournalId) and not uuidMatches then
+        panel.pendingRecordAllContinuation = nil
+        BurdJournals.pendingRecordAllContinuation = nil
+        clearRecordAllContinuationWatchdog(panel)
+        BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: abandoning continuation for mismatched journalId")
+        return false
+    end
+    if continuation.journalUUID and responseJournalUUID and tostring(continuation.journalUUID) ~= tostring(responseJournalUUID) then
+        panel.pendingRecordAllContinuation = nil
+        BurdJournals.pendingRecordAllContinuation = nil
+        clearRecordAllContinuationWatchdog(panel)
+        BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: abandoning continuation for mismatched journalUUID")
+        return false
+    end
+
+    local batchSize = getEffectiveRecordBatchSize()
+    local records = {}
+    local remaining = {}
+    for i, item in ipairs(remainingRecords) do
+        if i <= batchSize then
+            records[#records + 1] = item
+        else
+            remaining[#remaining + 1] = item
+        end
+    end
+    if #records <= 0 then
+        panel.pendingRecordAllContinuation = nil
+        BurdJournals.pendingRecordAllContinuation = nil
+        clearRecordAllContinuationWatchdog(panel)
+        return false
+    end
+
+    local firstRecord = records[1]
+    local journalForNextAction = panel.journal
+    if not journalForNextAction and responseJournalId and BurdJournals.findItemById then
+        journalForNextAction = BurdJournals.findItemByIdInPlayerInventory(player, responseJournalId)
+    end
+    if not journalForNextAction and responseJournalUUID and BurdJournals.findJournalByUUIDInPlayerInventory then
+        journalForNextAction = BurdJournals.findJournalByUUIDInPlayerInventory(player, responseJournalUUID)
+    end
+    if journalForNextAction then
+        panel.journal = journalForNextAction
+    else
+        panel.pendingRecordAllContinuation = nil
+        BurdJournals.pendingRecordAllContinuation = nil
+        clearRecordAllContinuationWatchdog(panel)
+        BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: no panel journal for continuation")
+        return false
+    end
+
+    panel.recordingState = {
+        active = true,
+        skillName = firstRecord and firstRecord.type == "skill" and firstRecord.name or nil,
+        traitId = firstRecord and firstRecord.type == "trait" and firstRecord.name or nil,
+        statId = firstRecord and firstRecord.type == "stat" and firstRecord.name or nil,
+        recipeName = firstRecord and firstRecord.type == "recipe" and firstRecord.name or nil,
+        isRecordAll = true,
+        progress = 0,
+        totalTime = 0,
+        startTime = 0,
+        pendingRecords = records,
+        currentIndex = 1,
+        queue = remaining,
+    }
+
+    -- Do not rebuild the record list between Record All batches. On heavily
+    -- modded characters, populateRecordList can rescan large recipe/trait sets
+    -- and stall the client/network loop while the server is waiting for the next
+    -- small intent command.
+
+    panel.pendingRecordAllContinuation = nil
+    BurdJournals.pendingRecordAllContinuation = nil
+    clearRecordAllContinuationWatchdog(panel)
+    local action = BurdJournals.RecordToJournalAction:new(player, journalForNextAction, records, true, panel, remaining)
+    if panel.recordingState then
+        panel.recordingState.timedAction = action
+    end
+    if not BurdJournals.queueRecordAllContinuationAfterAuthority(panel, player, action, args) then return false end
+    BurdJournals.debugPrint("[BurdJournals] continueRecordAllAfterServerAck: queued or deferred next record-all batch with "
+        .. tostring(#records) .. " records, remaining=" .. tostring(#remaining))
+    return true
 end
 
 function BurdJournals.queueLearnAction(player, journal, rewards, isAbsorbAll, mainPanel)
@@ -1656,6 +2383,7 @@ function BurdJournals.queueLearnAction(player, journal, rewards, isAbsorbAll, ma
             player, journal, batch, true, mainPanel, remaining
         )
         if action and action.character then
+            markPanelLearningQueued(mainPanel, action, batch, remaining, true)
             ISTimedActionQueue.add(action)
         else
             BurdJournals.debugPrint("[BurdJournals] queueLearnAction: FAILED - invalid learn action (missing character)")
@@ -1667,6 +2395,7 @@ function BurdJournals.queueLearnAction(player, journal, rewards, isAbsorbAll, ma
             player, journal, rewards, isAbsorbAll, mainPanel
         )
         if action and action.character then
+            markPanelLearningQueued(mainPanel, action, rewards, {}, isAbsorbAll)
             ISTimedActionQueue.add(action)
         else
             BurdJournals.debugPrint("[BurdJournals] queueLearnAction: FAILED - invalid learn action (missing character)")
@@ -1674,6 +2403,85 @@ function BurdJournals.queueLearnAction(player, journal, rewards, isAbsorbAll, ma
         end
     end
     return true
+end
+
+function BurdJournals.continueLearnSinglesAfterServerAck(panel, args)
+    local continuation = panel and panel.pendingLearnSingleContinuation or nil
+    if type(continuation) ~= "table" or type(args) ~= "table"
+        or continuation.requestId ~= args.requestId
+    then
+        return false
+    end
+
+    panel.pendingLearnSingleContinuation = nil
+    local remaining = type(continuation.rewards) == "table" and continuation.rewards or {}
+    if args.dissolved == true then
+        panel.pendingLearnBulkIntent = nil
+        return false
+    end
+
+    if #remaining > 0 then
+        local nextReward = table.remove(remaining, 1)
+        local journal = panel.journal
+        if not journal then return false end
+        local action = BurdJournals.LearnFromJournalAction:new(panel.player, journal, {nextReward}, false, panel, remaining)
+        markPanelLearningQueued(panel, action, {nextReward}, remaining, false)
+        ISTimedActionQueue.add(action)
+        return true
+    end
+
+    if panel.learningState then
+        panel.learningState.active = false
+        panel.learningState.isAbsorbAll = false
+    end
+    local bulkIntent = panel.pendingLearnBulkIntent
+    panel.pendingLearnBulkIntent = nil
+    if type(bulkIntent) == "table" then
+        if bulkIntent.mode == "tab" and panel.startLearningTab then
+            panel:startLearningTab(bulkIntent.tabId)
+        elseif panel.startLearningAll then
+            panel:startLearningAll()
+        end
+    end
+    return true
+end
+
+function BurdJournals.continueLearnAllAfterServerAck(panel, args)
+    local continuation = panel and panel.pendingLearnAllContinuation or nil
+    if type(continuation) ~= "table" then
+        return false
+    end
+    if type(args) ~= "table" or continuation.requestId ~= args.requestId then
+        return false
+    end
+
+    panel.pendingLearnAllContinuation = nil
+    local remaining = type(continuation.rewards) == "table" and continuation.rewards or {}
+    if args.dissolved == true or (args.reason ~= nil and args.reason ~= "complete") then
+        return false
+    end
+
+    local journal = panel.journal
+    if (not journal or not BurdJournals.isValidItem(journal)) and BurdJournals.findItemById then
+        journal = BurdJournals.findItemByIdInPlayerInventory(panel.player, (args and args.journalId) or continuation.journalId)
+    end
+    if (not journal or not BurdJournals.isValidItem(journal))
+        and continuation.journalUUID and BurdJournals.findJournalByUUIDInPlayerInventory then
+        journal = BurdJournals.findJournalByUUIDInPlayerInventory(panel.player, continuation.journalUUID)
+    end
+    if not journal or #remaining == 0 then
+        return false
+    end
+
+    panel.journal = journal
+    if panel.learningState then
+        panel.learningState.active = false
+    end
+    local queued = BurdJournals.queueLearnAction(panel.player, journal, remaining, true, panel) == true
+    if queued then
+        BurdJournals.debugPrint("[BurdJournals] Claim All: queued next acknowledged batch; remaining=" .. tostring(#remaining))
+    end
+    return queued
 end
 
 function BurdJournals.queueRecordAction(player, journal, records, isRecordAll, mainPanel)
@@ -1695,8 +2503,7 @@ function BurdJournals.queueRecordAction(player, journal, records, isRecordAll, m
     end
 
     -- Get batch size from sandbox option (default 15, min 1)
-    local batchSize = BurdJournals.getSandboxOption("RecordBatchSize") or 15
-    if batchSize < 1 then batchSize = 1 end
+    local batchSize = getEffectiveRecordBatchSize()
 
     if isRecordAll and #records > 1 then
         -- Extract first batch of records
@@ -1748,9 +2555,7 @@ function BurdJournals.EraseEntryAction:new(character, journal, entryType, entryN
     o.entryType = entryType
     o.entryName = entryName
     o.mainPanel = mainPanel
-    o.stopOnWalk = true
-    o.stopOnRun = true
-    o.stopOnAim = true
+    configureJournalActionInterrupts(o, character)
 
     local eraseTime = 2.0
     o.maxTime = math.floor(eraseTime * 33)
@@ -1762,7 +2567,7 @@ function BurdJournals.EraseEntryAction:isValid()
     local player = self.character
     if not player then return false end
 
-    local journal = BurdJournals.findItemById(player, self.journal:getID())
+    local journal = BurdJournals.findItemByIdInPlayerInventory(player, self.journal:getID())
     if not journal then return false end
 
     if not BurdJournals.hasEraser(player) then return false end
@@ -1785,11 +2590,13 @@ end
 
 function BurdJournals.EraseEntryAction:start()
 
-    self:setAnimVariable("ReadType", "book")
-    self:setActionAnim(CharacterActionAnims.Read)
-    self:setOverrideHandModels(nil, self.journal)
-    self.character:setReading(true)
-    self.character:reportEvent("EventRead")
+    if shouldUseJournalActionAnimation(self.character) then
+        self:setAnimVariable("ReadType", "book")
+        self:setActionAnim(CharacterActionAnims.Read)
+        setJournalActionHandModels(self, self.character, nil, self.journal)
+        self.character:setReading(true)
+        self.character:reportEvent("EventRead")
+    end
 
     self.character:playSound("OpenBook")
 
@@ -1850,7 +2657,7 @@ function BurdJournals.EraseEntryAction:perform()
     local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal)
     local isDebugSpawned = journalData and journalData.isDebugSpawned
 
-    if isClient() and not isServer() then
+    if BurdJournals.clientShouldUseServerAuthority() then
         if isDebugSpawned then
             -- Debug-spawned journals: erase locally since server can't find them
             BurdJournals.debugPrint("[BurdJournals] Debug-spawned journal - erasing locally")

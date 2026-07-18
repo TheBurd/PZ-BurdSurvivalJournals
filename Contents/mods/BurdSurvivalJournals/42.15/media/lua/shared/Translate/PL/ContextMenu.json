@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "Otworz dziennik...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "Otwórz dzien nik...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "Ot wórz dzi en nik...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "Ot w ór z d zi en ni k . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "Złam pie częć...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "Zł a m pie c zę ć . ..",
     "ContextMenu_BurdJournals_Read": "Czytaj dziennik",
     "ContextMenu_BurdJournals_Rename": "Zmien nazwe",
     "ContextMenu_BurdJournals_EraseJournal": "Wymaz dziennik",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "Wyczysc mydlem i szmata",
     "ContextMenu_BurdJournals_RepairTape": "Zalataj tasma naprawcza",
     "ContextMenu_BurdJournals_RepairLeather": "Opraw ponownie skora",
-    "ContextMenu_BurdJournals_RepairGlue": "Sklej strony"
+    "ContextMenu_BurdJournals_RepairGlue": "Sklej strony",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Journal Types | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../index.html">
+                <img src="../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../index.html">Home</a>
+                <a href="../getting-started/">Getting Started</a>
+                <a class="is-active" href="./">Journal Types</a>
+                <a href="../mechanics/">Mechanics</a>
+                <a href="../events-and-loot/">Events &amp; Loot</a>
+                <a href="../configuration/">Configuration</a>
+                <a href="../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../translations/">Translations</a>
+                <a href="../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="wiki-page-hero wiki-panel">
+                <span class="eyebrow">Reference</span>
+                <h1>The current BSJ journal family</h1>
+                <p>The current mod surface is not just clean, worn, and bloody anymore. Use this page as the taxonomy hub, then move into the dedicated dossiers for the full behavior, tuning notes, and trivia on each family.</p>
+            </section>
+            <section class="wiki-panel">
+                <div class="toc-links">
+                    <a href="#personal">Personal</a>
+                    <a href="#worn">Worn</a>
+                    <a href="#bloody">Bloody</a>
+                    <a href="#cursed">Cursed</a>
+                    <a href="#yuletide">Yuletide</a>
+                </div>
+            </section>
+            <section id="personal" class="wiki-panel" data-journal="personal">
+                <article class="journal-card">
+                    <img src="../assets/BurdJournal-FilledClean-Icon-Index.png" alt="Personal journal">
+                    <div>
+                        <span class="eyebrow">Personal Journals</span>
+                        <h2>Clean and restored journals</h2>
+                        <div class="badge-row"><span class="badge badge-success">Recordable</span><span class="badge badge-info">Can be persistent</span><span class="badge">Supports multiple reward tabs</span></div>
+                        <p>These are the player-authored progression journals. They exist to capture earned progress and let it be reclaimed later under the server's chosen recovery rules.</p>
+                        <ul><li>Can support skills, traits, recipes, and stats.</li><li>May carry restored or persistent state badges.</li><li>May either persist forever or dissolve after use depending on how restored journal behavior is configured.</li></ul>
+                        <div class="section-actions"><a class="wiki-btn-secondary" href="personal/">Open personal journal dossier</a></div>
+                    </div>
+                </article>
+            </section>
+            <section id="worn" class="wiki-panel" data-journal="worn">
+                <article class="journal-card">
+                    <img src="../assets/BurdJournal-FilledWorn-Icon-Index.png" alt="Worn journal">
+                    <div>
+                        <span class="eyebrow">Loot Journals</span>
+                        <h2>Worn journals</h2>
+                        <div class="badge-row"><span class="badge">Container loot</span><span class="badge">Recipes possible</span><span class="badge">Traits possible</span><span class="badge">Forget slot possible</span></div>
+                        <p>Worn journals are world-found survivor notes. In the current build, they can go far beyond the old "skills only" expectation.</p>
+                        <div class="section-actions"><a class="wiki-btn-secondary" href="worn/">Open worn journal dossier</a></div>
+                    </div>
+                </article>
+            </section>
+            <section id="bloody" class="wiki-panel" data-journal="bloody">
+                <article class="journal-card">
+                    <img src="../assets/BurdJournal-FilledBloody-Icon-Index.png" alt="Bloody journal">
+                    <div>
+                        <span class="eyebrow">Loot Journals</span>
+                        <h2>Bloody journals</h2>
+                        <div class="badge-row"><span class="badge badge-danger">Zombie drop</span><span class="badge">Higher XP ceilings</span><span class="badge">Trait support</span><span class="badge">Recipe support</span></div>
+                        <p>Bloody journals are stronger corpse-loot journals. They are designed to feel rarer, heavier, and more rewarding than worn journals.</p>
+                        <div class="section-actions"><a class="wiki-btn-secondary" href="bloody/">Open bloody journal dossier</a></div>
+                    </div>
+                </article>
+            </section>
+            <section id="cursed" class="wiki-panel" data-journal="cursed">
+                <article class="journal-card">
+                    <img src="../assets/BurdJournal-CursedBloody-Icon-Index.png" alt="Cursed journal">
+                    <div>
+                        <span class="eyebrow">Fun Loot</span>
+                        <h2>Cursed journals</h2>
+                        <div class="badge-row"><span class="badge badge-danger">Dangerous first open</span><span class="badge">Can be disguised</span><span class="badge">Reward upgrade path</span></div>
+                        <p>Cursed journals punish the first opener before converting into a richer reward source than a normal bloody journal.</p>
+                        <div class="section-actions"><a class="wiki-btn-secondary" href="cursed/">Open cursed journal dossier</a></div>
+                    </div>
+                </article>
+            </section>
+            <section id="yuletide" class="wiki-panel" data-journal="yuletide">
+                <article class="journal-card">
+                    <img src="../assets/BurdJournal-WrappedYuletide1-Icon-Index.png" alt="Yuletide journal">
+                    <div>
+                        <span class="eyebrow">Seasonal Loot</span>
+                        <h2>Yuletide journals</h2>
+                        <div class="badge-row"><span class="badge badge-info">Seasonal replacement</span><span class="badge">Bundled supplies</span><span class="badge">Wrapped and unwrapped states</span></div>
+                        <p>Yuletide journals replace some worn and bloody journal rolls during the active season, can deliver bundled gifts on unwrap, and can even show up as safehouse deliveries during the same seasonal window.</p>
+                        <div class="section-actions"><a class="wiki-btn-secondary" href="yuletide/">Open Yuletide journal dossier</a></div>
+                    </div>
+                </article>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Journal taxonomy and player-facing journal roles.</p></div>
+            <div class="footer-links"><a href="../mechanics/">Mechanics</a><a href="../events-and-loot/">Events &amp; Loot</a><a href="../faq/">FAQ</a></div>
+        </footer>
+    </div>
+</body>
+</html>

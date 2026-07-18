@@ -1,4 +1,573 @@
 if not BurdJournals then BurdJournals = {} end
+BurdJournals.UI = BurdJournals.UI or {}
+BurdJournals.UI.MainPanel = BurdJournals.UI.MainPanel or {}
+
+require "ISUI/ISButton"
+require "ISUI/ISLabel"
+require "ISUI/ISModalDialog"
+require "ISUI/ISTextEntryBox"
+
+local SKILL_DETAIL_BASE_ROW_HEIGHT = 52
+local SKILL_DETAIL_LINE_HEIGHT = 13
+
+local function setChildVisible(child, visible)
+    if not child then
+        return
+    end
+    if child.setVisible then
+        child:setVisible(visible == true)
+    else
+        child.visible = visible == true
+    end
+end
+
+local function makeNotesButton(panel, x, y, w, h, title, callback)
+    local button = ISButton:new(x, y, w, h, title, panel, callback)
+    button:initialise()
+    button:instantiate()
+    button.borderColor = {r=0.25, g=0.50, b=0.60, a=1}
+    button.backgroundColor = {r=0.10, g=0.22, b=0.28, a=0.85}
+    button.textColor = {r=0.92, g=0.96, b=1, a=1}
+    panel:addChild(button)
+    return button
+end
+
+local function serializeNotesPages(notes)
+    local parts = {}
+    local pages = notes and notes.pages or {}
+    for i, text in ipairs(pages) do
+        parts[i] = tostring(text or "")
+    end
+    return table.concat(parts, "\30")
+end
+
+local function getReadOnlyNotesFont()
+    return (UIFont and (UIFont.Medium or UIFont.Small)) or nil
+end
+
+function BurdJournals.UI.MainPanel:formatBatchFooterCount(activeCount, queuedCount, singularKey, pluralKey, singularFallback, pluralFallback)
+    activeCount = math.max(0, tonumber(activeCount) or 0)
+    queuedCount = math.max(0, tonumber(queuedCount) or 0)
+    local activeFormat = activeCount == 1
+        and (getText(singularKey) or singularFallback)
+        or (getText(pluralKey) or pluralFallback)
+    local text = BurdJournals.formatText(activeFormat, activeCount)
+    if queuedCount > 0 then
+        local queueFormat = getText("UI_BurdJournals_BatchItemsInQueue") or "%d in Queue"
+        text = text .. " - " .. BurdJournals.formatText(queueFormat, queuedCount)
+    end
+    return text
+end
+
+function BurdJournals.UI.MainPanel:getEditableNotesDraft(journalData)
+    if self.mode ~= "log" then
+        local source = journalData
+            or self.pendingRecordJournalData
+            or (self.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal))
+            or {}
+        local draft = BurdJournals.normalizeJournalNotes and BurdJournals.normalizeJournalNotes(source.notes, false) or nil
+        if source.isPlayerCreated == true and BurdJournals.sanitizePlayerJournalNotes then
+            draft = BurdJournals.sanitizePlayerJournalNotes(draft)
+        end
+        if type(draft) ~= "table" then
+            draft = {pages = {""}}
+        end
+        if type(draft.pages) ~= "table" or #draft.pages <= 0 then
+            draft.pages = {""}
+        end
+        self.notesDraft = draft
+        self.notesPageIndex = math.max(1, math.min(tonumber(self.notesPageIndex) or 1, #draft.pages))
+        self.notesLastSavedKey = serializeNotesPages(draft)
+        return draft
+    end
+
+    if type(self.notesDraft) == "table" then
+        return self.notesDraft
+    end
+    local source = journalData
+        or self.pendingRecordJournalData
+        or (self.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal))
+        or {}
+    self.notesDraft = BurdJournals.normalizeJournalNotes and BurdJournals.normalizeJournalNotes(source.notes, self.mode == "log") or {pages = {""}}
+    if source.isPlayerCreated == true and BurdJournals.sanitizePlayerJournalNotes then
+        self.notesDraft = BurdJournals.sanitizePlayerJournalNotes(self.notesDraft)
+    end
+    if type(self.notesDraft) ~= "table" then
+        self.notesDraft = {pages = {""}}
+    end
+    if type(self.notesDraft.pages) ~= "table" or #self.notesDraft.pages <= 0 then
+        self.notesDraft.pages = {""}
+    end
+    self.notesPageIndex = math.max(1, math.min(tonumber(self.notesPageIndex) or 1, #self.notesDraft.pages))
+    self.notesLastSavedKey = self.notesLastSavedKey or serializeNotesPages(self.notesDraft)
+    return self.notesDraft
+end
+
+function BurdJournals.UI.MainPanel:updateCurrentNotesDraftFromEntry()
+    if not self.notesTextEntry then
+        return false
+    end
+    local draft = self:getEditableNotesDraft()
+    local pageIndex = math.max(1, math.min(tonumber(self.notesPageIndex) or 1, #draft.pages))
+    local rawText = self.notesTextEntry.getText and self.notesTextEntry:getText() or ""
+    local cleanText = BurdJournals.sanitizeJournalNoteText and BurdJournals.sanitizeJournalNoteText(rawText) or tostring(rawText or "")
+    if rawText ~= cleanText and self.notesTextEntry.setText then
+        self.notesTextEntry:setText(cleanText)
+        if self.showFeedback then
+            self:showFeedback(getText("UI_BurdJournals_NotesTooLong") or "Notes were shortened to fit the page limit.", {r=0.9, g=0.72, b=0.45})
+        end
+    end
+    if draft.pages[pageIndex] ~= cleanText then
+        draft.pages[pageIndex] = cleanText
+        return true
+    end
+    return false
+end
+
+function BurdJournals.UI.MainPanel:getNotesControlRect()
+    local x = self.skillList and self.skillList:getX() or 16
+    local y = self.skillList and self.skillList:getY() or 170
+    local w = self.skillList and self.skillList:getWidth() or (self.width - 32)
+    local h = self.skillList and self.skillList:getHeight() or 220
+    return x, y, w, h
+end
+
+function BurdJournals.UI.MainPanel:ensureNotesControls()
+    local x, y, w, h = self:getNotesControlRect()
+    local buttonY = y + h - 28
+    local textH = math.max(80, h - 36)
+    if not self.notesTextEntry then
+        self.notesTextEntry = ISTextEntryBox:new("", x, y, w, textH)
+        self.notesTextEntry:initialise()
+        self.notesTextEntry:instantiate()
+        self.notesTextEntry.font = UIFont.Small
+        if self.notesTextEntry.setMultipleLine then
+            self.notesTextEntry:setMultipleLine(true)
+        end
+        self.notesTextEntry.onTextChange = function()
+            if not self._suppressNotesTextChange then
+                self.notesDirty = true
+            end
+        end
+        self:addChild(self.notesTextEntry)
+    else
+        self.notesTextEntry:setX(x)
+        self.notesTextEntry:setY(y)
+        self.notesTextEntry:setWidth(w)
+        self.notesTextEntry:setHeight(textH)
+    end
+
+    if not self.notesPrevBtn then
+        self.notesPrevBtn = makeNotesButton(self, x, buttonY, 44, 24, "<", BurdJournals.UI.MainPanel.onNotesPrevPage)
+        self.notesNextBtn = makeNotesButton(self, x + 48, buttonY, 44, 24, ">", BurdJournals.UI.MainPanel.onNotesNextPage)
+        self.notesAddBtn = makeNotesButton(self, x + w - 176, buttonY, 82, 24, getText("UI_BurdJournals_NotesAddPage") or "Add Page", BurdJournals.UI.MainPanel.onNotesAddPage)
+        self.notesDeleteBtn = makeNotesButton(self, x + w - 88, buttonY, 88, 24, getText("UI_BurdJournals_NotesDeletePage") or "Delete", BurdJournals.UI.MainPanel.onNotesDeletePage)
+        self.notesPageLabel = ISLabel:new(x + 102, buttonY + 4, 16, "", 0.75, 0.88, 0.95, 1, UIFont.Small, true)
+        self:addChild(self.notesPageLabel)
+    else
+        self.notesPrevBtn:setX(x)
+        self.notesPrevBtn:setY(buttonY)
+        self.notesNextBtn:setX(x + 48)
+        self.notesNextBtn:setY(buttonY)
+        self.notesAddBtn:setX(x + w - 176)
+        self.notesAddBtn:setY(buttonY)
+        self.notesDeleteBtn:setX(x + w - 88)
+        self.notesDeleteBtn:setY(buttonY)
+        self.notesPageLabel:setX(x + 102)
+        self.notesPageLabel:setY(buttonY + 4)
+    end
+end
+
+function BurdJournals.UI.MainPanel:hideNotesControls()
+    setChildVisible(self.notesTextEntry, false)
+    setChildVisible(self.notesPrevBtn, false)
+    setChildVisible(self.notesNextBtn, false)
+    setChildVisible(self.notesAddBtn, false)
+    setChildVisible(self.notesDeleteBtn, false)
+    setChildVisible(self.notesPageLabel, false)
+    setChildVisible(self.skillList, true)
+end
+
+function BurdJournals.UI.MainPanel:refreshNotesTab(journalData)
+    self:ensureNotesControls()
+    setChildVisible(self.skillList, false)
+    setChildVisible(self.notesTextEntry, true)
+    setChildVisible(self.notesPrevBtn, true)
+    setChildVisible(self.notesNextBtn, true)
+    setChildVisible(self.notesPageLabel, true)
+
+    local editable = self.mode == "log"
+    setChildVisible(self.notesAddBtn, editable)
+    setChildVisible(self.notesDeleteBtn, editable)
+    self.notesTextEntry.font = editable and UIFont.Small or getReadOnlyNotesFont()
+    self.notesTextEntry.backgroundColor = {r=0.02, g=0.04, b=0.05, a=0.75}
+    self.notesTextEntry.borderColor = {r=0.25, g=0.50, b=0.60, a=1}
+    self.notesTextEntry.textColor = {r=0.92, g=0.96, b=1.0, a=1}
+    if self.notesTextEntry.setEditable then
+        self.notesTextEntry:setEditable(editable)
+    else
+        self.notesTextEntry.editable = editable
+    end
+
+    if editable and type(self.notesDraft) == "table" then
+        self:updateCurrentNotesDraftFromEntry()
+    end
+    local draft = self:getEditableNotesDraft(journalData)
+    self.notesPageIndex = math.max(1, math.min(tonumber(self.notesPageIndex) or 1, #draft.pages))
+    local localizedText = nil
+    if not editable and BurdJournals.getLocalizedGeneratedLorePage then
+        localizedText = BurdJournals.getLocalizedGeneratedLorePage(draft, self.notesPageIndex)
+    end
+    local text = tostring(localizedText or draft.pages[self.notesPageIndex] or "")
+    if self.notesTextEntry.setText and (self.notesTextEntry:getText() or "") ~= text then
+        self._suppressNotesTextChange = true
+        self.notesTextEntry:setText(text)
+        self._suppressNotesTextChange = false
+    end
+
+    local pageText = BurdJournals.formatText(getText("UI_BurdJournals_NotesPageLabel") or "Page %d / %d", self.notesPageIndex, #draft.pages)
+    if self.notesPageLabel.setName then
+        self.notesPageLabel:setName(pageText)
+    else
+        self.notesPageLabel.name = pageText
+    end
+    if self.notesPrevBtn then self.notesPrevBtn:setEnable(self.notesPageIndex > 1) end
+    if self.notesNextBtn then self.notesNextBtn:setEnable(self.notesPageIndex < #draft.pages) end
+    local maxPages = BurdJournals.getJournalNotesMaxPages and BurdJournals.getJournalNotesMaxPages()
+        or (BurdJournals.JOURNAL_NOTES_MAX_PAGES or 30)
+    if self.notesAddBtn then self.notesAddBtn:setEnable(editable and #draft.pages < maxPages) end
+    if self.notesDeleteBtn then self.notesDeleteBtn:setEnable(editable and #draft.pages > 1) end
+    if self.setPaginatedListEntries then
+        self:setPaginatedListEntries({}, nil)
+    end
+end
+
+function BurdJournals.UI.MainPanel:saveNotesIfDirty(sourceTag, forceFeedback)
+    if self.mode ~= "log" then
+        return false
+    end
+    self:updateCurrentNotesDraftFromEntry()
+    local draft = self:getEditableNotesDraft()
+    local normalized = BurdJournals.normalizeJournalNotes and BurdJournals.normalizeJournalNotes(draft, false) or draft
+    local currentKey = serializeNotesPages(normalized or {pages = {}})
+    if currentKey == tostring(self.notesLastSavedKey or "") and forceFeedback ~= true then
+        return false
+    end
+    self.notesLastSavedKey = currentKey
+
+    local journalData = self.pendingRecordJournalData or (self.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal)) or {}
+    journalData.notes = normalized
+    self.pendingRecordJournalData = journalData
+
+    local lookupArgs = BurdJournals.buildJournalCommandPayload
+        and BurdJournals.buildJournalCommandPayload(self.journal, journalData, true)
+        or {
+            journalId = self.journal and self.journal.getID and self.journal:getID() or nil,
+            journalUUID = journalData and journalData.uuid or nil,
+            journalFingerprint = nil,
+        }
+    lookupArgs.journalData = nil
+    lookupArgs.notes = normalized
+    lookupArgs.source = sourceTag
+
+    if BurdJournals.Client and BurdJournals.Client.sendToServer then
+        self.notesSavePending = BurdJournals.Client.sendToServer("saveJournalNotes", lookupArgs) == true
+    else
+        self.notesSavePending = false
+    end
+    if forceFeedback == true and self.showFeedback then
+        self:showFeedback(getText("UI_BurdJournals_NotesSaved") or "Notes saved", {r=0.5, g=0.8, b=0.6})
+    end
+    self.notesDirty = false
+    return true
+end
+
+function BurdJournals.UI.MainPanel:markNotesSaveAcknowledged()
+    self.notesSavePending = false
+    if self.pendingNotesContinuation then
+        self:continuePendingNotesAction()
+    end
+end
+
+function BurdJournals.UI.MainPanel:hasUnsavedNotesDraft()
+    if self.mode ~= "log" or type(self.notesDraft) ~= "table" then
+        return self.notesSavePending == true
+    end
+    self:updateCurrentNotesDraftFromEntry()
+    local normalized = BurdJournals.normalizeJournalNotes and BurdJournals.normalizeJournalNotes(self.notesDraft, false) or self.notesDraft
+    local currentKey = serializeNotesPages(normalized or {pages = {}})
+    return self.notesSavePending == true or currentKey ~= tostring(self.notesLastSavedKey or "")
+end
+
+function BurdJournals.UI.MainPanel:onUnsavedNotesConfirm(button)
+    self.notesConfirmDialog = nil
+    if not button or button.internal ~= "YES" then
+        self.pendingNotesContinuation = nil
+        return
+    end
+    local sent = self:saveNotesIfDirty("beforeRecord", true)
+    if not sent or self.notesSavePending ~= true then
+        self:continuePendingNotesAction()
+    end
+end
+
+function BurdJournals.UI.MainPanel:confirmNotesBeforeAction(actionName, tabId)
+    if self.mode ~= "log" or not self:hasUnsavedNotesDraft() then
+        return false
+    end
+
+    self.pendingNotesContinuation = {
+        actionName = actionName,
+        tabId = tabId,
+    }
+
+    if self.notesSavePending == true then
+        if self.showFeedback then
+            self:showFeedback(getText("UI_BurdJournals_NotesSavingBeforeAction") or "Saving notes before continuing...", {r=0.75, g=0.88, b=1})
+        end
+        return true
+    end
+
+    if not ISModalDialog then
+        self:onUnsavedNotesConfirm({internal = "YES"})
+        return true
+    end
+
+    if self.notesConfirmDialog then
+        if self.notesConfirmDialog.bringToTop then
+            self.notesConfirmDialog:bringToTop()
+        end
+        return true
+    end
+
+    local prompt = getText("UI_BurdJournals_ConfirmUnsavedNotes") or "You have unsaved journal notes. Save them before recording?"
+    local baseX = self.getAbsoluteX and self:getAbsoluteX() or self.x or 0
+    local baseY = self.getAbsoluteY and self:getAbsoluteY() or self.y or 0
+    local dialog = ISModalDialog:new(
+        baseX + 40,
+        baseY + 120,
+        360,
+        150,
+        prompt,
+        true,
+        self,
+        BurdJournals.UI.MainPanel.onUnsavedNotesConfirm
+    )
+    dialog:initialise()
+    if dialog.yes and dialog.yes.setTitle then
+        dialog.yes:setTitle(getText("UI_BurdJournals_NotesSaveContinue") or "Save & Continue")
+    elseif dialog.yes then
+        dialog.yes.title = getText("UI_BurdJournals_NotesSaveContinue") or "Save & Continue"
+    end
+    if dialog.no and dialog.no.setTitle then
+        dialog.no:setTitle(getText("UI_BurdJournals_BtnCancel") or "Cancel")
+    elseif dialog.no then
+        dialog.no.title = getText("UI_BurdJournals_BtnCancel") or "Cancel"
+    end
+    dialog:addToUIManager()
+    self.notesConfirmDialog = dialog
+    return true
+end
+
+function BurdJournals.UI.MainPanel:continuePendingNotesAction()
+    local pending = self.pendingNotesContinuation
+    self.pendingNotesContinuation = nil
+    if type(pending) ~= "table" then
+        return
+    end
+    if pending.actionName == "recordAll" and self.onRecordAll then
+        self:onRecordAll(true)
+    elseif pending.actionName == "recordTab" and self.onRecordTab then
+        self:onRecordTab(true, pending.tabId)
+    elseif pending.actionName == "recordItem" and self.performPrimaryListAction then
+        self:performPrimaryListAction(pending.tabId)
+    end
+end
+
+function BurdJournals.UI.MainPanel:onNotesPrevPage()
+    self:saveNotesIfDirty("page")
+    local draft = self:getEditableNotesDraft()
+    self.notesPageIndex = math.max(1, (tonumber(self.notesPageIndex) or 1) - 1)
+    self:refreshNotesTab({notes = draft})
+end
+
+function BurdJournals.UI.MainPanel:onNotesNextPage()
+    self:saveNotesIfDirty("page")
+    local draft = self:getEditableNotesDraft()
+    self.notesPageIndex = math.min(#draft.pages, (tonumber(self.notesPageIndex) or 1) + 1)
+    self:refreshNotesTab({notes = draft})
+end
+
+function BurdJournals.UI.MainPanel:onNotesAddPage()
+    self:updateCurrentNotesDraftFromEntry()
+    local draft = self:getEditableNotesDraft()
+    local maxPages = BurdJournals.getJournalNotesMaxPages and BurdJournals.getJournalNotesMaxPages()
+        or (BurdJournals.JOURNAL_NOTES_MAX_PAGES or 30)
+    if #draft.pages >= maxPages then
+        if self.showFeedback then
+            self:showFeedback(getText("UI_BurdJournals_NotesPageLimit") or "Page limit reached", {r=0.9, g=0.72, b=0.45})
+        end
+        return
+    end
+    draft.pages[#draft.pages + 1] = ""
+    self.notesPageIndex = #draft.pages
+    self:refreshNotesTab({notes = draft})
+    self:saveNotesIfDirty("addPage")
+end
+
+function BurdJournals.UI.MainPanel:onNotesDeletePage()
+    self:updateCurrentNotesDraftFromEntry()
+    local draft = self:getEditableNotesDraft()
+    if #draft.pages <= 1 then
+        return
+    end
+    table.remove(draft.pages, tonumber(self.notesPageIndex) or #draft.pages)
+    self.notesPageIndex = math.max(1, math.min(tonumber(self.notesPageIndex) or 1, #draft.pages))
+    self:refreshNotesTab({notes = draft})
+    self:saveNotesIfDirty("deletePage")
+end
+
+local function syncViewRowsListBoxScrollGeometry(listbox)
+    if not listbox then
+        return
+    end
+    if listbox.vscroll then
+        if listbox.vscroll.setHeight then
+            listbox.vscroll:setHeight(listbox:getHeight())
+        end
+        if listbox.vscroll.setX then
+            listbox.vscroll:setX(listbox:getWidth() - listbox.vscroll:getWidth())
+        end
+        if listbox.vscroll.setY then
+            listbox.vscroll:setY(0)
+        end
+        listbox.vscroll.scrolling = false
+        if listbox.vscroll.updatePos then
+            listbox.vscroll:updatePos()
+        end
+    end
+    if listbox.updateScrollbars then
+        listbox:updateScrollbars()
+    elseif listbox.updateScrollBars then
+        listbox:updateScrollBars()
+    end
+end
+
+function BurdJournals.UI.MainPanel:getSelectedSkillDetailLines()
+    if not self.skillList or type(self.skillList.items) ~= "table" then
+        return nil
+    end
+    self._skillDetailSelectedIndex = tonumber(self.skillList.selected) or -1
+    self._skillDetailRow = self._skillDetailSelectedIndex >= 1 and self.skillList.items[self._skillDetailSelectedIndex] or nil
+    self._skillDetailData = self._skillDetailRow and self._skillDetailRow.item or nil
+    if type(self._skillDetailData) ~= "table" or self._skillDetailData.isSkill ~= true then
+        return nil
+    end
+    self._skillDetailLines = BurdJournals.buildSkillDetailLines(
+        self._skillDetailData.skillName,
+        self._skillDetailData,
+        self.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil,
+        self.player,
+        self.mode == "log" and "record" or "view"
+    )
+    if type(self._skillDetailLines) ~= "table" or #self._skillDetailLines <= 1 then
+        return nil
+    end
+    return self._skillDetailLines
+end
+
+function BurdJournals.UI.MainPanel:updateSkillDetailRowHeight()
+    if not self.skillList then
+        return
+    end
+
+    self._skillDetailBaseHeight = tonumber(self.skillList.itemheight) or SKILL_DETAIL_BASE_ROW_HEIGHT
+    if self._skillDetailBaseHeight < SKILL_DETAIL_BASE_ROW_HEIGHT then
+        self._skillDetailBaseHeight = SKILL_DETAIL_BASE_ROW_HEIGHT
+    end
+    self._skillDetailSelectedIndex = tonumber(self.skillList.selected) or -1
+    local listItems = self.skillList.items or {}
+    local selectedRow = self._skillDetailSelectedIndex >= 1 and listItems[self._skillDetailSelectedIndex] or nil
+    local selectedData = selectedRow and selectedRow.item or nil
+    local journalData = self.journal and BurdJournals.getJournalData and BurdJournals.getJournalData(self.journal) or nil
+    local journalUUID = type(journalData) == "table" and journalData.uuid or nil
+    local cache = self._skillDetailHeightCache
+    if type(cache) == "table"
+        and cache.listItems == listItems
+        and cache.itemCount == #listItems
+        and cache.selectedIndex == self._skillDetailSelectedIndex
+        and cache.selectedRow == selectedRow
+        and cache.selectedData == selectedData
+        and cache.mode == self.mode
+        and cache.journalUUID == journalUUID
+        and cache.baseHeight == self._skillDetailBaseHeight
+    then
+        return
+    end
+
+    self._skillDetailChanged = false
+    self._skillDetailTotalHeight = 0
+
+    for index, row in ipairs(listItems) do
+        self._skillDetailTargetHeight = self._skillDetailBaseHeight
+        if index == self._skillDetailSelectedIndex and row and row.item and row.item.isSkill then
+            self._skillDetailLines = BurdJournals.buildSkillDetailLines(
+                row.item.skillName,
+                row.item,
+                journalData,
+                self.player,
+                self.mode == "log" and "record" or "view"
+            )
+            if type(self._skillDetailLines) == "table" and #self._skillDetailLines > 1 then
+                self._skillDetailTargetHeight = BurdJournals.getSkillDetailRowHeight(#self._skillDetailLines)
+            end
+        end
+
+        if row and tonumber(row.height) ~= self._skillDetailTargetHeight then
+            row.height = self._skillDetailTargetHeight
+            self._skillDetailChanged = true
+        end
+        self._skillDetailTotalHeight = self._skillDetailTotalHeight + self._skillDetailTargetHeight
+    end
+
+    if self._skillDetailChanged then
+        self.skillList.itemheight = self._skillDetailBaseHeight
+        self.skillList:setScrollHeight(self._skillDetailTotalHeight)
+        syncViewRowsListBoxScrollGeometry(self.skillList)
+    end
+
+    self._skillDetailLines = nil
+    self._skillDetailHeightCache = {
+        listItems = listItems,
+        itemCount = #listItems,
+        selectedIndex = self._skillDetailSelectedIndex,
+        selectedRow = selectedRow,
+        selectedData = selectedData,
+        mode = self.mode,
+        journalUUID = journalUUID,
+        baseHeight = self._skillDetailBaseHeight,
+    }
+end
+
+function BurdJournals.UI.MainPanel:drawSkillDetailLines(listbox, data, lines, x, y, maxWidth, font)
+    if not listbox or type(lines) ~= "table" or #lines <= 0 then
+        return
+    end
+    self._skillDetailFont = font or UIFont.Small
+    self._skillDetailY = y
+    for _, line in ipairs(lines) do
+        self._skillDetailText = tostring(line or "")
+        if BurdJournals.UI and BurdJournals.UI.truncateText then
+            self._skillDetailText = BurdJournals.UI.truncateText(
+                self._skillDetailText,
+                math.max(40, tonumber(maxWidth) or 40),
+                self._skillDetailFont
+            )
+        end
+        listbox:drawText(self._skillDetailText, x, self._skillDetailY, 0.55, 0.68, 0.72, 1, self._skillDetailFont)
+        self._skillDetailY = self._skillDetailY + SKILL_DETAIL_LINE_HEIGHT
+    end
+end
 
 function BurdJournals.doDrawViewTraitItem(self, mainPanel, data, textX, cardX, cardY, cardW, cardH)
     local learningState = mainPanel.learningState
@@ -72,7 +641,7 @@ function BurdJournals.doDrawViewTraitItem(self, mainPanel, data, textX, cardX, c
     local btnW = 55
     local btnH = 24
     local btnGap = 4
-    local hasEraser = BurdJournals.hasEraser(mainPanel.player)
+    local hasEraser = (mainPanel.hasCachedEraser and mainPanel:hasCachedEraser()) or BurdJournals.hasEraser(mainPanel.player)
     local rightmostBtnX = cardX + cardW - btnW - 10
     local btnY = cardY + (cardH - btnH) / 2
     local canClaimTrait = not data.alreadyKnown and not data.isClaimed and not data.isPending
@@ -136,7 +705,7 @@ function BurdJournals.doDrawViewRecipeItem(self, mainPanel, data, textX, cardX, 
         and erasingState.entryType == "recipe" and erasingState.entryName == data.recipeName
     local recipeName = data.displayName or data.recipeName or "Unknown Recipe"
     local recipeTextX = textX
-    local magazineTexture = BurdJournals.getMagazineTexture(data.magazineSource)
+    local magazineTexture = data.magazineTexture or BurdJournals.getMagazineTexture(data.magazineSource)
 
     if magazineTexture then
         local iconSize = 24
@@ -183,8 +752,8 @@ function BurdJournals.doDrawViewRecipeItem(self, mainPanel, data, textX, cardX, 
     elseif data.isClaimed then
         self:drawText(getText("UI_BurdJournals_StatusAlreadyClaimed") or "Already claimed", recipeTextX, cardY + 22, 0.4, 0.45, 0.45, 1, UIFont.Small)
     else
-        local sourceText = getText("UI_BurdJournals_RecordedRecipe") or "Recorded recipe"
-        if data.magazineSource then
+        local sourceText = data.sourceText or (getText("UI_BurdJournals_RecordedRecipe") or "Recorded recipe")
+        if not data.sourceText and data.magazineSource then
             local magazineName = BurdJournals.getMagazineDisplayName(data.magazineSource)
             sourceText = BurdJournals.formatText(getText("UI_BurdJournals_RecipeFromMagazine") or "From: %s", magazineName)
         end
@@ -194,7 +763,7 @@ function BurdJournals.doDrawViewRecipeItem(self, mainPanel, data, textX, cardX, 
     local btnW = 55
     local btnH = 24
     local btnGap = 4
-    local hasEraser = BurdJournals.hasEraser(mainPanel.player)
+    local hasEraser = (mainPanel.hasCachedEraser and mainPanel:hasCachedEraser()) or BurdJournals.hasEraser(mainPanel.player)
     local rightmostBtnX = cardX + cardW - btnW - 10
     local btnY = cardY + (cardH - btnH) / 2
     local canClaimRecipe = not data.alreadyKnown and not data.isClaimed and not data.isPending
@@ -206,7 +775,7 @@ function BurdJournals.doDrawViewRecipeItem(self, mainPanel, data, textX, cardX, 
     if hasEraser and not isErasingThis then
         if isEraseQueued then
             local queueText = "#" .. eraseQueuePos
-            local queueTextW = getTextManager():MeasureStringX(UIFont.Small, queueText)
+            local queueTextW = mainPanel:getCachedSmallTextWidth(queueText)
             self:drawRect(eraseBtnX, btnY, btnW, btnH, 0.5, 0.4, 0.25, 0.25)
             self:drawRectBorder(eraseBtnX, btnY, btnW, btnH, 0.6, 0.6, 0.35, 0.35)
             self:drawText(queueText, eraseBtnX + (btnW - queueTextW) / 2, btnY + 4, 0.9, 0.7, 0.5, 1, UIFont.Small)
@@ -224,19 +793,19 @@ function BurdJournals.doDrawViewRecipeItem(self, mainPanel, data, textX, cardX, 
 
         if isQueued then
             local btnText = "#" .. queuePosition
-            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            local btnTextW = mainPanel:getCachedSmallTextWidth(btnText)
             self:drawRect(mainBtnX, btnY, btnW, btnH, 0.5, 0.3, 0.5, 0.55)
             self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.6, 0.4, 0.6, 0.7)
             self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.8, 0.95, 1, 1, UIFont.Small)
         elseif isInBatch then
             local btnText = getText("UI_BurdJournals_BtnBatching") or "BATCH"
-            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            local btnTextW = mainPanel:getCachedSmallTextWidth(btnText)
             self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.45, 0.55, 0.5)
             self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.55, 0.7, 0.7)
             self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.95, 1, 0.95, 1, UIFont.Small)
         elseif learningState and learningState.active and not learningState.isAbsorbAll then
             local btnText = getText("UI_BurdJournals_BtnQueue")
-            local btnTextW = getTextManager():MeasureStringX(UIFont.Small, btnText)
+            local btnTextW = mainPanel:getCachedSmallTextWidth(btnText)
             self:drawRect(mainBtnX, btnY, btnW, btnH, 0.6, 0.25, 0.45, 0.55)
             self:drawRectBorder(mainBtnX, btnY, btnW, btnH, 0.8, 0.35, 0.6, 0.7)
             self:drawText(btnText, mainBtnX + (btnW - btnTextW) / 2, btnY + 4, 0.9, 1, 1, 1, UIFont.Small)
@@ -313,7 +882,7 @@ function BurdJournals.doDrawViewStatItem(self, mainPanel, data, textX, textColor
     local erasingState = mainPanel.erasingState
     local isErasingThis = erasingState and erasingState.active
         and erasingState.entryType == "stat" and erasingState.entryName == data.statId
-    local hasEraser = BurdJournals.hasEraser(mainPanel.player)
+    local hasEraser = (mainPanel.hasCachedEraser and mainPanel:hasCachedEraser()) or BurdJournals.hasEraser(mainPanel.player)
     local btnW = 55
     local btnH = 22
     local btnGap = 4

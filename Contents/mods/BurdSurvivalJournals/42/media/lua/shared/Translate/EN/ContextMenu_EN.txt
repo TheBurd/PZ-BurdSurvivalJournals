@@ -1,5 +1,11 @@
-﻿ContextMenu_EN = {
+ContextMenu_EN = {
+    ContextMenu_BurdJournals_BreakSeal = "Break the Seal...",
     ContextMenu_BurdJournals_OpenJournal = "Open Journal...",
+    ContextMenu_BurdJournals_OpenJournalCorrupt1 = "Open Jou rnal...",
+    ContextMenu_BurdJournals_OpenJournalCorrupt2 = "Ope n Jo u rnal...",
+    ContextMenu_BurdJournals_OpenJournalCorrupt3 = "Op e n J ou r na l . ..",
+    ContextMenu_BurdJournals_BreakSealCorrupt2 = "Break t he Se al...",
+    ContextMenu_BurdJournals_BreakSealCorrupt3 = "Br e ak t he S e al . ..",
     ContextMenu_BurdJournals_Read = "Read Journal",
     ContextMenu_BurdJournals_Rename = "Rename",
     ContextMenu_BurdJournals_EraseJournal = "Erase Journal",

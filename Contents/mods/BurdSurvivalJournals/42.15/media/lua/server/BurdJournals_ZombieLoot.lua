@@ -119,6 +119,26 @@ BurdJournals.ZombieLoot.Professions = {
     },
 }
 
+local function addGeneratedJournalItemToContainer(container, itemType)
+    if not container or type(itemType) ~= "string" or itemType == "" then
+        return nil
+    end
+
+    if InventoryItemFactory and InventoryItemFactory.CreateItem and container.AddItem then
+        local item = InventoryItemFactory.CreateItem(itemType)
+        if item then
+            return container:AddItem(item) or item
+        end
+    end
+
+
+    if container.AddItem then
+        return container:AddItem(itemType)
+    end
+
+    return nil
+end
+
 function BurdJournals.ZombieLoot.generateBloodyJournalData()
 
     local profession = BurdJournals.ZombieLoot.Professions[ZombRand(#BurdJournals.ZombieLoot.Professions) + 1]
@@ -137,7 +157,16 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
     else
         skills = BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
     end
+    -- The coherent roll returns an empty set when the allowed-skills pool is empty
+    -- (e.g. a heavily skill-restricted sandbox). Fall back to the simple generator
+    -- before giving up, so bloody journals still spawn instead of silently never.
+    if (not skills or not BurdJournals.hasAnyEntries(skills)) and BurdJournals.generateRandomSkills then
+        skills = BurdJournals.generateRandomSkills(minSkills, maxSkills, minXP, maxXP)
+    end
     if not skills or not BurdJournals.hasAnyEntries(skills) then
+        if BurdJournals.debugPrint then
+            BurdJournals.debugPrint("[BurdJournals] WARNING: bloody journal generation produced no skills (allowed-skills pool may be empty); no journal spawned.")
+        end
         return nil
     end
 
@@ -155,7 +184,6 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
             if maxTraits < 1 then maxTraits = 1 end
             if maxTraits > listSize then maxTraits = listSize end
 
-            -- Use actual randomness instead of deterministic world-age based selection
             local numTraits = ZombRand(1, maxTraits + 1)
             
             traits = {}
@@ -164,13 +192,11 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
                 table.insert(availableTraits, t)
             end
             
-            -- Shuffle for random selection
             for i = #availableTraits, 2, -1 do
                 local j = ZombRand(i) + 1
                 availableTraits[i], availableTraits[j] = availableTraits[j], availableTraits[i]
             end
             
-            -- Pick traits
             for i = 1, numTraits do
                 if #availableTraits == 0 then break end
                 local idx = ZombRand(#availableTraits) + 1
@@ -181,7 +207,6 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
                 end
             end
             
-            -- Check if we got any traits
             local traitCount = 0
             for _ in pairs(traits) do
                 traitCount = traitCount + 1
@@ -232,6 +257,7 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
     end
 
     local journalData = {
+        uuid = BurdJournals.generateUUID and BurdJournals.generateUUID() or tostring(ZombRand(999999999)),
         author = survivorName,
         profession = professionId,  -- Also store the profession ID for lookup
         professionName = professionName,
@@ -256,6 +282,10 @@ function BurdJournals.ZombieLoot.generateBloodyJournalData()
         claimedRecipes = {},
         claimedForgetSlot = {},
     }
+
+    if BurdJournals.Server and BurdJournals.Server.tryAttachGeneratedLootNotes then
+        BurdJournals.Server.tryAttachGeneratedLootNotes(nil, nil, journalData, "bloody")
+    end
 
     return journalData
 end
@@ -289,13 +319,13 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
             if square then
                 local container = zombie:getInventory()
                 local cursedJournal = nil
-                local disguiseAsBloody = BurdJournals.getSandboxOption
-                    and BurdJournals.getSandboxOption("DisguiseCursedJournalsAsBloody") == true
+                local disguiseAsBloody = BurdJournals.isDisguiseCursedJournalsAsBloodyEnabled
+                    and BurdJournals.isDisguiseCursedJournalsAsBloodyEnabled()
                 local cursedItemType = disguiseAsBloody
                     and "BurdJournals.FilledSurvivalJournal_Bloody"
                     or (BurdJournals.CURSED_ITEM_TYPE or "BurdJournals.CursedJournal")
                 if container then
-                    cursedJournal = container:AddItem(cursedItemType)
+                    cursedJournal = addGeneratedJournalItemToContainer(container, cursedItemType)
                 end
                 if not cursedJournal and InventoryItemFactory then
                     cursedJournal = InventoryItemFactory.CreateItem(cursedItemType)
@@ -311,8 +341,14 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
                     data.uuid = data.uuid or (BurdJournals.generateUUID and BurdJournals.generateUUID()) or ("cursed-" .. tostring(ZombRand(999999999)))
                     data.timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720)
                     if disguiseAsBloody then
-                        local professionId, professionName, flavorKey = BurdJournals.getRandomProfession and BurdJournals.getRandomProfession()
-                            or {"survivor", "Survivor", "UI_BurdJournals_BloodyFlavor"}
+                        -- NB: "X and X() or default" truncates X()'s multiple return
+                        -- values to one; assign with an explicit branch instead.
+                        local professionId, professionName, flavorKey
+                        if BurdJournals.getRandomProfession then
+                            professionId, professionName, flavorKey = BurdJournals.getRandomProfession()
+                        else
+                            professionId, professionName, flavorKey = "survivor", "Survivor", "UI_BurdJournals_BloodyFlavor"
+                        end
                         local disguisedSeed = {
                             uuid = data.uuid,
                             timestamp = data.timestamp,
@@ -321,25 +357,39 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
                             profession = data.profession or professionId,
                             professionName = data.professionName or professionName,
                             flavorKey = data.flavorKey or flavorKey or "UI_BurdJournals_BloodyFlavor",
+                            lootNotesEligible = true,
                         }
-                        local disguisedReward = BurdJournals.Server.generateCursedRewardProfile
-                            and BurdJournals.Server.generateCursedRewardProfile(disguisedSeed)
-                            or disguisedSeed
-                        if type(disguisedReward) == "table" then
-                            for key, value in pairs(disguisedReward) do
-                                data[key] = value
-                            end
-                            data.cursedPendingRewards = BurdJournals.normalizeJournalData
-                                and BurdJournals.normalizeJournalData(disguisedReward)
-                                or disguisedReward
-                        end
+                        data.cursedPendingRewards = {
+                            uuid = disguisedSeed.uuid,
+                            timestamp = disguisedSeed.timestamp,
+                            author = disguisedSeed.author,
+                            profession = disguisedSeed.profession,
+                            professionName = disguisedSeed.professionName,
+                            flavorKey = disguisedSeed.flavorKey,
+                            lootNotesEligible = true,
+                            cursedDeferredRewards = true,
+                        }
                         data.author = data.author or disguisedSeed.author
                         data.profession = data.profession or disguisedSeed.profession
                         data.professionName = data.professionName or disguisedSeed.professionName
                         data.flavorKey = data.flavorKey or disguisedSeed.flavorKey
+                        local insightEffectType = BurdJournals.Server.rollCursedInsightEffectType
+                            and BurdJournals.Server.rollCursedInsightEffectType(nil, nil)
+                            or nil
+                        if insightEffectType then
+                            data.cursedInsightEffectType = insightEffectType
+                            if BurdJournals.Server.getCurseEffectOmenCategory then
+                                data.cursedOmenCategory = BurdJournals.Server.getCurseEffectOmenCategory(insightEffectType)
+                            end
+                        end
                         data.isHiddenCursedJournal = true
                         data.isCursedJournal = false
                         data.cursedState = "hidden"
+                        -- Expired curses: record spawn time so old curses can go dormant.
+                        data.cursedSpawnedAtHours = data.cursedSpawnedAtHours
+                            or (BurdJournals.Server.getWorldAgeHoursSafe and BurdJournals.Server.getWorldAgeHoursSafe())
+                            or (getGameTime() and getGameTime():getWorldAgeHours())
+                            or nil
                         data.isCursedReward = false
                         data.cursedEffectType = nil
                         data.cursedUnleashedByCharacterId = nil
@@ -363,12 +413,6 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
                         data.claimedTraits = data.claimedTraits or {}
                         data.claimedRecipes = data.claimedRecipes or {}
                         data.claimedForgetSlot = data.claimedForgetSlot or {}
-                        if BurdJournals.Server.ensureGeneratedLootLoreNote then
-                            BurdJournals.Server.ensureGeneratedLootLoreNote(nil, cursedJournal, data, "bloody")
-                            if type(data.cursedPendingRewards) == "table" then
-                                BurdJournals.Server.syncHiddenCursedPendingLoreIdentity(data)
-                            end
-                        end
                     else
                         local cursedAuthor = useKrampusIdentity
                             and ((getText("UI_BurdJournals_KrampusAuthor") ~= "UI_BurdJournals_KrampusAuthor"
@@ -384,9 +428,15 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
                             or data.professionName)
                         data.loreNoteTemplateVersion = 1
                         data.loreNoteTemplateFamily = "cursed"
+                        data.lootNotesEligible = true
                         data.isHiddenCursedJournal = false
                         data.isCursedJournal = true
                         data.cursedState = "dormant"
+                        -- Expired curses: record spawn time so old curses can go dormant.
+                        data.cursedSpawnedAtHours = data.cursedSpawnedAtHours
+                            or (BurdJournals.Server.getWorldAgeHoursSafe and BurdJournals.Server.getWorldAgeHoursSafe())
+                            or (getGameTime() and getGameTime():getWorldAgeHours())
+                            or nil
                         data.isCursedReward = false
                         data.cursedEffectType = nil
                         data.cursedUnleashedByCharacterId = nil
@@ -437,7 +487,7 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
     end
 
     local journalData = useYuletide
-        and BurdJournals.Server.generateYuletideJournalProfile({ isZombieJournal = true })
+        and BurdJournals.Server.generateYuletideJournalProfile({ isZombieJournal = true, lootNotesEligible = true })
         or BurdJournals.ZombieLoot.generateBloodyJournalData()
     if not journalData then return end
 
@@ -447,14 +497,14 @@ function BurdJournals.ZombieLoot.onZombieDead(zombie)
     local container = zombie:getInventory()
     local journal = nil
 
+    local journalItemType = useYuletide and (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal")
+        or "BurdJournals.FilledSurvivalJournal_Bloody"
     if container then
-        journal = container:AddItem(useYuletide and (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal")
-            or "BurdJournals.FilledSurvivalJournal_Bloody")
+        journal = addGeneratedJournalItemToContainer(container, journalItemType)
     end
 
     if not journal then
-        journal = InventoryItemFactory.CreateItem(useYuletide and (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal")
-            or "BurdJournals.FilledSurvivalJournal_Bloody")
+        journal = InventoryItemFactory.CreateItem(journalItemType)
         if journal then
             square:AddWorldInventoryItem(journal, ZombRandFloat(0, 0.8), ZombRandFloat(0, 0.8), 0)
         end
@@ -519,6 +569,16 @@ local WORN_JOURNAL_CONTAINERS = {
 }
 
 local processedContainers = {}
+local processedContainersLastCleanup = 0
+local PROCESSED_CONTAINERS_CLEANUP_MS = 300000
+
+local function cleanupProcessedContainers()
+    local nowMs = getTimestampMs and getTimestampMs() or 0
+    if nowMs > 0 and (nowMs - processedContainersLastCleanup) >= PROCESSED_CONTAINERS_CLEANUP_MS then
+        processedContainers = {}
+        processedContainersLastCleanup = nowMs
+    end
+end
 
 local function getContainerKey(container)
     if not container then return nil end
@@ -537,6 +597,9 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
     if isClient() and not isServer() then return end
 
     if not BurdJournals or not BurdJournals.isEnabled or not BurdJournals.isEnabled() then return end
+    if BurdJournals.WorldSpawn and BurdJournals.WorldSpawn.handlesWornJournalContainerSpawns == true then
+        return
+    end
 
     local spawnsEnabled = BurdJournals.getSandboxOption("EnableWornJournalSpawns")
     if spawnsEnabled == false then return end
@@ -546,6 +609,7 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
 
     local containerKey = getContainerKey(itemContainer)
     if containerKey then
+        cleanupProcessedContainers()
         if processedContainers[containerKey] then
             return
         end
@@ -576,8 +640,9 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
         end
     end
 
-    local journal = itemContainer:AddItem(useYuletide and (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal")
-        or "BurdJournals.FilledSurvivalJournal_Worn")
+    local journalItemType = useYuletide and (BurdJournals.YULETIDE_ITEM_TYPE or "BurdJournals.YuletideJournal")
+        or "BurdJournals.FilledSurvivalJournal_Worn"
+    local journal = addGeneratedJournalItemToContainer(itemContainer, journalItemType)
     if journal then
 
         local modData = journal:getModData()
@@ -590,6 +655,7 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
                     modData.BurdJournals = BurdJournals.Server.generateYuletideJournalProfile({
                         timestamp = getGameTime():getWorldAgeHours(),
                         yuletideState = BurdJournals.YULETIDE_STATE_WRAPPED,
+                        lootNotesEligible = true,
                     })
                 else
                     modData.BurdJournals = {
@@ -599,16 +665,22 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
                         professionName = getText("UI_BurdJournals_ProfSurvivor") or "Survivor",
                         timestamp = getGameTime():getWorldAgeHours() - ZombRand(24, 720),
                         skills = BurdJournals.generateRandomSkills and BurdJournals.generateRandomSkills(1, 2, 25, 75) or {},
+                        loreNoteTemplateVersion = tonumber(BurdJournals.Server and BurdJournals.Server.LORE_NOTE_TEMPLATE_VERSION) or 1,
+                        loreNoteTemplateFamily = "worn",
                         isWorn = true,
                         isBloody = false,
                         wasFromBloody = false,
                         isPlayerCreated = false,
+                        lootNotesEligible = true,
                         traits = nil,
                         forgetSlot = BurdJournals.rollForgetSlotForType and BurdJournals.rollForgetSlotForType("worn") or nil,
                         claimedSkills = {},
                         claimedTraits = {},
                         claimedForgetSlot = {},
                     }
+                    if BurdJournals.Server and BurdJournals.Server.tryAttachGeneratedLootNotes then
+                        BurdJournals.Server.tryAttachGeneratedLootNotes(nil, nil, modData.BurdJournals, "worn")
+                    end
                 end
                 if BurdJournals.updateJournalName then
                     BurdJournals.updateJournalName(journal)
@@ -622,5 +694,7 @@ local function onFillContainerWornJournals(roomName, containerType, itemContaine
 end
 
 if Events.OnFillContainer then
-    Events.OnFillContainer.Add(onFillContainerWornJournals)
+    if not (BurdJournals.WorldSpawn and BurdJournals.WorldSpawn.handlesWornJournalContainerSpawns == true) then
+        Events.OnFillContainer.Add(onFillContainerWornJournals)
+    end
 end

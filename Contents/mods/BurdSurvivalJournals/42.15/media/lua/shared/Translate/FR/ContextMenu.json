@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "Ouvrir le journal...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "Ouvrir le jou rnal...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "Ou vrir le jo ur nal...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "Ou vr ir le j ou r na l . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "Briser le sce au...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "Br is er le s ce au . ..",
     "ContextMenu_BurdJournals_Read": "Lire",
     "ContextMenu_BurdJournals_Rename": "Renommer",
     "ContextMenu_BurdJournals_EraseJournal": "Effacer le journal",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "Nettoyer (Savon & Chiffon)",
     "ContextMenu_BurdJournals_RepairTape": "Réparer avec du ruban adhésif",
     "ContextMenu_BurdJournals_RepairLeather": "Relier avec du cuir",
-    "ContextMenu_BurdJournals_RepairGlue": "Encoller les pages"
+    "ContextMenu_BurdJournals_RepairGlue": "Encoller les pages",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

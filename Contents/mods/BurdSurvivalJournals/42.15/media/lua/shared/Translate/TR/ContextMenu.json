@@ -1,5 +1,10 @@
 {
     "ContextMenu_BurdJournals_OpenJournal": "Günlüğü Aç...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt1": "Günlüğü A ç...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt2": "Gün lüğü A ç...",
+    "ContextMenu_BurdJournals_OpenJournalCorrupt3": "G ü n l ü ğ ü A ç . ..",
+    "ContextMenu_BurdJournals_BreakSealCorrupt2": "Mührü K ır...",
+    "ContextMenu_BurdJournals_BreakSealCorrupt3": "M ü h r ü K ı r . ..",
     "ContextMenu_BurdJournals_Read": "Günlüğü Oku",
     "ContextMenu_BurdJournals_Rename": "Yeniden Adlandır",
     "ContextMenu_BurdJournals_EraseJournal": "Günlüğü Sil",
@@ -30,5 +35,6 @@
     "ContextMenu_BurdJournals_CleanSoap": "Sabun ve Bezle Temizle",
     "ContextMenu_BurdJournals_RepairTape": "Koli Bandı ile Yama",
     "ContextMenu_BurdJournals_RepairLeather": "Deri ile Yeniden Ciltle",
-    "ContextMenu_BurdJournals_RepairGlue": "Sayfaları Yapıştır"
+    "ContextMenu_BurdJournals_RepairGlue": "Sayfaları Yapıştır",
+    "ContextMenu_BurdJournals_BreakSeal": "Break the Seal..."
 }

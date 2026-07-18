@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Translation Audit Utility for BurdSurvivalJournals.
 
@@ -9,7 +9,7 @@
 #>
 
 param(
-    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\Contents\mods\BurdSurvivalJournals"
+    [string]$BasePath = "c:\Users\Pepsi\Zomboid\Workshop\BurdSurvivalJournals\mods\BurdSurvivalJournals"
 )
 
 $helperPath = Join-Path $PSScriptRoot "translation_helpers.ps1"
@@ -177,3 +177,4 @@ if ($totalMissing -gt 0) {
 else {
     Write-Host "All translations are complete!" -ForegroundColor Green
 }
+

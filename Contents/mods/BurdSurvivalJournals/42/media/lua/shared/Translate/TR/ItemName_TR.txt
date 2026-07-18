@@ -1,10 +1,10 @@
 ItemName_TR = {
-    ItemName_BurdJournals.BlankSurvivalJournal = "BoÅŸ Hayatta Kalma GÃ¼nlÃ¼ÄŸÃ¼",
-    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "YÄ±pranmÄ±ÅŸ BoÅŸ GÃ¼nlÃ¼k",
-    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "KanlÄ± BoÅŸ GÃ¼nlÃ¼k",
-    ItemName_BurdJournals.FilledSurvivalJournal = "Dolu Hayatta Kalma GÃ¼nlÃ¼ÄŸÃ¼",
-    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "YÄ±pranmÄ±ÅŸ Dolu GÃ¼nlÃ¼k",
-    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "KanlÄ± Dolu GÃ¼nlÃ¼k",
-    ItemName_BurdJournals.CursedJournal = "Lanetli GÃ¼nlÃ¼k",
-    ItemName_BurdJournals.YuletideJournal = "Noel GÃ¼nlÃ¼ÄŸÃ¼",
+    ItemName_BurdJournals.BlankSurvivalJournal = "Boþ Hayatta Kalma Günlüðü",
+    ItemName_BurdJournals.BlankSurvivalJournal_Worn = "Yýpranmýþ Boþ Günlük",
+    ItemName_BurdJournals.BlankSurvivalJournal_Bloody = "Kanlý Boþ Günlük",
+    ItemName_BurdJournals.FilledSurvivalJournal = "Dolu Hayatta Kalma Günlüðü",
+    ItemName_BurdJournals.FilledSurvivalJournal_Worn = "Yýpranmýþ Dolu Günlük",
+    ItemName_BurdJournals.FilledSurvivalJournal_Bloody = "Kanlý Dolu Günlük",
+    ItemName_BurdJournals.CursedJournal = "Lanetli Günlük",
+    ItemName_BurdJournals.YuletideJournal = "Noel Günlüðü",
 }

@@ -16,5 +16,9 @@
     "RestoreJournal_Adhesive_Leather": "일지 복원 (접착제 + 가죽)",
     "Recipe_RestoreJournal_Adhesive_Leather": "일지 복원 (접착제 + 가죽)",
     "RestoreJournal_Adhesive_AnyCover": "일지 복원 (접착제 + 천)",
-    "Recipe_RestoreJournal_Adhesive_AnyCover": "일지 복원 (접착제 + 천)"
+    "Recipe_RestoreJournal_Adhesive_AnyCover": "일지 복원 (접착제 + 천)",
+    "CraftNotebook_Makeshift": "공책 제작",
+    "Recipe_CraftNotebook_Makeshift": "공책 제작",
+    "CraftJournal_Bound": "일지 제작",
+    "Recipe_CraftJournal_Bound": "일지 제작"
 }

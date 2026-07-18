@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yuletide Journals | Burd's Survival Journals</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bitter:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../../css/wiki.css">
+</head>
+<body>
+    <div class="wiki-bg"></div>
+    <div class="wiki-shell">
+        <header class="wiki-header">
+            <a class="wiki-brand" href="../../index.html">
+                <img src="../../assets/BSJ-BloodSplashIcon1.png" alt="BSJ">
+                <div><strong>Burd's Survival Journals</strong><span>Dev-first wiki and translation tools</span></div>
+            </a>
+            <nav class="wiki-nav">
+                <a href="../../index.html">Home</a>
+                <a href="../../getting-started/">Getting Started</a>
+                <a class="is-active" href="../">Journal Types</a>
+                <a href="../../mechanics/">Mechanics</a>
+                <a href="../../events-and-loot/">Events &amp; Loot</a>
+                <a href="../../configuration/">Configuration</a>
+                <a href="../../multiplayer-and-admin/">Multiplayer &amp; Admin</a>
+                <a href="../../translations/">Translations</a>
+                <a href="../../faq/">FAQ</a>
+            </nav>
+        </header>
+        <main class="wiki-main">
+            <section class="journal-page-hero wiki-panel" data-journal="yuletide">
+                <div class="journal-page-copy">
+                    <span class="eyebrow">Journal Dossier</span>
+                    <h1>Yuletide journals</h1>
+                    <p>Yuletide journals are the dev branch's seasonal gift family: wrapped journal variants that can replace worn or bloody rolls, grant bundled supplies when unwrapped, and even show up as safehouse deliveries during the active season.</p>
+                    <div class="badge-row">
+                        <span class="badge badge-info">Seasonal Gift</span>
+                        <span class="badge">Wrapped and unwrapped states</span>
+                        <span class="badge">Bundled supplies on reveal</span>
+                    </div>
+                    <div class="wiki-actions">
+                        <a class="wiki-btn" href="../">Back To Journal Types</a>
+                        <a class="wiki-btn-secondary" href="../../events-and-loot/">Events &amp; Loot</a>
+                    </div>
+                </div>
+                <div class="journal-page-media">
+                    <div class="journal-hero-shot journal-hero-icons">
+                        <div class="icon-rack">
+                            <img src="../../assets/BurdJournal-WrappedYuletide1-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="../../assets/BurdJournal-WrappedYuletide2-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="../../assets/BurdJournal-WrappedYuletide3-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="../../assets/BurdJournal-WrappedYuletide4-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="../../assets/BurdJournal-WrappedYuletide5-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                            <img src="../../assets/BurdJournal-YuletideFilled-Icon-Index.png" alt="Filled Yuletide journal icon">
+                        </div>
+                    </div>
+                    <div class="journal-quick-facts">
+                        <h3>At a glance</h3>
+                        <dl>
+                            <div><dt>Season trigger</dt><dd>Uses world date, host real date, or both depending on sandbox settings.</dd></div>
+                            <div><dt>Replacement role</dt><dd>Can replace eligible worn world spawns and bloody corpse drops during the active season.</dd></div>
+                            <div><dt>Unique feature</dt><dd>Bundled physical gift items are granted once when the wrapping comes off.</dd></div>
+                            <div><dt>Related hook</dt><dd>Can optionally pair the season with Krampus-authored cursed journals.</dd></div>
+                        </dl>
+                    </div>
+                </div>
+            </section>
+
+            <section class="detail-grid">
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>What it is</h2>
+                    <p>The dev UI strings define Yuletide journals as a wrapped seasonal gift journal with its own badge, flavor text, unwrap prompt, reveal flow, and bundled-supplies reward lane. They are not just reskinned worn journals.</p>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>How the season works</h2>
+                    <ul>
+                        <li><strong>Enable Yuletide Journals</strong> turns the seasonal lane on.</li>
+                        <li>The season can activate from the in-game December calendar, the host's real-world date, or both.</li>
+                        <li>When active, eligible worn and bloody rolls can be replaced by wrapped Yuletide journals.</li>
+                        <li>Cursed journals can optionally switch to Krampus-authored seasonal identity during the same period.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>What happens when you unwrap one</h2>
+                    <p>The context action is explicitly <strong>Unwrap Gift Journal...</strong> rather than a normal open prompt. Unwrapping reveals the journal, grants any bundled supplies, and consumes the one-time gift layer of the item.</p>
+                    <div class="notice notice-info">
+                        <strong>One-time gift reveal.</strong>
+                        The dev UI tooltip explicitly notes that bundled gifts are granted once when the wrapping comes off.
+                    </div>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>Gift tier odds and bundle rules</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Tier</th>
+                                    <th>Default weight</th>
+                                    <th>Bundle behavior</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Practical</strong></td>
+                                    <td><strong>70</strong></td>
+                                    <td>Common survival supplies.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Rare</strong></td>
+                                    <td><strong>25</strong></td>
+                                    <td>Weapons, ammo, and stronger utility gear.</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Jackpot</strong></td>
+                                    <td><strong>5</strong></td>
+                                    <td>Heavy-hitter items like generators, sledgehammers, and high-end weapons.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <ul class="compact-list">
+                        <li>Each unwrap rolls <strong>one</strong> tier, then takes <strong>1 to 2</strong> distinct gift entries from that tier by default.</li>
+                        <li>The pool is shuffled before selection, so a single unwrap does not duplicate the same entry type unless that entry's own count roll is above <strong>1</strong>.</li>
+                        <li>If the stored gift list is empty for some reason, the server rerolls a fresh bundle on unwrap.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>All possible bundled gifts</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Tier</th>
+                                    <th>Possible gifts</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Practical</strong></td>
+                                    <td>Battery (<strong>2 to 4</strong>), Nails Box (<strong>1 to 2</strong>), Tinned Soup (<strong>1 to 2</strong>), Canned Corn (<strong>1 to 2</strong>), Torch (<strong>1</strong>), Hammer (<strong>1</strong>), Screwdriver (<strong>1</strong>).</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Rare</strong></td>
+                                    <td>Axe (<strong>1</strong>), Crowbar (<strong>1</strong>), Wood Axe (<strong>1</strong>), Pistol (<strong>1</strong>), 9mm Clip (<strong>1 to 2</strong>), Bullets 9mm Box (<strong>1 to 2</strong>), Shotgun Shells Box (<strong>1 to 2</strong>).</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Jackpot</strong></td>
+                                    <td>Shotgun (<strong>1</strong>), Machete (<strong>1</strong>), Sledgehammer (<strong>1</strong>), Generator (<strong>1</strong>), Assault Rifle (<strong>1</strong>), 556 Box (<strong>1 to 2</strong>).</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="reference-note">The live server code also carries fallback aliases so old item names can resolve cleanly, such as <code>Base.Flashlight</code> to <code>Base.Torch</code> and <code>Base.CannedSoup</code> to a valid tinned-soup variant.</p>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>Live seasonal defaults</h2>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Setting</th>
+                                    <th>Default</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>Use world date for activation</td>
+                                    <td><strong>On</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>Use host real date for activation</td>
+                                    <td><strong>Off</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>Worn replacement chance</td>
+                                    <td><strong>4.0%</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>Bloody replacement chance</td>
+                                    <td><strong>8.0%</strong></td>
+                                </tr>
+                                <tr>
+                                    <td>Reward skills / XP</td>
+                                    <td><strong>2 to 5</strong> skills worth <strong>75 to 300</strong> XP</td>
+                                </tr>
+                                <tr>
+                                    <td>Trait / recipe / forget slot tuning</td>
+                                    <td><strong>40%</strong> trait chance, <strong>60%</strong> recipe chance, <strong>25%</strong> forget-slot chance</td>
+                                </tr>
+                                <tr>
+                                    <td>Krampus cursed-author swap</td>
+                                    <td><strong>On</strong></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>Key sandbox controls</h2>
+                    <ul>
+                        <li><strong>Enable Yuletide Journals</strong> governs whether the seasonal replacement lane exists at all.</li>
+                        <li><strong>Yuletide Worn Replacement</strong> and <strong>Yuletide Bloody Replacement</strong> control how often the seasonal swap happens in world loot and corpse drops.</li>
+                        <li><strong>Yuletide Min/Max Skills</strong>, <strong>Min/Max XP</strong>, and the trait/recipe/forget-slot toggles control the journal rewards after unwrap.</li>
+                        <li><strong>Yuletide Gift Practical/Rare/Jackpot Weight</strong> plus the min/max item counts control the physical bundled gift pool.</li>
+                        <li><strong>Krampus Seasonal Cursed Authors</strong> lets active Yuletide seasons re-skin newly spawned cursed journals around Krampus instead of a random survivor identity.</li>
+                    </ul>
+                </article>
+                <article class="wiki-panel" data-journal="yuletide">
+                    <h2>Variant rack</h2>
+                    <div class="icon-rack icon-rack-large">
+                        <img src="../../assets/BurdJournal-WrappedYuletide1-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                        <img src="../../assets/BurdJournal-WrappedYuletide2-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                        <img src="../../assets/BurdJournal-WrappedYuletide3-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                        <img src="../../assets/BurdJournal-WrappedYuletide4-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                        <img src="../../assets/BurdJournal-WrappedYuletide5-Icon-Index.png" alt="Wrapped Yuletide journal icon">
+                        <img src="../../assets/BurdJournal-YuletideFilled-Icon-Index.png" alt="Filled Yuletide journal icon">
+                    </div>
+                </article>
+                <article class="wiki-panel trivia-panel" data-journal="yuletide">
+                    <span class="eyebrow">Trivia</span>
+                    <h2>Yuletide journal notes</h2>
+                    <ul class="trivia-list">
+                        <li>The dev strings call the rarity label <strong>Seasonal Gift</strong>, which gives Yuletide journals a distinct identity instead of treating them as plain recolors.</li>
+                        <li>They are one of the only journal families with an explicit unwrap sequence, reveal copy, and bundled-item lead text baked directly into the UI flow.</li>
+                        <li>The seasonal system is broad enough to affect worn journals, bloody journals, cursed journal author identity, and safehouse delivery behavior at the same time.</li>
+                        <li>The default tier weights are intentionally lopsided, so most bundles stay practical while a small jackpot lane still leaves room for memorable holiday spikes.</li>
+                    </ul>
+                </article>
+            </section>
+        </main>
+        <footer class="wiki-footer">
+            <div><strong>Burd's Survival Journals Wiki</strong><p>Yuletide journals document the seasonal, wrapped, gift-bearing side of the dev journal system.</p></div>
+            <div class="footer-links"><a href="../">Journal Types</a><a href="../../events-and-loot/">Events &amp; Loot</a><a href="../../configuration/">Configuration</a></div>
+        </footer>
+    </div>
+</body>
+</html>

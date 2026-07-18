@@ -84,16 +84,21 @@ function BurdJournals.ContextMenu.pickUpThenDo(player, item, callback)
     -- Wait for transfer to complete, using ID to find item
     local checkTicks = 0
     local maxTicks = 300
+    local pollEveryTicks = 6
     local checkTransfer
     checkTransfer = function()
         checkTicks = checkTicks + 1
 
-        -- Find item by ID in player's inventory (item reference may be stale after transfer)
-        local foundItem = BurdJournals.findItemById(player, itemId)
-        if foundItem and BurdJournals.ContextMenu.isInPlayerMainInventory(player, foundItem) then
-            Events.OnTick.Remove(checkTransfer)
-            callback(player, foundItem, returnContainer)  -- Use found item, not original reference
-            return
+        -- The transfer destination is known. Poll only that inventory and do it at
+        -- a bounded cadence; the general resolver recursively scans nearby world
+        -- containers and must never run from this tick handler.
+        if checkTicks == 1 or checkTicks % pollEveryTicks == 0 then
+            local foundItem = BurdJournals.findItemByIdInPlayerInventory(player, itemId)
+            if foundItem and BurdJournals.ContextMenu.isInPlayerMainInventory(player, foundItem) then
+                Events.OnTick.Remove(checkTransfer)
+                callback(player, foundItem, returnContainer)  -- Use found item, not original reference
+                return
+            end
         end
 
         if checkTicks >= maxTicks then
@@ -286,17 +291,14 @@ local function markLootRewardsRevealedLocally(journal, player)
     if not journal then
         return false
     end
-    if not (BurdJournals.isLootRewardJournal and BurdJournals.isLootRewardJournal(journal)) then
-        return false
-    end
 
     local data = getMutableContextJournalData(journal)
-    if type(data) ~= "table" or data.lootRewardsRevealed == true then
+    if type(data) ~= "table" or data.isPlayerCreated == true or data.lootRewardsRevealed == true then
         return false
     end
 
     if BurdJournals.resolveJournalUUIDForRuntime then
-        BurdJournals.resolveJournalUUIDForRuntime(data, journal, true)
+        BurdJournals.resolveJournalUUIDForRuntime(data, journal, false)
     end
     data.lootRewardsRevealed = true
     if player then
@@ -306,6 +308,9 @@ local function markLootRewardsRevealedLocally(journal, player)
     end
     if getGameTime and getGameTime() and getGameTime().getWorldAgeHours then
         data.lootRewardsRevealedAtHours = getGameTime():getWorldAgeHours()
+    end
+    if BurdJournals.Client and BurdJournals.Client.markLootRewardRevealedLocally then
+        BurdJournals.Client.markLootRewardRevealedLocally(journal, data)
     end
     if BurdJournals.updateJournalName then
         BurdJournals.updateJournalName(journal, true)
@@ -452,6 +457,21 @@ function BurdJournals.ContextMenu.addJournalOptions(context, player, journal)
         return
     end
 
+    -- Registered sealed archetypes (e.g. Blessed) that are still sealed offer a
+    -- generic "Break the Seal" option. Built-in cursed journals are routed above
+    -- so Cursed Insight can corrupt the cursed-specific seal label.
+    if BurdJournals.isJournalSealed and BurdJournals.isJournalSealed(journal) then
+        BurdJournals.ContextMenu.addSealedJournalOptions(context, player, journal)
+        return
+    end
+
+    if BurdJournals.isBrokenSealedLootRewardJournal
+        and BurdJournals.isBrokenSealedLootRewardJournal(journal)
+    then
+        BurdJournals.ContextMenu.addSealedLootRewardJournalOptions(context, player, journal)
+        return
+    end
+
     if isBloody then
 
         BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journal, isBlank)
@@ -469,9 +489,37 @@ function BurdJournals.ContextMenu.addJournalOptions(context, player, journal)
     end
 end
 
+function BurdJournals.ContextMenu.getCursedInsightContextLabel(player, journal, isHiddenCursed, isSealedCursed, baseLabel)
+    baseLabel = baseLabel or getText("ContextMenu_BurdJournals_OpenJournal") or "Open Journal..."
+    local insightLevel = BurdJournals.getCursedInsightLevel
+        and select(1, BurdJournals.getCursedInsightLevel(player))
+        or 0
+    if isHiddenCursed == true then
+        if BurdJournals.Client and BurdJournals.Client.requestCursedInsightPreview then
+            BurdJournals.Client.requestCursedInsightPreview(player, journal)
+        end
+        if insightLevel >= 3 then
+            return BurdJournals.safeGetText("ContextMenu_BurdJournals_OpenJournalCorrupt3", "Op e n J ou r na l . ..")
+        elseif insightLevel >= 2 then
+            return BurdJournals.safeGetText("ContextMenu_BurdJournals_OpenJournalCorrupt2", "Ope n Jo u rnal...")
+        elseif insightLevel >= 1 then
+            return BurdJournals.safeGetText("ContextMenu_BurdJournals_OpenJournalCorrupt1", "Open Jou rnal...")
+        end
+    elseif isSealedCursed == true and insightLevel >= 2 then
+        if BurdJournals.Client and BurdJournals.Client.requestCursedInsightPreview then
+            BurdJournals.Client.requestCursedInsightPreview(player, journal)
+        end
+        if insightLevel >= 3 then
+            return BurdJournals.safeGetText("ContextMenu_BurdJournals_BreakSealCorrupt3", "Br e ak t he S e al . ..")
+        end
+        return BurdJournals.safeGetText("ContextMenu_BurdJournals_BreakSealCorrupt2", "Break t he Se al...")
+    end
+    return baseLabel
+end
+
 function BurdJournals.ContextMenu.addYuletideJournalOptions(context, player, journal)
     local openOption = context:addOption(
-        getText("ContextMenu_BurdJournals_OpenYuletideJournal") or "Unwrap Gift Journal...",
+        BurdJournals.safeGetText("ContextMenu_BurdJournals_OpenYuletideJournal", "Unwrap Gift Journal..."),
         player,
         BurdJournals.ContextMenu.onOpenYuletideJournal,
         journal
@@ -479,9 +527,77 @@ function BurdJournals.ContextMenu.addYuletideJournalOptions(context, player, jou
     local tooltip = ISToolTip:new()
     tooltip:initialise()
     tooltip:setVisible(false)
-    tooltip:setName(getText("Tooltip_BurdJournals_YuletideJournalName") or "Yuletide Journal (Wrapped)")
-    tooltip.description = normalizeTooltipTextForDisplay(getText("Tooltip_BurdJournals_YuletideJournalDesc"))
+    tooltip:setName(BurdJournals.safeGetText("Tooltip_BurdJournals_YuletideJournalName", "Yuletide Journal (Wrapped)"))
+    tooltip.description = normalizeTooltipTextForDisplay(BurdJournals.safeGetText("Tooltip_BurdJournals_YuletideJournalDesc"))
         or "A wrapped holiday journal. Unwrap it to reveal the journal and its bundled supplies."
+    openOption.toolTip = tooltip
+    BurdJournals.ContextMenu.applyLightRequirement(openOption, player)
+end
+
+function BurdJournals.ContextMenu.addSealedLootRewardJournalOptions(context, player, journal)
+    if not context or not player or not journal then return end
+
+    local journalData = getNormalizedContextJournalData(journal)
+    local sealedEntry = BurdJournals.getSealedJournalType and BurdJournals.getSealedJournalType(journal) or nil
+    local displayName = nil
+    if sealedEntry and sealedEntry.displayNameKey then
+        displayName = BurdJournals.safeGetText(sealedEntry.displayNameKey, nil)
+    end
+    displayName = displayName or BurdJournals.safeGetText("Tooltip_BurdJournals_LootRewardJournal", "Reward Journal")
+
+    local openOption = context:addOption(
+        getText("ContextMenu_BurdJournals_OpenJournal") or "Open Journal...",
+        player,
+        BurdJournals.ContextMenu.onOpenSealedLootRewardJournal,
+        journal
+    )
+
+    local tooltip = ISToolTip:new()
+    tooltip:initialise()
+    tooltip:setVisible(false)
+    tooltip:setName(displayName)
+
+    local skillCount = 0
+    local totalSkills = 0
+    local traitCount = 0
+    local totalTraits = 0
+    local recipeCount = 0
+    local totalRecipes = 0
+    if journalData then
+        if journalData.skills then
+            for skillName, _ in pairs(journalData.skills) do
+                totalSkills = totalSkills + 1
+                if not BurdJournals.hasCharacterClaimedSkill(journalData, player, skillName) then
+                    skillCount = skillCount + 1
+                end
+            end
+        end
+        if journalData.traits then
+            for traitId, _ in pairs(journalData.traits) do
+                totalTraits = totalTraits + 1
+                if not BurdJournals.hasCharacterClaimedTrait(journalData, player, traitId) then
+                    traitCount = traitCount + 1
+                end
+            end
+        end
+        if journalData.recipes then
+            for recipeName, _ in pairs(journalData.recipes) do
+                totalRecipes = totalRecipes + 1
+                if not BurdJournals.hasCharacterClaimedRecipe(journalData, player, recipeName) then
+                    recipeCount = recipeCount + 1
+                end
+            end
+        end
+    end
+
+    local tooltipLines = {}
+    appendRewardAvailabilityLine(tooltipLines, "Tooltip_BurdJournals_SkillsAvailable", skillCount, totalSkills)
+    appendRewardAvailabilityLine(tooltipLines, "Tooltip_BurdJournals_TraitsAvailable", traitCount, totalTraits)
+    appendRewardAvailabilityLine(tooltipLines, "Tooltip_BurdJournals_RecipesAvailable", recipeCount, totalRecipes)
+    if #tooltipLines == 0 then
+        tooltipLines[#tooltipLines + 1] = BurdJournals.safeGetText("Tooltip_BurdJournals_NoRewardsFound", "No rewards found")
+    end
+    tooltip.description = normalizeTooltipTextForDisplay(table.concat(tooltipLines, "\n"))
     openOption.toolTip = tooltip
     BurdJournals.ContextMenu.applyLightRequirement(openOption, player)
 end
@@ -538,8 +654,9 @@ function BurdJournals.ContextMenu.addUnwrappedYuletideJournalOptions(context, pl
         local tooltip = ISToolTip:new()
         tooltip:initialise()
         tooltip:setVisible(false)
-        tooltip:setName(getText("Tooltip_BurdJournals_YuletideJournalUnwrappedName") or "Yuletide Journal")
-        local author = journalData.author or BurdJournals.safeGetText("UI_BurdJournals_Unknown", "Unknown")
+        tooltip:setName(BurdJournals.safeGetText("Tooltip_BurdJournals_YuletideJournalUnwrappedName", "Yuletide Journal"))
+        local author = (BurdJournals.getJournalDisplayAuthor and BurdJournals.getJournalDisplayAuthor(journalData))
+            or BurdJournals.safeGetText("UI_BurdJournals_Unknown", "Unknown")
         local desc = BurdJournals.formatText(BurdJournals.safeGetText("Tooltip_BurdJournals_WrittenBy", "Written by: %s"), author) .. "\n"
         local professionName = BurdJournals.resolveProfessionName and BurdJournals.resolveProfessionName(journalData) or journalData.professionName
         if professionName and professionName ~= "" then
@@ -549,13 +666,13 @@ function BurdJournals.ContextMenu.addUnwrappedYuletideJournalOptions(context, pl
             desc = desc .. BurdJournals.safeGetText("Tooltip_BurdJournals_UnopenedLootRewardDesc", "Open to inspect the contents.") .. "\n"
         else
             if totalSkills > 0 then
-                desc = desc .. BurdJournals.formatText(getText("Tooltip_BurdJournals_SkillsAvailable"), skillCount, totalSkills) .. "\n"
+                desc = desc .. BurdJournals.formatText(BurdJournals.safeGetText("Tooltip_BurdJournals_SkillsAvailable", "Skills: %d/%d available"), skillCount, totalSkills) .. "\n"
             end
             if totalTraits > 0 then
-                desc = desc .. BurdJournals.formatText(getText("Tooltip_BurdJournals_TraitsAvailable"), traitCount, totalTraits) .. "\n"
+                desc = desc .. BurdJournals.formatText(BurdJournals.safeGetText("Tooltip_BurdJournals_TraitsAvailable", "Traits: %d/%d available"), traitCount, totalTraits) .. "\n"
             end
             if totalRecipes > 0 then
-                desc = desc .. BurdJournals.formatText(getText("Tooltip_BurdJournals_RecipesAvailable"), recipeCount, totalRecipes) .. "\n"
+                desc = desc .. BurdJournals.formatText(BurdJournals.safeGetText("Tooltip_BurdJournals_RecipesAvailable", "Recipes: %d/%d available"), recipeCount, totalRecipes) .. "\n"
             end
             if totalStats > 0 then
                 desc = desc .. BurdJournals.formatText(BurdJournals.safeGetText("Tooltip_BurdJournals_StatsAvailable", "Stats: %d/%d available"), statCount, totalStats) .. "\n"
@@ -597,7 +714,13 @@ end
 
 function BurdJournals.ContextMenu.addCursedJournalOptions(context, player, journal)
     local openOption = context:addOption(
-        getText("ContextMenu_BurdJournals_OpenCursedJournal") or "Break the Seal...",
+        BurdJournals.ContextMenu.getCursedInsightContextLabel(
+            player,
+            journal,
+            false,
+            true,
+            getText("ContextMenu_BurdJournals_OpenCursedJournal") or "Break the Seal..."
+        ),
         player,
         BurdJournals.ContextMenu.onOpenCursedJournal,
         journal
@@ -612,11 +735,60 @@ function BurdJournals.ContextMenu.addCursedJournalOptions(context, player, journ
     BurdJournals.ContextMenu.applyLightRequirement(openOption, player)
 end
 
+-- Generic "Break the Seal" option for any registered sealed journal type still
+-- in the sealed state. The label/tooltip come from the registered type's
+-- theme so add-ons don't need to patch this file.
+function BurdJournals.ContextMenu.addSealedJournalOptions(context, player, journal)
+    local entry = BurdJournals.getSealedJournalType and BurdJournals.getSealedJournalType(journal) or nil
+    local themeKey = entry and entry.themeKey or nil
+    local labelKey = themeKey and ("ContextMenu_BurdJournals_BreakSeal_" .. themeKey) or nil
+    local label = (labelKey and BurdJournals.safeGetText(labelKey, nil))
+        or BurdJournals.safeGetText("ContextMenu_BurdJournals_BreakSeal", "Break the Seal...")
+
+    local openOption = context:addOption(
+        label,
+        player,
+        BurdJournals.ContextMenu.onBreakJournalSeal,
+        journal
+    )
+    local tooltip = ISToolTip:new()
+    tooltip:initialise()
+    tooltip:setVisible(false)
+    local nameKey = themeKey and ("Tooltip_BurdJournals_SealedName_" .. themeKey) or nil
+    local descKey = themeKey and ("Tooltip_BurdJournals_SealedDesc_" .. themeKey) or nil
+    tooltip:setName((nameKey and BurdJournals.safeGetText(nameKey, nil)) or BurdJournals.safeGetText("Tooltip_BurdJournals_SealedName", "Sealed Journal"))
+    tooltip.description = normalizeTooltipTextForDisplay(
+        (descKey and BurdJournals.safeGetText(descKey, nil))
+        or BurdJournals.safeGetText("Tooltip_BurdJournals_SealedDesc", "A sealed journal. Break the seal to reveal what lies within.")
+    )
+    openOption.toolTip = tooltip
+    BurdJournals.ContextMenu.applyLightRequirement(openOption, player)
+end
+
 function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journal, isBlank)
     local journalData = getNormalizedContextJournalData(journal)
     local isHiddenCursed = BurdJournals.isHiddenCursedJournal and BurdJournals.isHiddenCursedJournal(journal) or false
     local isFilled = (BurdJournals.isFilledJournal and BurdJournals.isFilledJournal(journal)) or isHiddenCursed
     local hideDetails = shouldHideLootDetailsInContext(journal)
+
+    if isHiddenCursed and not journalData then
+        local openOption = context:addOption(
+            BurdJournals.ContextMenu.getCursedInsightContextLabel(player, journal, true, false),
+            player,
+            BurdJournals.ContextMenu.onOpenBloodyJournal,
+            journal
+        )
+        local tooltip = ISToolTip:new()
+        tooltip:initialise()
+        tooltip:setVisible(false)
+        tooltip:setName(getText("Tooltip_BurdJournals_BloodyJournal") or "Bloody Journal")
+        tooltip.description = normalizeTooltipTextForDisplay(
+            BurdJournals.safeGetText("Tooltip_BurdJournals_UnopenedLootRewardDesc", "Open to inspect the contents.")
+        )
+        openOption.toolTip = tooltip
+        BurdJournals.ContextMenu.applyLightRequirement(openOption, player)
+        return
+    end
 
     if isFilled and journalData then
 
@@ -655,7 +827,7 @@ function BurdJournals.ContextMenu.addBloodyJournalOptions(context, player, journ
         local remaining = skillCount + traitCount + recipeCount
 
         local openOption = context:addOption(
-            getText("ContextMenu_BurdJournals_OpenJournal") or "Open Journal...",
+            BurdJournals.ContextMenu.getCursedInsightContextLabel(player, journal, isHiddenCursed, false),
             player,
             BurdJournals.ContextMenu.onOpenBloodyJournal,
             journal
@@ -951,7 +1123,8 @@ function BurdJournals.ContextMenu.addCleanFilledJournalOptions(context, player, 
         tooltip:initialise()
         tooltip:setVisible(false)
         tooltip:setName(getText("Tooltip_BurdJournals_PersonalJournal") or "Personal Survival Journal")
-        local author = journalData.author or (getText("UI_BurdJournals_Unknown") or "Unknown")
+        local author = (BurdJournals.getJournalDisplayAuthor and BurdJournals.getJournalDisplayAuthor(journalData))
+            or (getText("UI_BurdJournals_Unknown") or "Unknown")
         local desc = (getText("Tooltip_BurdJournals_WrittenBy") or "Written by: %s"):gsub("%%s", author) .. "\n"
         local itemText = totalRecorded > 1 and (getText("Tooltip_BurdJournals_RecordedItems") or "Contains %d recorded items") or (getText("Tooltip_BurdJournals_RecordedItem") or "Contains %d recorded item")
         desc = desc .. BurdJournals.formatText(itemText, totalRecorded) .. "\n\n"
@@ -1208,6 +1381,33 @@ function BurdJournals.ContextMenu.onAbsorbAllConfirm(player, journal)
     end
 end
 
+local function captureDelayedJournalIdentity(journal)
+    local data = BurdJournals.getJournalData and BurdJournals.getJournalData(journal) or nil
+    return {
+        uuid = type(data) == "table" and data.uuid or nil,
+        id = journal and journal.getID and journal:getID() or nil,
+    }
+end
+
+local function delayedMainPanelStillTargets(panel, player, journal, expectedIdentity)
+    local current = BurdJournals.UI and BurdJournals.UI.MainPanel and BurdJournals.UI.MainPanel.instance or nil
+    if not panel or current ~= panel or panel.player ~= player or not panel.journal then
+        return false
+    end
+    if panel.journal == journal then
+        return true
+    end
+    local currentData = BurdJournals.getJournalData and BurdJournals.getJournalData(panel.journal) or nil
+    local expectedUUID = expectedIdentity and expectedIdentity.uuid or nil
+    local currentUUID = type(currentData) == "table" and currentData.uuid or nil
+    if expectedUUID and currentUUID then
+        return tostring(expectedUUID) == tostring(currentUUID)
+    end
+    local expectedId = expectedIdentity and expectedIdentity.id or nil
+    local currentId = panel.journal.getID and panel.journal:getID() or nil
+    return expectedId ~= nil and currentId ~= nil and tostring(expectedId) == tostring(currentId)
+end
+
 function BurdJournals.ContextMenu.onConfirmAbsorbAll(target, button, journal)
     if button.internal == "YES" then
         if not BurdJournals.ContextMenu.requireLightOrNotify(target) then
@@ -1233,6 +1433,8 @@ function BurdJournals.ContextMenu.onConfirmAbsorbAll(target, button, journal)
             if BurdJournals.UI and BurdJournals.UI.MainPanel then
 
                 BurdJournals.UI.MainPanel.show(player, j, "absorb", returnContainer)
+                local panel = BurdJournals.UI.MainPanel.instance
+                local journalIdentity = captureDelayedJournalIdentity(j)
 
                 local ticksWaited = 0
                 local startLearning
@@ -1240,8 +1442,8 @@ function BurdJournals.ContextMenu.onConfirmAbsorbAll(target, button, journal)
                     ticksWaited = ticksWaited + 1
                     if ticksWaited >= 2 then
                         Events.OnTick.Remove(startLearning)
-                        if BurdJournals.UI.MainPanel.instance then
-                            BurdJournals.UI.MainPanel.instance:startLearningAll()
+                        if delayedMainPanelStillTargets(panel, player, j, journalIdentity) and panel.startLearningAll then
+                            panel:startLearningAll()
                         end
                     end
                 end
@@ -1280,6 +1482,24 @@ function BurdJournals.ContextMenu.onOpenBloodyJournal(player, journal)
         if not BurdJournals.ContextMenu.requireLightOrNotify(p) then
             return
         end
+        if BurdJournals.isHiddenCursedJournal and BurdJournals.isHiddenCursedJournal(j) then
+            if j and j.getID then
+                local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(j) or nil
+                local lookupArgs = BurdJournals.buildJournalCommandPayload
+                    and BurdJournals.buildJournalCommandPayload(j, journalData, true)
+                    or { journalId = j:getID(), journalUUID = journalData and journalData.uuid or nil, journalFingerprint = nil }
+                sendClientCommand(p, "BurdJournals", "openCursedJournal", {
+                    journalId = lookupArgs.journalId,
+                    journalUUID = lookupArgs.journalUUID,
+                    journalFingerprint = lookupArgs.journalFingerprint,
+                    journalData = lookupArgs.journalData,
+                    itemFullType = lookupArgs.itemFullType,
+                    exactJournalItem = true,
+                    confirm = false,
+                })
+            end
+            return
+        end
         if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
             require "UI/BurdJournals_MainPanel"
         end
@@ -1296,6 +1516,37 @@ function BurdJournals.ContextMenu.onOpenCursedJournal(player, journal)
         return
     end
 
+    BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j, returnContainer)
+        if not BurdJournals.ContextMenu.requireLightOrNotify(p) then
+            return
+        end
+        if j and j.getID then
+            local journalData = BurdJournals.getJournalData and BurdJournals.getJournalData(j) or nil
+            local lookupArgs = BurdJournals.buildJournalCommandPayload
+                and BurdJournals.buildJournalCommandPayload(j, journalData, true)
+                or { journalId = j:getID(), journalUUID = journalData and journalData.uuid or nil, journalFingerprint = nil }
+            lookupArgs.exactJournalItem = true
+            sendClientCommand(p, "BurdJournals", "openCursedJournal", {
+                journalId = lookupArgs.journalId,
+                journalUUID = lookupArgs.journalUUID,
+                journalFingerprint = lookupArgs.journalFingerprint,
+                journalData = lookupArgs.journalData,
+                itemFullType = lookupArgs.itemFullType,
+                exactJournalItem = true,
+                confirm = false,
+            })
+        end
+    end)
+end
+
+-- Generic seal-break for any registered sealed journal type. Sends the base
+-- "breakJournalSeal" command; the server flips the state, reveals contents,
+-- and fires the OnJournalSealBroken hook (where add-ons apply their payload).
+function BurdJournals.ContextMenu.onBreakJournalSeal(player, journal)
+    if not BurdJournals.ContextMenu.requireLightOrNotify(player) then
+        return
+    end
+
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
         if not BurdJournals.ContextMenu.requireLightOrNotify(p) then
             return
@@ -1305,14 +1556,15 @@ function BurdJournals.ContextMenu.onOpenCursedJournal(player, journal)
             local lookupArgs = BurdJournals.buildJournalCommandPayload
                 and BurdJournals.buildJournalCommandPayload(j, journalData, true)
                 or { journalId = j:getID(), journalUUID = journalData and journalData.uuid or nil, journalFingerprint = nil }
-            sendClientCommand(p, "BurdJournals", "openCursedJournal", {
-                journalId = lookupArgs.journalId,
-                journalUUID = lookupArgs.journalUUID,
-                journalFingerprint = lookupArgs.journalFingerprint,
-                journalData = lookupArgs.journalData,
-                itemFullType = lookupArgs.itemFullType,
-                confirm = false,
-            })
+            lookupArgs.exactJournalItem = true
+            if BurdJournals.Client
+                and BurdJournals.Client.handleSealedJournalBreakPrompt
+                and BurdJournals.Client.handleSealedJournalBreakPrompt(p, lookupArgs, j)
+            then
+                return
+            elseif BurdJournals.queueBreakJournalSealAction then
+                BurdJournals.queueBreakJournalSealAction(p, lookupArgs)
+            end
         end
     end)
 end
@@ -1337,6 +1589,7 @@ function BurdJournals.ContextMenu.onOpenYuletideJournal(player, journal)
                 journalFingerprint = lookupArgs.journalFingerprint,
                 journalData = lookupArgs.journalData,
                 itemFullType = lookupArgs.itemFullType,
+                exactJournalItem = true,
                 confirm = false,
             })
         end
@@ -1344,6 +1597,26 @@ function BurdJournals.ContextMenu.onOpenYuletideJournal(player, journal)
 end
 
 function BurdJournals.ContextMenu.onOpenYuletideRewardJournal(player, journal)
+    if not BurdJournals.ContextMenu.requireLightOrNotify(player) then
+        return
+    end
+
+    BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j, returnContainer)
+        if not BurdJournals.ContextMenu.requireLightOrNotify(p) then
+            return
+        end
+        if not BurdJournals.UI or not BurdJournals.UI.MainPanel then
+            require "UI/BurdJournals_MainPanel"
+        end
+
+        if BurdJournals.UI and BurdJournals.UI.MainPanel then
+            markLootRewardsRevealedLocally(j, p)
+            BurdJournals.UI.MainPanel.show(p, j, "absorb", returnContainer)
+        end
+    end)
+end
+
+function BurdJournals.ContextMenu.onOpenSealedLootRewardJournal(player, journal)
     if not BurdJournals.ContextMenu.requireLightOrNotify(player) then
         return
     end
@@ -1390,7 +1663,8 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
                     journalFingerprint = lookupArgs.journalFingerprint,
                     journalData = lookupArgs.journalData,
                     itemFullType = lookupArgs.itemFullType,
-                    confirm = true,
+                    exactJournalItem = true,
+                    confirm = false,
                 })
             end
         end)
@@ -1413,7 +1687,7 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
     local unclaimed = BurdJournals.getUnclaimedSkills(journal, player)
     local journalData = BurdJournals.getJournalData(journal)
 
-    if isClient() and not isServer() then
+    if BurdJournals.clientShouldUseServerAuthority() then
         -- Queue rewards for time-gated pacing instead of sending all at once
         -- This prevents server rate-limiting from dropping commands in MP
         -- Server rate-limits at 100ms, so we send one command every 120ms to be safe
@@ -1601,7 +1875,10 @@ function BurdJournals.ContextMenu.onAbsorbAllFromJournal(player, journal)
         end
 
         -- Transmit changes once after all claims
-        if jData and journal.transmitModData then
+        if jData and journal.transmitModData
+            and (not BurdJournals.shouldTransmitJournalItemModData
+                or BurdJournals.shouldTransmitJournalItemModData(journal, "contextMenuAbsorbAllLocal"))
+        then
             journal:transmitModData()
         end
 
@@ -1730,11 +2007,12 @@ end
 function BurdJournals.ContextMenu.onReadCleanJournal(player, journal)
 
     BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j, returnContainer)
+        local lookupArgs = BurdJournals.buildJournalCommandLookupArgs(j, nil, false)
         sendClientCommand(
             p,
             "BurdJournals",
             "learnSkills",
-            {journalId = j:getID()}
+            lookupArgs
         )
     end)
 end
@@ -1744,7 +2022,7 @@ function BurdJournals.ContextMenu.onClaimAllConfirm(player, journal)
         return
     end
 
-    BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j)
+    BurdJournals.ContextMenu.pickUpThenDo(player, journal, function(p, j, returnContainer)
         if not BurdJournals.ContextMenu.requireLightOrNotify(p) then
             return
         end
@@ -1758,14 +2036,15 @@ function BurdJournals.ContextMenu.onClaimAllConfirm(player, journal)
 
             local panel = BurdJournals.UI.MainPanel.instance
             if panel and panel.startLearningAll then
+                local journalIdentity = captureDelayedJournalIdentity(j)
                 local ticksWaited = 0
                 local startLearning
                 startLearning = function()
                     ticksWaited = ticksWaited + 1
                     if ticksWaited >= 2 then
                         Events.OnTick.Remove(startLearning)
-                        if BurdJournals.UI.MainPanel.instance then
-                            BurdJournals.UI.MainPanel.instance:startLearningAll()
+                        if delayedMainPanelStillTargets(panel, p, j, journalIdentity) then
+                            panel:startLearningAll()
                         end
                     end
                 end
@@ -1799,6 +2078,10 @@ function BurdJournals.ContextMenu.onConfirmRename(target, button, journal)
     if button.internal == "OK" then
         local newName = button.parent.entry:getText()
         if newName and newName ~= "" then
+            local oldName = journal:getName() or ""
+            local oldCustomName = journal.isCustomName and journal:isCustomName() or false
+            local oldModData = journal:getModData()
+            local oldBackupName = oldModData.BurdJournals and oldModData.BurdJournals.customName or nil
             -- Set name locally first for immediate feedback
             journal:setName(newName)
             -- Mark as custom name so PZ preserves it during item serialization (MP transfers)
@@ -1813,17 +2096,36 @@ function BurdJournals.ContextMenu.onConfirmRename(target, button, journal)
 
             -- In multiplayer, send command to server to update the name there too
             -- This is CRITICAL for MP name persistence - the server must have the correct name
-            if isClient() and not isServer() then
-                local player = getPlayer()
+            if BurdJournals.clientShouldUseServerAuthority() then
+                local player = target
                 if player then
-                    sendClientCommand(player, "BurdJournals", "renameJournal", {
-                        journalId = journal:getID(),
-                        newName = newName
-                    })
+                    BurdJournals.Client._pendingJournalRenames = BurdJournals.Client._pendingJournalRenames or {}
+                    if BurdJournals.Client.prunePendingJournalRenames then
+                        BurdJournals.Client.prunePendingJournalRenames()
+                    end
+                    BurdJournals.Client._pendingJournalRenameRequestId =
+                        (tonumber(BurdJournals.Client._pendingJournalRenameRequestId) or 0) + 1
+                    local renameRequestId = tostring(BurdJournals.Client._pendingJournalRenameRequestId)
+                    BurdJournals.Client._pendingJournalRenames[renameRequestId] = {
+                        journal = journal,
+                        player = player,
+                        oldName = oldName,
+                        oldCustomName = oldCustomName,
+                        oldBackupName = oldBackupName,
+                        queuedAt = (getTimestampMs and getTimestampMs()) or ((os.time() or 0) * 1000),
+                    }
+                    BurdJournals.Client.prunePendingJournalRenames(nil, renameRequestId)
+                    local lookupArgs = BurdJournals.buildJournalCommandLookupArgs(journal, modData.BurdJournals, false)
+                    lookupArgs.newName = newName
+                    lookupArgs.renameRequestId = renameRequestId
+                    sendClientCommand(player, "BurdJournals", "renameJournal", lookupArgs)
                 end
             else
                 -- Single player or listen server - just transmit locally
-                if journal.transmitModData then
+                if journal.transmitModData
+                    and (not BurdJournals.shouldTransmitJournalItemModData
+                        or BurdJournals.shouldTransmitJournalItemModData(journal, "contextMenuRenameLocal"))
+                then
                     journal:transmitModData()
                 end
             end
